@@ -30,7 +30,7 @@ fn run (a:int, b:int, flag:bool, xs:obj) -> double {nothrow unique}
   (def acc 0.0:double)
   (for e in var(xs)
     (block
-      (if (and var(flag) (block (>:bool var(a) 0:int))) (block (set acc += (+:double (+:double (block (/:double var(a) var(b))) (block (+:int var(a) var(b)))) var(e)))))))
+      (if (and var(flag) (block (>:bool var(a) 0:int))) (box (block (set acc += (+:double (+:double (block (/:double (convert[double] var(a)) (convert[double] var(b)))) (convert[double] (block (+:int var(a) var(b))))) (convert[double] var(e)))))))))
   var(acc)
 ```
 
@@ -40,10 +40,10 @@ fn run (a:int, b:int, flag:bool, xs:obj) -> double {nothrow unique}
   (def unusedOv (overload (fn-ref unusedOv#1) (fn-ref unusedOv#2)))
   (def acc 0.0:double)
   (block
-    (def $licm0 (+:double (/:double var(a) var(b)) (+:int var(a) var(b))))
+    (def $licm0 (+:double (/:double (convert[double] var(a)) (convert[double] var(b))) (convert[double] (+:int var(a) var(b)))))
     (for e in var(xs)
       (block
-        (if (and var(flag) (>:bool var(a) 0:int)) (set acc += (+:double var($licm0) var(e)))))))
+        (if (and var(flag) (>:bool var(a) 0:int)) (box (set acc += (+:double var($licm0) (convert[double] var(e)))))))))
   var(acc)
 ```
 
@@ -254,7 +254,7 @@ assert(run(byte(1)))
 ```hir
 ;; hir -O0 fn=run
 fn run (p:byte) -> bool {pure unique}
-  (def s (if true:bool (block (call name(byte) 3:int)) (block var(p))))
+  (def s (if true:bool (widen[short] (block (call name(byte) 3:int))) (widen[short] (block var(p)))))
   (def c1 (and (and (and (and (<:bool 'a' 'b') (<=:bool 'a' 'a')) (>:bool 'b' 'a')) (>=:bool 'b' 'b')) (<>:bool 'a' 'b')))
   (def b1 (and (and (block (==:bool true:bool true:bool)) (block (<>:bool true:bool false:bool))) (not (block (==:bool false:bool true:bool)))))
   (and (and (==:bool var(s) (call name(short) 3:int)) var(c1)) var(b1))
@@ -263,7 +263,7 @@ fn run (p:byte) -> bool {pure unique}
 ```hir
 ;; hir -O1 fn=run
 fn run (p:byte) -> bool {pure unique}
-  (def s (if true:bool (block (call name(byte) 3:int)) (block var(p))))
+  (def s (widen[short] (call name(byte) 3:int)))
   (and (and (==:bool var(s) (call name(short) 3:int)) true:bool) true:bool)
 ```
 
@@ -271,62 +271,51 @@ fn run (p:byte) -> bool {pure unique}
 ;; mir -O2 fn=run stage=before
 fn run(v0: byte) -> bool:
   bb0:
-    v1: bool = const true
-    br_if v1, bb2, bb1
+    v1: any = name_read byte {pure}
+    v2: int = const 3
+    v3: byte = opaque.DynamicCall(v1, v2) {impure}
+    v4: short = convert.short v3
+    v5: any = name_read short {pure}
+    v6: int = const 3
+    v7: short = opaque.DynamicCall(v5, v6) {impure}
+    v8: bool = eq v4, v7 {pure}
+    v9: bool = const false
+    br_if v8, bb1, bb2(v9)
   bb1:
-    v2: short = convert.short v0
-    br bb3(v2)
-  bb2:
-    v3: any = name_read byte {pure}
-    v4: int = const 3
-    v5: byte = opaque.DynamicCall(v3, v4) {impure}
-    v6: short = convert.short v5
-    br bb3(v6)
-  bb3(v7: short):
-    v8: any = name_read short {pure}
-    v9: int = const 3
-    v10: short = opaque.DynamicCall(v8, v9) {impure}
-    v11: bool = eq v7, v10 {pure}
+    v10: bool = const true
+    br bb2(v10)
+  bb2(v11: bool):
     v12: bool = const false
-    br_if v11, bb4, bb5(v12)
-  bb4:
+    br_if v11, bb3, bb4(v12)
+  bb3:
     v13: bool = const true
-    br bb5(v13)
-  bb5(v14: bool):
-    v15: bool = const false
-    br_if v14, bb6, bb7(v15)
-  bb6:
-    v16: bool = const true
-    br bb7(v16)
-  bb7(v17: bool):
-    ret v17
+    br bb4(v13)
+  bb4(v14: bool):
+    ret v14
 ```
 
 ```mir
 ;; mir -O2 fn=run
 fn run(v0: byte) -> bool:
   bb0:
-    v1: bool = const true
-    br bb1
+    v1: any = name_read byte {pure}
+    v2: int = const 3
+    v3: byte = opaque.DynamicCall(v1, v2) {impure}
+    v4: short = convert.short v3
+    v5: any = name_read short {pure}
+    v6: short = opaque.DynamicCall(v5, v2) {impure}
+    v7: bool = eq v4, v6 {pure}
+    v8: bool = const false
+    br_if v7, bb1, bb2(v8)
   bb1:
-    v2: any = name_read byte {pure}
-    v3: int = const 3
-    v4: byte = opaque.DynamicCall(v2, v3) {impure}
-    v5: short = convert.short v4
-    br bb2(v5)
-  bb2(v6: short):
-    v7: any = name_read short {pure}
-    v8: short = opaque.DynamicCall(v7, v3) {impure}
-    v9: bool = eq v6, v8 {pure}
-    v10: bool = const false
-    br_if v9, bb3, bb4(v10)
+    v9: bool = const true
+    br bb2(v9)
+  bb2(v10: bool):
+    br_if v10, bb3, bb4(v8)
   bb3:
-    br bb4(v1)
-  bb4(v11: bool):
-    br_if v11, bb5, bb6(v10)
-  bb5:
-    br bb6(v1)
-  bb6(v12: bool):
+    v11: bool = const true
+    br bb4(v11)
+  bb4(v12: bool):
     ret v12
 ```
 

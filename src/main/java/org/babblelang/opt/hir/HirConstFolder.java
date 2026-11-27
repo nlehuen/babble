@@ -639,4 +639,84 @@ final class HirConstFolder {
             default -> n.doubleValue();
         };
     }
+
+    /** Folds explicit {@link HirExpr.Widen} on constants and lossless widening chains. */
+    static HirExpr tryFoldWiden(HirExpr.Widen w) {
+        HirExpr op = HirRewriter.unwrapTransparent(w.operand());
+        int rank = w.wideningRank();
+        if (op instanceof HirExpr.Const c && c.value() instanceof Number) {
+            return applyWidening(c.value(), c.meta().kind(), w.meta().withWideningRank(rank));
+        }
+        PrimitiveKind target = PrimitiveKind.ofNumericRank(rank);
+        if (target != PrimitiveKind.NONE
+                && op.meta().kind() == target
+                && hasExactPrimitiveStack(op)) {
+            return op;
+        }
+        if (op instanceof HirExpr.Widen inner && inner.operand().meta().kind().isPrimitive()) {
+            int r1 = inner.wideningRank();
+            if (r1 == rank || (r1 <= 3 && rank <= 3 && r1 < rank) || (r1 <= 2 && rank == 5)) {
+                return new HirExpr.Widen(
+                        inner.operand(), Math.max(r1, rank), w.meta().withWideningRank(-1));
+            }
+        }
+        return null;
+    }
+
+    /** Folds explicit {@link HirExpr.Convert} on constants, identity, and box/unbox chains. */
+    static HirExpr tryFoldConvert(HirExpr.Convert cv) {
+        HirExpr op = HirRewriter.unwrapTransparent(cv.operand());
+        PrimitiveKind to = cv.targetKind();
+        PrimitiveKind from = op.meta().kind();
+        if (from == to && hasExactPrimitiveStack(op)) {
+            return op;
+        }
+        if (op instanceof HirExpr.Const c) {
+            if (to.isPrimitive() && c.value() instanceof Number n && HirPurity.isNumericKind(to)) {
+                return new HirExpr.Const(
+                        convertNumber(n, to), cv.meta().withKind(to).withWideningRank(-1));
+            }
+            if (to == PrimitiveKind.BOOL && c.value() instanceof Boolean b) {
+                return new HirExpr.Const(b, cv.meta().withKind(to).withWideningRank(-1));
+            }
+            if (to == PrimitiveKind.CHAR && c.value() instanceof Character ch) {
+                return new HirExpr.Const(ch, cv.meta().withKind(to).withWideningRank(-1));
+            }
+        }
+        // unbox[T](box(a)) -> a when a already has exact stack kind T
+        if (op instanceof HirExpr.Convert inner
+                && inner.targetKind() == PrimitiveKind.NONE
+                && to.isPrimitive()
+                && inner.operand().meta().kind() == to
+                && hasExactPrimitiveStack(inner.operand())) {
+            return inner.operand();
+        }
+        // Lossless primitive widening chain: convert[T2](convert[T1](a)) -> convert[T2](a)
+        if (op instanceof HirExpr.Convert inner
+                && inner.targetKind().isPrimitive()
+                && to.isPrimitive()
+                && inner.operand().meta().kind().isPrimitive()) {
+            int r0 = inner.operand().meta().kind().numericRank();
+            int r1 = inner.targetKind().numericRank();
+            int r2 = to.numericRank();
+            if (r0 >= 0 && r1 >= r0 && r2 >= r1 && (r1 <= 3 && r2 <= 3 || r1 <= 2 && r2 == 5)) {
+                if (inner.operand().meta().kind() == to
+                        && hasExactPrimitiveStack(inner.operand())) {
+                    return inner.operand();
+                }
+                return new HirExpr.Convert(inner.operand(), to, cv.meta().withWideningRank(-1));
+            }
+        }
+        return null;
+    }
+
+    private static boolean hasExactPrimitiveStack(HirExpr expr) {
+        return expr instanceof HirExpr.Const
+                || expr instanceof HirExpr.VarRead
+                || expr instanceof HirExpr.Binary
+                || expr instanceof HirExpr.Unary
+                || expr instanceof HirExpr.Convert
+                || expr instanceof HirExpr.Widen
+                || expr instanceof HirExpr.If;
+    }
 }

@@ -832,6 +832,36 @@ public final class HirCanonicalPrinter {
                 printExpr(sb, f.operand(), norm, indent + 1);
                 sb.append(')');
             }
+            case HirExpr.Narrow n -> {
+                if (n.narrowKind() == HirExpr.NarrowKind.NON_NULL) {
+                    sb.append("(narrow.nonnull ");
+                } else {
+                    sb.append("(narrow.is[")
+                            .append(norm.normalizeType(n.targetDesc()))
+                            .append("] ");
+                }
+                printExpr(sb, n.operand(), norm, indent + 1);
+                sb.append(')');
+            }
+            case HirExpr.Convert cv -> {
+                if (cv.targetKind() == PrimitiveKind.NONE) {
+                    sb.append("(box ");
+                } else if (cv.operand().meta().kind() == PrimitiveKind.NONE) {
+                    sb.append("(unbox[").append(kindTag(cv.targetKind())).append("] ");
+                } else {
+                    sb.append("(convert[").append(kindTag(cv.targetKind())).append("] ");
+                }
+                printExpr(sb, cv.operand(), norm, indent + 1);
+                sb.append(')');
+            }
+            case HirExpr.Widen w -> {
+                PrimitiveKind target = PrimitiveKind.ofNumericRank(w.wideningRank());
+                sb.append("(widen[")
+                        .append(target != PrimitiveKind.NONE ? kindTag(target) : w.wideningRank())
+                        .append("] ");
+                printExpr(sb, w.operand(), norm, indent + 1);
+                sb.append(')');
+            }
         }
     }
 
@@ -1229,6 +1259,9 @@ public final class HirCanonicalPrinter {
                     scanExpr(m.operand());
                 }
                 case HirExpr.Freeze f -> scanExpr(f.operand());
+                case HirExpr.Narrow n -> scanExpr(n.operand());
+                case HirExpr.Convert cv -> scanExpr(cv.operand());
+                case HirExpr.Widen w -> scanExpr(w.operand());
             }
         }
 

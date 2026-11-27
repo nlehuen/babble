@@ -346,9 +346,9 @@ fn Box.run (n:int, b:byte) -> double {pure unique}
   (def i 0:int)
   (while (<:bool var(i) var(n))
     (block
-      (def l1 var(b))
-      (def l2 (+:int (call name(short) 4:int) (call name(int) var(b))))
-      (def l3 (+:int (call name(int) 5:int) 1:int))
+      (def l1 (widen[short] var(b)))
+      (def l2 (+:int (convert[int] (call name(short) 4:int)) (call name(int) var(b))))
+      (def l3 (widen[long] (+:int (call name(int) 5:int) 1:int)))
       (def l4 (+:float 1.5:float 2.5:float))
       (set a += (+:double (+:double (+:double (call name(double) var(l1)) (call name(double) var(l2))) (call name(double) var(l3))) (call name(double) var(l4))))
       (set i += 1:int)))
@@ -362,9 +362,9 @@ fn Box.run (n:int, b:byte) -> double {pure unique}
   (def i 0:int)
   (while (<:bool var(i) var(n))
     (block
-      (def l1 var(b))
-      (def l2 (+:int (call name(short) 4:int) (call name(int) var(b))))
-      (def l3 (+:int (call name(int) 5:int) 1:int))
+      (def l1 (widen[short] var(b)))
+      (def l2 (+:int (convert[int] (call name(short) 4:int)) (call name(int) var(b))))
+      (def l3 (widen[long] (+:int (call name(int) 5:int) 1:int)))
       (set a += (+:double (+:double (+:double (call name(double) var(l1)) (call name(double) var(l2))) (call name(double) var(l3))) (call name(double) 4.0:float)))
       (set i += 1:int)))
   var(a)
@@ -588,7 +588,7 @@ assert(Box("  hi  ").run(2, true, array.of(7)) == 7)
 fn Box.run (n:int, f:bool, xs:obj) -> int {pure unique}
   (def a 0:int)
   (def i 0:int)
-  (def raw 1:int)
+  (def raw (box 1:int))
   (while (<:bool var(i) var(n))
     (block
       (def l6 (if (or var(f) (block (and (not var(f)) (block (>:bool (array-op SIZE var(xs)) 0:int))))) (block 1:int) (block 2:int)))
@@ -602,7 +602,7 @@ fn Box.run (n:int, f:bool, xs:obj) -> int {pure unique}
 fn Box.run (n:int, f:bool, xs:obj) -> int {pure unique}
   (def a 0:int)
   (def i 0:int)
-  (def raw 1:int)
+  (def raw (box 1:int))
   (block
     (def $licm0 (get-this-field nm))
     (while (<:bool var(i) var(n))

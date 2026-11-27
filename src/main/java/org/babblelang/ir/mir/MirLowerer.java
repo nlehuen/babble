@@ -289,6 +289,13 @@ public final class MirLowerer {
                         case HirExpr.TypeApply t -> lowerBoxed(t.inner());
                         case HirExpr.Move m -> lowerMove(m);
                         case HirExpr.Freeze f -> lowerFreeze(f);
+                        case HirExpr.Narrow n -> lowerAndWiden(n.operand());
+                        case HirExpr.Convert cv -> lowerAs(cv.operand(), cv.targetKind());
+                        case HirExpr.Widen w -> {
+                            MirVal v = lowerAndWiden(w.operand());
+                            if (ssa.cur.isTerminated()) yield v;
+                            yield ssa.applyWideningRank(v, w.wideningRank(), ln);
+                        }
                         case HirExpr.Block b -> lowerBlock(b);
                         case HirExpr.If i -> lowerIf(i);
                         case HirExpr.Match m -> lowerMatch(m);
@@ -512,7 +519,8 @@ public final class MirLowerer {
                                 && g.definitelyDefined()
                                 && (g.receiver() instanceof HirExpr.ThisRef
                                         || g.receiver() instanceof HirExpr.RecordNew
-                                        || g.receiver() instanceof HirExpr.VarRead);
+                                        || g.receiver() instanceof HirExpr.VarRead
+                                        || g.receiver() instanceof HirExpr.Narrow);
             }
             if (g.immutableField() && nothrow) {
                 return MirEffect.READ_FROZEN;

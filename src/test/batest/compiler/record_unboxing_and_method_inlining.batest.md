@@ -396,7 +396,7 @@ fn heavyLoop (a:obj, s:int) -> double {nothrow unique}
       (set acc (+:double (-:double (+:double (+:double var(acc) var(t)) (get-this-field x)) (get-this-field y)) (get-this-field z)))))
   (try
     (block
-      (if (<:bool var(s) 0:int) (block (call name(assert) false:bool)))
+      (if (<:bool var(s) 0:int) (box (block (call name(assert) false:bool))))
       (+:double var(acc) (*:double (*:double (get-this-field x) (get-this-field y)) (get-this-field z))))
     (catch e
       0.0:double))
@@ -418,7 +418,7 @@ fn heavyLoop (a:obj, s:int) -> double {nothrow unique}
         (set acc (+:double (-:double (+:double (+:double var(acc) var(t)) var($licm2)) var($licm3)) var($licm4))))))
   (try
     (block
-      (if (<:bool var(s) 0:int) (call name(assert) false:bool))
+      (if (<:bool var(s) 0:int) (box (call name(assert) false:bool)))
       (+:double var(acc) (*:double (*:double (get-this-field x) (get-this-field y)) (get-this-field z))))
     (catch e
       0.0:double))
@@ -710,14 +710,14 @@ fn r () -> double {nothrow unique}
         (block
           (set s#1 (+:int var(s#1) var(k#1)))))
       (set x#1 (+:int var(x#1) var(s#1)))
-      (+:double var(x#1) 0.5:double)) (block
+      (+:double (convert[double] var(x#1)) 0.5:double)) (block
       (def x#2 1:int)
       (def s#2 0:int)
       (for k#2 in (core-new list 1:int 2:int)
         (block
           (set s#2 (+:int var(s#2) var(k#2)))))
       (set x#2 (+:int var(x#2) var(s#2)))
-      (+:double var(x#2) 0.5:double)))
+      (+:double (convert[double] var(x#2)) 0.5:double)))
 ```
 
 ```mir

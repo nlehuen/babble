@@ -17,14 +17,14 @@ assert(prims(byte(1), short(2), 3, 4L, 1.5f, 2.5, 'b', true) == -7.0)
 ```hir
 ;; hir -O0 fn=prims
 fn prims (b:byte, s:short, i:int, l:long, f:float, d:double, c:char, p:bool) -> double {nothrow}
-  (def r (+:double (+:double (*:double (block (+:long (+:int (+:int var(b) var(s)) (block (neg var(i)))) (block (neg var(l))))) 1.0:double) (block (neg var(f)))) (block (neg var(d)))))
+  (def r (+:double (+:double (*:double (convert[double] (block (+:long (convert[long] (+:int (+:int (convert[int] var(b)) (convert[int] var(s))) (block (neg var(i))))) (block (neg var(l)))))) 1.0:double) (convert[double] (block (neg var(f))))) (block (neg var(d)))))
   (if (and (block (not var(p))) (block (==:bool var(c) 'a'))) (block var(r)) (block (+:double var(r) 1.0:double)))
 ```
 
 ```hir
 ;; hir -O1 fn=prims
 fn prims (b:byte, s:short, i:int, l:long, f:float, d:double, c:char, p:bool) -> double {nothrow}
-  (def r (+:double (+:double (*:double (+:long (+:int (+:int var(b) var(s)) (neg var(i))) (neg var(l))) 1.0:double) (neg var(f))) (neg var(d))))
+  (def r (+:double (+:double (*:double (convert[double] (+:long (convert[long] (+:int (+:int (convert[int] var(b)) (convert[int] var(s))) (neg var(i)))) (neg var(l)))) 1.0:double) (convert[double] (neg var(f)))) (neg var(d))))
   (if (and (not var(p)) (==:bool var(c) 'a')) var(r) (+:double var(r) 1.0:double))
 ```
 
@@ -398,19 +398,19 @@ assert(narrowLen("abc", "xy") == 8 and narrowLen(null, 5) == 5)
 ```hir
 ;; hir -O0 fn=narrowLen
 fn narrowLen (s:obj, v:obj) -> int {nothrow unique}
-  (def a (if (<>:bool var(s) null) (block (jcall String.length var(s))) (block 0:int)))
-  (def b (if (is var(v) string) (block (jcall String.length var(v))) (block var(v))))
+  (def a (if (<>:bool var(s) null) (block (jcall String.length (narrow.nonnull var(s)))) (block 0:int)))
+  (def b (if (is var(v) string) (block (jcall String.length (narrow.is[string] var(v)))) (block var(v))))
   (def c (safe-call var(s)?.length))
-  (+:int (+:int var(a) var(b)) (block (if (<>:bool var(c) null) (block var(c)) (block 0:int))))
+  (+:int (+:int var(a) var(b)) (block (if (<>:bool var(c) null) (block (narrow.nonnull var(c))) (block 0:int))))
 ```
 
 ```hir
 ;; hir -O1 fn=narrowLen
 fn narrowLen (s:obj, v:obj) -> int {nothrow unique}
-  (def a (if (<>:bool var(s) null) (jcall String.length var(s)) 0:int))
-  (def b (if (is var(v) string) (jcall String.length var(v)) var(v)))
+  (def a (if (<>:bool var(s) null) (jcall String.length (narrow.nonnull var(s))) 0:int))
+  (def b (if (is var(v) string) (jcall String.length (narrow.is[string] var(v))) var(v)))
   (def c (safe-call var(s)?.length))
-  (+:int (+:int var(a) var(b)) (if (<>:bool var(c) null) var(c) 0:int))
+  (+:int (+:int var(a) var(b)) (if (<>:bool var(c) null) (narrow.nonnull var(c)) 0:int))
 ```
 
 ```mir

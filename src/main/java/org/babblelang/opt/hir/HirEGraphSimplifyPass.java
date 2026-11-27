@@ -261,6 +261,22 @@ public final class HirEGraphSimplifyPass implements HirPass {
             }
         }
 
+        // Simplify explicit Widen and Convert nodes (BIP039-D4)
+        if (cur instanceof HirExpr.Widen w) {
+            HirExpr folded = HirConstFolder.tryFoldWiden(w);
+            if (folded != null) {
+                rewrites[0]++;
+                return folded;
+            }
+        }
+        if (cur instanceof HirExpr.Convert cv) {
+            HirExpr folded = HirConstFolder.tryFoldConvert(cv);
+            if (folded != null) {
+                rewrites[0]++;
+                return folded;
+            }
+        }
+
         // Short-circuit logic folding
         if (cur instanceof HirExpr.Logic l) {
             HirExpr folded = HirConstFolder.tryFoldLogic(l);

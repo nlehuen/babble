@@ -703,6 +703,9 @@ public final class HirTryNormalize {
             case HirExpr.RecordReuse r -> containsTry(r.target()) || anyContainsTry(r.args());
             case HirExpr.Move m -> containsTry(m.operand());
             case HirExpr.Freeze f -> containsTry(f.operand());
+            case HirExpr.Narrow n -> containsTry(n.operand());
+            case HirExpr.Convert cv -> containsTry(cv.operand());
+            case HirExpr.Widen w -> containsTry(w.operand());
         };
     }
 

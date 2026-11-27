@@ -157,7 +157,7 @@ assert(Vec3(1.0, 2.0, 3.0).y == 2.0)
 ```hir
 ;; hir -O0 fn=f
 fn f (a:int, b:int) -> double {nothrow unique}
-  (def v (record-new Vec3 3.0:double var(a) var(b)))
+  (def v (record-new Vec3 3.0:double (widen[double] var(a)) (widen[double] var(b))))
   (+:double (+:double (get-this-field x) (*:double (get-this-field y) 10.0:double)) (*:double (get-this-field z) 100.0:double))
 ```
 
@@ -165,8 +165,8 @@ fn f (a:int, b:int) -> double {nothrow unique}
 ;; hir -O1 fn=f
 fn f (a:int, b:int) -> double {nothrow unique}
   (block
-    (def $sr_t0 var(a))
-    (def $sr_t1 var(b))
+    (def $sr_t0 (widen[double] var(a)))
+    (def $sr_t1 (widen[double] var(b)))
     (def $sr_v_0 var($sr_t0))
     (def $sr_v_1 var($sr_t1))
     (def $sr_v_2 3.0:double))
@@ -643,7 +643,7 @@ fn run () -> double {nothrow unique}
       (set s (+:double (+:double var(s) (get-this-field x)) (get-this-field y)))))
   (try
     (block
-      (if (<:bool var(s) 0.0:double) (block (call name(assert) false:bool)))
+      (if (<:bool var(s) 0.0:double) (box (block (call name(assert) false:bool))))
       (def w (record-new Vec3 var(s) 2.0:double 0.0:double))
       (+:double (get-this-field x) (get-this-field y)))
     (catch e
@@ -666,7 +666,7 @@ fn run () -> double {nothrow unique}
       (set s (+:double (+:double var(s) var($sr_v_0)) var($sr_v_1)))))
   (try
     (block
-      (if (<:bool var(s) 0.0:double) (call name(assert) false:bool))
+      (if (<:bool var(s) 0.0:double) (box (call name(assert) false:bool)))
       (block
         (def $sr_w_0 var(s))
         (def $sr_w_1 2.0:double)
@@ -947,7 +947,7 @@ assert(r() == 10.0)
 ```hir
 ;; hir -O0 fn=r
 fn r () -> double {nothrow unique}
-  (def x (get-this-field a))
+  (def x (widen[double] (get-this-field a)))
   (def y (get-this-field b))
   (+:double (+:double var(x) var(y)) (call name(double) (get-this-field a)))
 ```

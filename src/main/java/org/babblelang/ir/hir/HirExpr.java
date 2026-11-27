@@ -74,7 +74,10 @@ public sealed interface HirExpr
                 HirExpr.RecordNew,
                 HirExpr.RecordReuse,
                 HirExpr.Move,
-                HirExpr.Freeze {
+                HirExpr.Freeze,
+                HirExpr.Narrow,
+                HirExpr.Convert,
+                HirExpr.Widen {
 
     ExprMeta meta();
 
@@ -963,4 +966,34 @@ public sealed interface HirExpr
      * {@code BIP014-I4}).
      */
     record Freeze(HirExpr operand, ExprMeta meta) implements HirExpr {}
+
+    // ---------------------------------------------------------------- guard anchors & explicit
+    // conversions (BIP039-D3, BIP039-D4)
+
+    /** Kind of runtime invariant established by an enclosing guard ({@code BIP039-D3}). */
+    enum NarrowKind {
+        NON_NULL,
+        IS_TYPE
+    }
+
+    /**
+     * Zero-cost guard dependency anchor ({@code BIP039-D3}).
+     *
+     * <p>Wraps a narrowed read inside an {@code if}, {@code &&}/{@code ||}, {@code while}, or
+     * {@code match} guard scope. Both JVM and Wasm emitters emit {@code operand} directly with zero
+     * runtime instructions, while {@code guardId} structurally prevents LICM, AEGraph, and
+     * predicate reordering from moving this read above its guarding condition.
+     */
+    record Narrow(
+            HirExpr operand, NarrowKind narrowKind, int guardId, String targetDesc, ExprMeta meta)
+            implements HirExpr {}
+
+    /** Explicit boxing, unboxing, or primitive kind conversion ({@code BIP039-D4}). */
+    record Convert(HirExpr operand, PrimitiveKind targetKind, ExprMeta meta) implements HirExpr {}
+
+    /**
+     * Explicit numeric widening to target rank {@code 1..5} (short, int, long, float, double)
+     * ({@code BIP039-D4}).
+     */
+    record Widen(HirExpr operand, int wideningRank, ExprMeta meta) implements HirExpr {}
 }

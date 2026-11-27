@@ -101,7 +101,7 @@ fn foldMath (flag:bool) -> double {pure unique}
   (def a (if var(flag) (block -9:int) (block -9:int)))
   (def b (jcall Math.abs var(a)))
   (def s (+:obj "ab" "cd"))
-  (+:double (block (as var(b) double|double|)) (jcall String.length var(s)))
+  (+:double (block (as var(b) double|double|)) (convert[double] (jcall String.length var(s))))
 ```
 
 ```hir
@@ -109,7 +109,7 @@ fn foldMath (flag:bool) -> double {pure unique}
 fn foldMath (flag:bool) -> double {pure unique}
   (def a (if var(flag) -9:int -9:int))
   (def b (jcall Math.abs var(a)))
-  (+:double (as var(b) double|double|) 4:int)
+  (+:double (as var(b) double|double|) 4.0:double)
 ```
 
 ```mir
@@ -128,10 +128,9 @@ fn foldMath(v0: bool) -> double:
     v5: any = convert.any v4
     v6: any = checkcast v5 <double|double|>
     v7: double = convert.double v6
-    v8: int = const 4
-    v9: double = convert.double v8
-    v10: double = add v7, v9 {pure}
-    ret v10
+    v8: double = const 4.0
+    v9: double = add v7, v8 {pure}
+    ret v9
 ```
 
 ```mir
@@ -306,7 +305,7 @@ fn sccpNum (p:bool) -> double {nothrow unique}
   (def b (+:long (block (neg var(l))) (*:long (block (-:long (+:long var(l) 2:long) 1:long)) 2:long)))
   (def c (+:float (block (neg var(f))) (/:float (*:float (block (-:float (+:float var(f) 2.0:float) 1.0:float)) 2.0:float) 2.0:float)))
   (def e (+:double (block (neg var(d))) (/:double (block (-:double var(d) 2.0:double)) 2.0:double)))
-  (+:double (+:float (+:long var(a) var(b)) var(c)) var(e))
+  (+:double (convert[double] (+:float (convert[float] (+:long (convert[long] var(a)) var(b))) var(c))) var(e))
 ```
 
 ```hir
@@ -320,7 +319,7 @@ fn sccpNum (p:bool) -> double {nothrow unique}
   (def b (+:long (neg var(l)) (*:long (-:long (+:long var(l) 2:long) 1:long) 2:long)))
   (def c (+:float (neg var(f)) (/:float (*:float (-:float (+:float var(f) 2.0:float) 1.0:float) 2.0:float) 2.0:float)))
   (def e (+:double (neg var(d)) (/:double (-:double var(d) 2.0:double) 2.0:double)))
-  (+:double (+:float (+:long var(a) var(b)) var(c)) var(e))
+  (+:double (convert[double] (+:float (convert[float] (+:long (convert[long] var(a)) var(b))) var(c))) var(e))
 ```
 
 ```mir
@@ -429,9 +428,9 @@ fn sccpBoolChar (p:bool) -> int {nothrow unique}
   (def c (if var(p) (block 'b') (block 'b')))
   (def s (if var(p) (block null) (block null)))
   (def r 0:int)
-  (if (and (block (==:bool var(b) true:bool)) (block (<>:bool var(b) false:bool))) (block (set r += 1:int)))
-  (if (and (and (block (>=:bool var(c) 'a')) (block (<=:bool var(c) 'c'))) (block (<>:bool var(c) 'z'))) (block (set r += 2:int)))
-  (if (==:bool var(s) null) (block (set r += 4:int)))
+  (if (and (block (==:bool var(b) true:bool)) (block (<>:bool var(b) false:bool))) (box (block (set r += 1:int))))
+  (if (and (and (block (>=:bool var(c) 'a')) (block (<=:bool var(c) 'c'))) (block (<>:bool var(c) 'z'))) (box (block (set r += 2:int))))
+  (if (==:bool var(s) null) (box (block (set r += 4:int))))
   var(r)
 ```
 
@@ -442,9 +441,9 @@ fn sccpBoolChar (p:bool) -> int {nothrow unique}
   (def c (if var(p) 'b' 'b'))
   (def s (if var(p) null null))
   (def r 0:int)
-  (if (and var(b) var(b)) (set r += 1:int))
-  (if (and (and (>=:bool var(c) 'a') (<=:bool var(c) 'c')) (<>:bool var(c) 'z')) (set r += 2:int))
-  (if (==:bool var(s) null) (set r += 4:int))
+  (if (and var(b) var(b)) (box (set r += 1:int)))
+  (if (and (and (>=:bool var(c) 'a') (<=:bool var(c) 'c')) (<>:bool var(c) 'z')) (box (set r += 2:int)))
+  (if (==:bool var(s) null) (box (set r += 4:int)))
   var(r)
 ```
 
@@ -587,8 +586,8 @@ fn sccpRel (p:bool) -> int {nothrow unique}
   (def f (if var(p) (block 2.5:float) (block 2.5:float)))
   (def d (if var(p) (block 3.5:double) (block 3.5:double)))
   (def r 0:int)
-  (if (and (block (<=:bool var(l) 5:long)) (block (<>:bool var(l) 6:long))) (block (set r += 1:int)))
-  (if (and (block (>=:bool var(f) 2.5:float)) (block (>:bool var(d) 3.0:double))) (block (set r += 2:int)))
+  (if (and (block (<=:bool var(l) 5:long)) (block (<>:bool var(l) 6:long))) (box (block (set r += 1:int))))
+  (if (and (block (>=:bool var(f) 2.5:float)) (block (>:bool var(d) 3.0:double))) (box (block (set r += 2:int))))
   var(r)
 ```
 
@@ -599,8 +598,8 @@ fn sccpRel (p:bool) -> int {nothrow unique}
   (def f (if var(p) 2.5:float 2.5:float))
   (def d (if var(p) 3.5:double 3.5:double))
   (def r 0:int)
-  (if (and (<=:bool var(l) 5:long) (<>:bool var(l) 6:long)) (set r += 1:int))
-  (if (and (>=:bool var(f) 2.5:float) (>:bool var(d) 3.0:double)) (set r += 2:int))
+  (if (and (<=:bool var(l) 5:long) (<>:bool var(l) 6:long)) (box (set r += 1:int)))
+  (if (and (>=:bool var(f) 2.5:float) (>:bool var(d) 3.0:double)) (box (set r += 2:int)))
   var(r)
 ```
 
@@ -708,7 +707,7 @@ fn sccpJdk (p:bool) -> double {nothrow unique}
   (def c (if var(p) (block 'a') (block 'a')))
   (def s (if var(p) (block "hi") (block "hi")))
   (def k (+:int (+:int (block (if var(l) (block 1:int) (block 0:int))) (block (if var(s) (block 2:int) (block 0:int)))) (block (if var(c) (block 1:int) (block 0:int)))))
-  (+:float (+:float (jcall Math.abs var(l)) (jcall Math.abs var(f))) var(k))
+  (widen[double] (+:float (+:float (convert[float] (jcall Math.abs var(l))) (jcall Math.abs var(f))) (convert[float] var(k))))
 ```
 
 ```hir
@@ -719,7 +718,7 @@ fn sccpJdk (p:bool) -> double {nothrow unique}
   (def c (if var(p) 'a' 'a'))
   (def s (if var(p) "hi" "hi"))
   (def k (+:int (+:int (if var(l) 1:int 0:int) (if var(s) 2:int 0:int)) (if var(c) 1:int 0:int)))
-  (+:float (+:float (jcall Math.abs var(l)) (jcall Math.abs var(f))) var(k))
+  (widen[double] (+:float (+:float (convert[float] (jcall Math.abs var(l))) (jcall Math.abs var(f))) (convert[float] var(k))))
 ```
 
 ```mir

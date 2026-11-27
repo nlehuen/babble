@@ -85,21 +85,27 @@ assert(wd == 42.0 and bd == 3.0 and obj.k == 7)
 ```
 
 ```hir
-;; hir -O0,-O1 fn=wf1
+;; hir -O0 fn=wf1
 fn wf1 () -> double {nothrow unique}
-  1:int
+  (widen[double] 1:int)
+```
+
+```hir
+;; hir -O1 fn=wf1
+fn wf1 () -> double {nothrow unique}
+  1.0:double
 ```
 
 ```hir
 ;; hir -O0 fn=wf2
 fn wf2 (flag:bool) -> double {nothrow}
-  (if var(flag) (block 1:int) (block 2.5:double))
+  (if var(flag) (widen[double] (block 1:int)) (block 2.5:double))
 ```
 
 ```hir
 ;; hir -O1 fn=wf2
 fn wf2 (flag:bool) -> double {nothrow}
-  (if var(flag) (block 1:int) 2.5:double)
+  (if var(flag) 1.0:double 2.5:double)
 ```
 
 ```mir
@@ -111,11 +117,10 @@ fn wf2(v0: bool) -> double:
     v1: double = const 2.5
     br bb3(v1)
   bb2:
-    v2: int = const 1
-    v3: double = convert.double v2
-    br bb3(v3)
-  bb3(v4: double):
-    ret v4
+    v2: double = const 1.0
+    br bb3(v2)
+  bb3(v3: double):
+    ret v3
 ```
 
 ```mir
@@ -150,12 +155,12 @@ top-level:
   (def dynNum (fn-ref dynNum))
   (def x 1:int)
   (def b (call (block (class-ref class))))
-  (def d1 (block (set-name x 5:int)))
-  (def d2 (block (set-name x += 3:int)))
-  (def d3 (block (set-field name(b).v 7:int)))
-  (def d4 (block (set-field name(b).v 2:int)))
-  (def d5 (block (set-field name(b).v 1:int)))
-  (def d6 (block (set-field name(b).v 2:int)))
+  (def d1 (widen[double] (block (set-name x 5:int))))
+  (def d2 (widen[double] (block (set-name x += 3:int))))
+  (def d3 (widen[double] (block (set-field name(b).v 7:int))))
+  (def d4 (widen[double] (block (set-field name(b).v 2:int))))
+  (def d5 (widen[double] (block (set-field name(b).v 1:int))))
+  (def d6 (widen[double] (block (set-field name(b).v 2:int))))
   (call name(assert) (and (and (and (and (and (==:bool name(d1) 5.0:double) (==:bool name(d2) 8.0:double)) (==:bool name(d3) 7.0:double)) (==:bool name(d4) 9.0:double)) (==:bool name(d5) 8.0:double)) (==:bool name(d6) 16.0:double)))
 ```
 
@@ -165,12 +170,12 @@ top-level:
   (def dynNum (fn-ref dynNum))
   (def x 1:int)
   (def b (call (class-ref class)))
-  (def d1 (set-name x 5:int))
-  (def d2 (set-name x += 3:int))
-  (def d3 (set-field name(b).v 7:int))
-  (def d4 (set-field name(b).v 2:int))
-  (def d5 (set-field name(b).v 1:int))
-  (def d6 (set-field name(b).v 2:int))
+  (def d1 (widen[double] (set-name x 5:int)))
+  (def d2 (widen[double] (set-name x += 3:int)))
+  (def d3 (widen[double] (set-field name(b).v 7:int)))
+  (def d4 (widen[double] (set-field name(b).v 2:int)))
+  (def d5 (widen[double] (set-field name(b).v 1:int)))
+  (def d6 (widen[double] (set-field name(b).v 2:int)))
   (call name(assert) (and (and (and (and (and (==:bool name(d1) 5.0:double) (==:bool name(d2) 8.0:double)) (==:bool name(d3) 7.0:double)) (==:bool name(d4) 9.0:double)) (==:bool name(d5) 8.0:double)) (==:bool name(d6) 16.0:double)))
 ```
 
@@ -193,8 +198,8 @@ assert(d7 == 4.0 and d8 == 6.0)
 top-level:
   (def dynNum (fn-ref dynNum))
   (def st (jnew StreamTokenizer (jnew StringReader "a")))
-  (def d7 (block (set-jfield ttype name(st) 4:int)))
-  (def d8 (block (set-jfield ttype name(st) 2:int)))
+  (def d7 (widen[double] (block (set-jfield ttype name(st) 4:int))))
+  (def d8 (widen[double] (block (set-jfield ttype name(st) 2:int))))
   (call name(assert) (and (==:bool name(d7) 4.0:double) (==:bool name(d8) 6.0:double)))
 ```
 
@@ -203,8 +208,8 @@ top-level:
 top-level:
   (def dynNum (fn-ref dynNum))
   (def st (jnew StreamTokenizer (jnew StringReader "a")))
-  (def d7 (set-jfield ttype name(st) 4:int))
-  (def d8 (set-jfield ttype name(st) 2:int))
+  (def d7 (widen[double] (set-jfield ttype name(st) 4:int)))
+  (def d8 (widen[double] (set-jfield ttype name(st) 2:int)))
   (call name(assert) (and (==:bool name(d7) 4.0:double) (==:bool name(d8) 6.0:double)))
 ```
 
@@ -231,30 +236,30 @@ C(9, 6.0).run()
 ```hir
 ;; hir -O0 fn=C.run
 fn C.run () -> bool {mut unique}
-  (def loc 9:int)
+  (def loc (box 9:int))
   (set loc /= 2:int)
-  (set loc += (call-fn dynNum 2:int))
+  (set loc += (call-fn dynNum (box 2:int)))
   (set-this-field n *= 2:int)
   (set-this-field n -= 1:int)
   (set-this-field d /= 2:int)
-  (set-this-field d += (call-fn dynNum 2:int))
+  (set-this-field d += (call-fn dynNum (box 2:int)))
   (call name(assert) (and (and (==:bool var(loc) 6.5:double) (==:bool (get-this-field n) 17:int)) (==:bool (get-this-field d) 5.0:double)))
 ```
 
 ```hir
 ;; hir -O1 fn=C.run
 fn C.run () -> bool {mut unique}
-  (def loc 9:int)
+  (def loc (box 9:int))
   (set loc /= 2:int)
   (set loc +=
     (block
-      (def v#1 2:int)
+      (def v#1 (box 2:int))
       var(v#1)))
   (set-this-field n *= 2:int)
   (set-this-field n -= 1:int)
   (set-this-field d /= 2:int)
   (set-this-field d += (block
-      (def v#2 2:int)
+      (def v#2 (box 2:int))
       var(v#2)))
   (call name(assert) (and (and (==:bool var(loc) 6.5:double) (==:bool (get-this-field n) 17:int)) (==:bool (get-this-field d) 5.0:double)))
 ```
@@ -438,8 +443,8 @@ fn mkSt () -> obj {io}
 top-level:
   (def dynNum (fn-ref dynNum))
   (def mkSt (fn-ref mkSt))
-  (call name(assert) (==:bool (jcall Long.sum 3:long 4:long) 7:int))
-  (call name(assert) (==:bool (jcall Float.sum 3:int 4:int) 7.0:double))
+  (call name(assert) (==:bool (jcall Long.sum 3:long 4:long) (convert[long] 7:int)))
+  (call name(assert) (==:bool (convert[double] (jcall Float.sum (widen[float] 3:int) (widen[float] 4:int))) 7.0:double))
   (call name(assert) (==:bool (jcall Math.abs -5:int) 5:int))
   (call name(assert) (==:bool (jcall Math.abs -9:int) 9:int))
   (call name(assert) (==:bool (get-jfield StreamTokenizer.TT_EOF (call-fn mkSt)) -1:int))
@@ -450,8 +455,8 @@ top-level:
 top-level:
   (def dynNum (fn-ref dynNum))
   (def mkSt (fn-ref mkSt))
-  (call name(assert) (==:bool (jcall Long.sum 3:long 4:long) 7:int))
-  (call name(assert) (==:bool (jcall Float.sum 3.0:float 4.0:float) 7.0:double))
+  (call name(assert) (==:bool (jcall Long.sum 3:long 4:long) 7:long))
+  (call name(assert) (==:bool (convert[double] (jcall Float.sum 3.0:float 4.0:float)) 7.0:double))
   (call name(assert) true:bool)
   (call name(assert) true:bool)
   (call name(assert) (==:bool (get-jfield StreamTokenizer.TT_EOF (call-fn mkSt)) -1:int))

@@ -512,7 +512,7 @@ fn bump (h:obj, fl:bool) -> obj {nothrow}
     (def $try2
       (try
         (block
-          (if var(fl) (block (call name(assert) false:bool)))
+          (if var(fl) (box (block (call name(assert) false:bool))))
           (+:int (get-this-field count) 1:int))
         (catch e
           9:int)))
@@ -528,7 +528,7 @@ fn bump (h:obj, fl:bool) -> obj {nothrow}
     (def $try2
       (try
         (block
-          (if var(fl) (call name(assert) false:bool))
+          (if var(fl) (box (call name(assert) false:bool)))
           (+:int (get-this-field count) 1:int))
         (catch e
           9:int)))
@@ -621,7 +621,7 @@ fn r (fl:bool) -> int {nothrow unique}
     (def $try1
       (try
         (block
-          (if var(fl) (block (call name(assert) false:bool)))
+          (if var(fl) (box (block (call name(assert) false:bool))))
           2:int)
         (catch e
           3:int)))
@@ -637,7 +637,7 @@ fn r (fl:bool) -> int {nothrow unique}
     (def n
       (try
         (block
-          (if var(fl) (call name(assert) false:bool))
+          (if var(fl) (box (call name(assert) false:bool)))
           2:int)
         (catch e
           3:int)))
@@ -728,7 +728,7 @@ fn r (fl:bool) -> int {io}
     (def $try0
       (try
         (block
-          (if var(fl) (block (call name(assert) false:bool)))
+          (if var(fl) (box (block (call name(assert) false:bool))))
           10:int)
         (catch e
           20:int)))
@@ -743,7 +743,7 @@ fn r (fl:bool) -> int {io}
     (def $try0
       (try
         (block
-          (if var(fl) (call name(assert) false:bool))
+          (if var(fl) (box (call name(assert) false:bool)))
           10:int)
         (catch e
           20:int)))

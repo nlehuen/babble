@@ -82,13 +82,13 @@ assert(sumTail(1000, 0L) == 500500L)
 ```hir
 ;; hir -O0 fn=sumTail
 fn sumTail (n:int, acc:long) -> long {nothrow}
-  (if (<=:bool var(n) 0:int) (block var(acc)) (block (tail-call sumTail (-:int var(n) 1:int) (+:long var(acc) var(n)))))
+  (if (<=:bool var(n) 0:int) (block var(acc)) (block (tail-call sumTail (-:int var(n) 1:int) (+:long var(acc) (convert[long] var(n))))))
 ```
 
 ```hir
 ;; hir -O1 fn=sumTail
 fn sumTail (n:int, acc:long) -> long {nothrow}
-  (if (<=:bool var(n) 0:int) var(acc) (tail-call sumTail (-:int var(n) 1:int) (+:long var(acc) var(n))))
+  (if (<=:bool var(n) 0:int) var(acc) (tail-call sumTail (-:int var(n) 1:int) (+:long var(acc) (convert[long] var(n)))))
 ```
 
 ```mir

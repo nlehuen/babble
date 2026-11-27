@@ -121,11 +121,11 @@ top-level:
   (def dynNum (fn-ref dynNum))
   (def x 4:int)
   (def z (+:int (+:int (+:int (+:int (block (-:int 0:int name(x))) (block (+:int (*:int 10:int 2:int) 1:int))) (neg (block -3:int))) (neg (block (-:int -2147483647:int 1:int)))) (neg (block (-:int 0:int name(x))))))
-  (def dm (+:double 1:int 2.0:double))
-  (def dmin -2147483648:int)
+  (def dm (+:double (convert[double] 1:int) 2.0:double))
+  (def dmin (widen[double] -2147483648:int))
   (call name(assert) (==:bool name(z) -2147483624:int))
   (call name(assert) (==:bool name(dm) 3.0:double))
-  (call name(assert) (==:bool name(dmin) -2147483648:int))
+  (call name(assert) (==:bool name(dmin) (convert[double] -2147483648:int)))
 ```
 
 ```hir
@@ -135,10 +135,10 @@ top-level:
   (def x 4:int)
   (def z (+:int (+:int (neg name(x)) -2147483624:int) name(x)))
   (def dm 3.0:double)
-  (def dmin -2147483648:int)
+  (def dmin -2.147483648E9:double)
   (call name(assert) (==:bool name(z) -2147483624:int))
   (call name(assert) (==:bool name(dm) 3.0:double))
-  (call name(assert) (==:bool name(dmin) -2147483648:int))
+  (call name(assert) (==:bool name(dmin) -2.147483648E9:double))
 ```
 
 ```mir
@@ -167,7 +167,7 @@ top-level:
   (call name(assert) (and (==:bool (block (==:bool name(b1) name(b2))) false:bool) (==:bool (block (<>:bool name(b1) name(b2))) true:bool)))
   (call name(assert) (if (not (block (<:bool name(x) 5:int))) (block true:bool) (block false:bool)))
   (call name(assert) (if (or (block (<:bool name(x) 5:int)) (block (<:bool name(y) 5:int))) (block false:bool) (block true:bool)))
-  (call name(assert) (and (and (and (and (block (==:bool 1:int 1.0:double)) (block (<>:bool 2:int 3.0:double))) (block (==:bool name(b1) true:bool))) (block (<>:bool name(b1) false:bool))) (block (block (<:bool 1:int 2:int)))))
+  (call name(assert) (and (and (and (and (block (==:bool (convert[double] 1:int) 1.0:double)) (block (<>:bool (convert[double] 2:int) 3.0:double))) (block (==:bool name(b1) true:bool))) (block (<>:bool name(b1) false:bool))) (block (block (<:bool 1:int 2:int)))))
 ```
 
 ```hir
@@ -289,12 +289,12 @@ assert(checkD(2.5) == 6)
 ;; hir -O0 fn=checkD
 fn checkD (d:double) -> int {nothrow unique}
   (def hits 0:int)
-  (if (<:bool var(d) 3.0:double) (block (set hits += 1:int)))
-  (if (<=:bool var(d) 2.5:double) (block (set hits += 1:int)))
-  (if (==:bool var(d) 2.5:double) (block (set hits += 1:int)))
-  (if (<>:bool var(d) 1.0:double) (block (set hits += 1:int)))
-  (if (>=:bool var(d) 2.5:double) (block (set hits += 1:int)))
-  (if (>:bool var(d) 2.0:double) (block (set hits += 1:int)))
+  (if (<:bool var(d) 3.0:double) (box (block (set hits += 1:int))))
+  (if (<=:bool var(d) 2.5:double) (box (block (set hits += 1:int))))
+  (if (==:bool var(d) 2.5:double) (box (block (set hits += 1:int))))
+  (if (<>:bool var(d) 1.0:double) (box (block (set hits += 1:int))))
+  (if (>=:bool var(d) 2.5:double) (box (block (set hits += 1:int))))
+  (if (>:bool var(d) 2.0:double) (box (block (set hits += 1:int))))
   var(hits)
 ```
 
@@ -302,12 +302,12 @@ fn checkD (d:double) -> int {nothrow unique}
 ;; hir -O1 fn=checkD
 fn checkD (d:double) -> int {nothrow unique}
   (def hits 0:int)
-  (if (<:bool var(d) 3.0:double) (set hits += 1:int))
-  (if (<=:bool var(d) 2.5:double) (set hits += 1:int))
-  (if (==:bool var(d) 2.5:double) (set hits += 1:int))
-  (if (<>:bool var(d) 1.0:double) (set hits += 1:int))
-  (if (>=:bool var(d) 2.5:double) (set hits += 1:int))
-  (if (>:bool var(d) 2.0:double) (set hits += 1:int))
+  (if (<:bool var(d) 3.0:double) (box (set hits += 1:int)))
+  (if (<=:bool var(d) 2.5:double) (box (set hits += 1:int)))
+  (if (==:bool var(d) 2.5:double) (box (set hits += 1:int)))
+  (if (<>:bool var(d) 1.0:double) (box (set hits += 1:int)))
+  (if (>=:bool var(d) 2.5:double) (box (set hits += 1:int)))
+  (if (>:bool var(d) 2.0:double) (box (set hits += 1:int)))
   var(hits)
 ```
 

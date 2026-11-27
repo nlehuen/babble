@@ -275,14 +275,14 @@ checkGuard(-5)
 ```hir
 ;; hir -O0 fn=checkGuard
 fn checkGuard (x:int) -> bool {pure unique}
-  (def wd (jcall Math.abs (jcall Math.abs var(x))))
+  (def wd (widen[double] (jcall Math.abs (jcall Math.abs var(x)))))
   (call name(assert) (and (==:bool var(wd) 5.0:double) (==:bool (call-fn lateClamp (call-fn lateClamp var(x))) 0:int)))
 ```
 
 ```hir
 ;; hir -O1 fn=checkGuard
 fn checkGuard (x:int) -> bool {pure unique}
-  (def wd (jcall Math.abs var(x#1)))
+  (def wd (widen[double] (jcall Math.abs var(x#1))))
   (call name(assert) (and (==:bool var(wd) 5.0:double) (==:bool (block
           name(lateClamp)
           (def x#2

@@ -106,7 +106,7 @@ fn C.run () -> bool {mut unique}
   (set-this-field label "abc")
   (set-this-field label += "!")
   (set-this-field n += 5:int)
-  (set-this-field d (call-method this.optM 1:int))
+  (set-this-field d (widen[double] (call-method this.optM 1:int)))
   (call name(assert) (and (and (==:bool (get-this-field d) 11.0:double) (==:bool (get-this-field label) "abc!")) (==:bool (get-this-field n) 15:int)))
 ```
 

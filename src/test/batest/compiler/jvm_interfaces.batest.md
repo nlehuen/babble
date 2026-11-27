@@ -63,7 +63,7 @@ assert((c is Calc) and (c is Impl) and not ("no" is Calc))
 class Impl (bias:double)
   (def calc (fn-ref Impl.calc))
   fn Impl.calc (a:int, b:double, neg:bool) -> double {nothrow}
-    (def v (+:double (+:double var(a) var(b)) var(bias)))
+    (def v (+:double (+:double (convert[double] var(a)) var(b)) var(bias)))
     (if var(neg) (block (neg var(v))) (block var(v)))
 ```
 
@@ -72,7 +72,7 @@ class Impl (bias:double)
 class Impl (bias:double)
   (def calc (fn-ref Impl.calc))
   fn Impl.calc (a:int, b:double, neg:bool) -> double {nothrow}
-    (def v (+:double (+:double var(a) var(b)) var(bias)))
+    (def v (+:double (+:double (convert[double] var(a)) var(b)) var(bias)))
     (if var(neg) (neg var(v)) var(v))
 ```
 
@@ -337,7 +337,7 @@ top-level:
         (def a 3:int)
         var(a))
       (block 4:int)))
-  (call name(assert) (==:bool (call-iface name(sink).accept name(boxedIntExpr)) 6.0:double))
+  (call name(assert) (==:bool (call-iface name(sink).accept (widen[double] name(boxedIntExpr))) 6.0:double))
 ```
 
 ```hir
@@ -355,7 +355,7 @@ top-level:
   (def sink (call name(Sink)))
   (def cond true:bool)
   (def boxedIntExpr (if name(cond) 3:int 4:int))
-  (call name(assert) (==:bool (call-iface name(sink).accept name(boxedIntExpr)) 6.0:double))
+  (call name(assert) (==:bool (call-iface name(sink).accept (widen[double] name(boxedIntExpr))) 6.0:double))
 ```
 
 ```mir

@@ -162,7 +162,7 @@ assert(f())
 ```hir
 ;; hir -O0 fn=f
 fn f () -> bool {nothrow unique}
-  (and (and (and (and (and (and (and (block (==:bool (*:int (block (-:int (+:int 10:int 2:int) 4:int)) 3:int) 24:int)) (block (==:bool (*:long (block (-:long (+:long 10:long 2:long) 4:long)) 3:long) 24:long))) (block (==:bool (/:double 10:int 2:int) 5:int))) (block (==:bool (/:double 10:long 2:long) 5:long))) (block (==:bool (/:float (*:float (block (-:float (+:float 1.5:float 2.5:float) 1.0:float)) 2.0:float) 3.0:float) 2.0:float))) (block (==:bool (/:double (*:double (block (-:double (+:double 1.5:double 2.5:double) 1.0:double)) 2.0:double) 3.0:double) 2.0:double))) (block (==:bool (neg (block (+:float 1.5:float 2.5:float))) -4.0:float))) (block (==:bool (neg (block (+:long 1:long 2:long))) -3:long)))
+  (and (and (and (and (and (and (and (block (==:bool (*:int (block (-:int (+:int 10:int 2:int) 4:int)) 3:int) 24:int)) (block (==:bool (*:long (block (-:long (+:long 10:long 2:long) 4:long)) 3:long) 24:long))) (block (==:bool (/:double (convert[double] 10:int) (convert[double] 2:int)) (convert[double] 5:int)))) (block (==:bool (/:double (convert[double] 10:long) (convert[double] 2:long)) (convert[double] 5:long)))) (block (==:bool (/:float (*:float (block (-:float (+:float 1.5:float 2.5:float) 1.0:float)) 2.0:float) 3.0:float) 2.0:float))) (block (==:bool (/:double (*:double (block (-:double (+:double 1.5:double 2.5:double) 1.0:double)) 2.0:double) 3.0:double) 2.0:double))) (block (==:bool (neg (block (+:float 1.5:float 2.5:float))) -4.0:float))) (block (==:bool (neg (block (+:long 1:long 2:long))) -3:long)))
 ```
 
 ```hir
@@ -198,11 +198,11 @@ assert(f())
 ;; hir -O0 fn=f
 fn f () -> bool {pure unique}
   (def bConst (call name(byte) 3:int))
-  (def sConst var(bConst))
-  (def iConst var(sConst))
-  (def lConst var(iConst))
+  (def sConst (widen[short] var(bConst)))
+  (def iConst (widen[int] var(sConst)))
+  (def lConst (widen[long] var(iConst)))
   (def fConst 2.5:float)
-  (def dConst var(fConst))
+  (def dConst (widen[double] var(fConst)))
   (and (==:bool var(lConst) 3:long) (==:bool var(dConst) 2.5:double))
 ```
 
@@ -210,9 +210,9 @@ fn f () -> bool {pure unique}
 ;; hir -O1 fn=f
 fn f () -> bool {pure unique}
   (def bConst (call name(byte) 3:int))
-  (def sConst var(bConst))
-  (def iConst var(sConst))
-  (def lConst var(iConst))
+  (def sConst (widen[short] var(bConst)))
+  (def iConst (widen[int] var(sConst)))
+  (def lConst (widen[long] var(iConst)))
   (and (==:bool var(lConst) 3:long) true:bool)
 ```
 
@@ -275,11 +275,11 @@ assert(f())
 ```hir
 ;; hir -O0 fn=f
 fn f () -> bool {pure unique}
-  (def bs (call name(byte) 3:int))
-  (def sl (call name(short) 4:int))
+  (def bs (widen[short] (call name(byte) 3:int)))
+  (def sl (widen[long] (call name(short) 4:int)))
   (def il 5:long)
-  (def ifl 6:int)
-  (def id 7:int)
+  (def ifl (widen[float] 6:int))
+  (def id (widen[double] 7:int))
   (def kStr "hi")
   (def kNull null)
   (and (and (and (and (and (and (==:bool var(bs) (call name(short) 3:int)) (==:bool var(sl) 4:long)) (==:bool var(il) 5:long)) (==:bool var(ifl) 6.0:float)) (==:bool var(id) 7.0:double)) (==:bool var(kStr) "hi")) (==:bool var(kNull) null))
@@ -288,8 +288,8 @@ fn f () -> bool {pure unique}
 ```hir
 ;; hir -O1 fn=f
 fn f () -> bool {pure unique}
-  (def bs (call name(byte) 3:int))
-  (def sl (call name(short) 4:int))
+  (def bs (widen[short] (call name(byte) 3:int)))
+  (def sl (widen[long] (call name(short) 4:int)))
   (and (and (and (and (and (and (==:bool var(bs) (call name(short) 3:int)) (==:bool var(sl) 4:long)) true:bool) true:bool) true:bool) true:bool) (==:bool null null))
 ```
 

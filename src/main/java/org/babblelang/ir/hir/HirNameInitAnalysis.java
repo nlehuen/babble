@@ -1113,6 +1113,23 @@ final class HirNameInitAnalysis {
                     HirExpr no = fn.apply(f.operand());
                     yield no == f.operand() ? f : new HirExpr.Freeze(no, f.meta());
                 }
+                case HirExpr.Narrow n -> {
+                    HirExpr no = fn.apply(n.operand());
+                    yield no == n.operand()
+                            ? n
+                            : new HirExpr.Narrow(
+                                    no, n.narrowKind(), n.guardId(), n.targetDesc(), n.meta());
+                }
+                case HirExpr.Convert cv -> {
+                    HirExpr no = fn.apply(cv.operand());
+                    yield no == cv.operand()
+                            ? cv
+                            : new HirExpr.Convert(no, cv.targetKind(), cv.meta());
+                }
+                case HirExpr.Widen w -> {
+                    HirExpr no = fn.apply(w.operand());
+                    yield no == w.operand() ? w : new HirExpr.Widen(no, w.wideningRank(), w.meta());
+                }
             };
         }
     }

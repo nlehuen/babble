@@ -384,7 +384,7 @@ assert(run(5) == 11)
 ;; hir -O0 fn=run
 fn run (p:int) -> int {pure unique}
   (def g (call (type-apply name(idG)) var(p)))
-  (def boxed (call-fn inc var(p)))
+  (def boxed (box (call-fn inc var(p))))
   (+:int var(g) (block (as var(boxed) int|int|)))
 ```
 
@@ -392,7 +392,7 @@ fn run (p:int) -> int {pure unique}
 ;; hir -O1 fn=run
 fn run (p:int) -> int {pure unique}
   (def g (call (type-apply name(idG)) var(p)))
-  (def boxed (+:int var(p) 1:int))
+  (def boxed (box (+:int var(p) 1:int)))
   (+:int var(g) (as var(boxed) int|int|))
 ```
 
@@ -560,9 +560,9 @@ fn run (p:int, fl:bool) -> double {pure unique}
 ```hir
 ;; hir -O1 fn=run
 fn run (p:int, fl:bool) -> double {pure unique}
-  (+:double (+:double var(p) 0.5:double) (call name(double) (+:int (block
+  (+:double (+:double (convert[double] var(p)) 0.5:double) (call name(double) (+:int (block
           (def y null)
-          (if var(fl) (set y var(p)) (set y 9:int))
+          (if var(fl) (set y (box var(p))) (set y (box 9:int)))
           (nonnull var(y))) (block
           (def xs (core-new list 1:int 2:int))
           (def s 0:int)

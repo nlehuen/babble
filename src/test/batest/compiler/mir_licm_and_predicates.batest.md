@@ -227,7 +227,7 @@ fn guardedLoop (flag:bool, s:obj, n:int) -> int {nothrow unique}
       (def i 0:int)
       (while (<:bool var(i) var(n))
         (block
-          (if (<>:bool var(s) null) (block (set acc += (jcall String.length var(s)))))
+          (if (<>:bool var(s) null) (box (block (set acc += (jcall String.length (narrow.nonnull var(s)))))))
           (set i += 1:int)))))
   var(acc)
 ```
@@ -241,7 +241,7 @@ fn guardedLoop (flag:bool, s:obj, n:int) -> int {nothrow unique}
       (def i 0:int)
       (while (<:bool var(i) var(n))
         (block
-          (if (<>:bool var(s) null) (set acc += (jcall String.length var(s))))
+          (if (<>:bool var(s) null) (box (set acc += (jcall String.length (narrow.nonnull var(s))))))
           (set i += 1:int)))))
   var(acc)
 ```
@@ -435,13 +435,13 @@ assert(keepGuard("hello", 3) == 1 and keepGuard(null, 3) == 0)
 ```hir
 ;; hir -O0 fn=keepGuard
 fn keepGuard (s:obj, limit:int) -> int {nothrow}
-  (if (and (block (<>:bool var(s) null)) (block (>:bool (jcall String.length var(s)) var(limit)))) (block 1:int) (block 0:int))
+  (if (and (block (<>:bool var(s) null)) (block (>:bool (jcall String.length (narrow.nonnull var(s))) var(limit)))) (block 1:int) (block 0:int))
 ```
 
 ```hir
 ;; hir -O1 fn=keepGuard
 fn keepGuard (s:obj, limit:int) -> int {nothrow}
-  (if (and (<>:bool var(s) null) (>:bool (jcall String.length var(s)) var(limit))) 1:int 0:int)
+  (if (and (<>:bool var(s) null) (>:bool (jcall String.length (narrow.nonnull var(s))) var(limit))) 1:int 0:int)
 ```
 
 ```mir

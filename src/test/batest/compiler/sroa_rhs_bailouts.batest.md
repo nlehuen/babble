@@ -48,7 +48,7 @@ fn run (fl:bool) -> int {pure unique}
   (def q null)
   (set q (record-new Vec3 2.0:double 3.0:double 4.0:double))
   (def tmp null)
-  (set tmp 1:int)
+  (set tmp (box 1:int))
   (+:int (+:int (+:int (block (if (is var(p) Pair) (block (get-this-field a)) (block 0:int))) (call name(int) (get-this-field x))) (nonnull var(tmp))) (block (if (==:bool var(u) null) (block 0:int) (block 1:int))))
 ```
 
@@ -61,7 +61,7 @@ fn run (fl:bool) -> int {pure unique}
   (def q null)
   (set q (record-new Vec3 2.0:double 3.0:double 4.0:double))
   (def tmp null)
-  (set tmp 1:int)
+  (set tmp (box 1:int))
   (+:int (+:int (+:int (if (is var(p) Pair) (get-this-field a) 0:int) (call name(int) (get-this-field x))) (nonnull var(tmp))) (if (==:bool var(u) null) 0:int 1:int))
 ```
 

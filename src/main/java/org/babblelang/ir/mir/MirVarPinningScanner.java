@@ -228,6 +228,9 @@ final class MirVarPinningScanner {
                 scanExpr(m.operand(), visibleVars, tryOuterVars);
             }
             case HirExpr.Freeze f -> scanExpr(f.operand(), visibleVars, tryOuterVars);
+            case HirExpr.Narrow n -> scanExpr(n.operand(), visibleVars, tryOuterVars);
+            case HirExpr.Convert cv -> scanExpr(cv.operand(), visibleVars, tryOuterVars);
+            case HirExpr.Widen w -> scanExpr(w.operand(), visibleVars, tryOuterVars);
             case HirExpr.Break b -> scanExpr(b.value(), visibleVars, tryOuterVars);
             case HirExpr.Return r -> scanExpr(r.value(), visibleVars, tryOuterVars);
             case HirExpr.Throw th -> scanExpr(th.value(), visibleVars, tryOuterVars);

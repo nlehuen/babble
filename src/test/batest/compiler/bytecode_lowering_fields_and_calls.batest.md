@@ -26,8 +26,8 @@ assert(pf.x == 3.0 and pf.y == 4.0 and pt.x == 12 and pt.y == 12 and rect.width 
 top-level:
   (def dynNum (fn-ref dynNum))
   (def pf (jnew Float))
-  (set-jfield x name(pf) (jcall Float.valueOf 3:int))
-  (set-jfield y name(pf) (jcall Float.valueOf 4:int))
+  (set-jfield x name(pf) (jcall Float.valueOf (widen[float] 3:int)))
+  (set-jfield y name(pf) (jcall Float.valueOf (widen[float] 4:int)))
   (def pt (jnew Point 1:int 2:int))
   (set-jfield x name(pt) 5:int)
   (set-jfield x name(pt) 3:int)
@@ -38,7 +38,7 @@ top-level:
   (def rect (jnew Rectangle))
   (set-jfield width name(rect) 10:int)
   (set-jfield width name(rect) 5:int)
-  (call name(assert) (and (and (and (and (==:bool (get-jfield Float.x name(pf)) 3.0:double) (==:bool (get-jfield Float.y name(pf)) 4.0:double)) (==:bool (get-jfield Point.x name(pt)) 12:int)) (==:bool (get-jfield Point.y name(pt)) 12:int)) (==:bool (get-jfield Rectangle.width name(rect)) 15:int)))
+  (call name(assert) (and (and (and (and (==:bool (convert[double] (get-jfield Float.x name(pf))) 3.0:double) (==:bool (convert[double] (get-jfield Float.y name(pf))) 4.0:double)) (==:bool (get-jfield Point.x name(pt)) 12:int)) (==:bool (get-jfield Point.y name(pt)) 12:int)) (==:bool (get-jfield Rectangle.width name(rect)) 15:int)))
 ```
 
 ```hir
@@ -58,7 +58,7 @@ top-level:
   (def rect (jnew Rectangle))
   (set-jfield width name(rect) 10:int)
   (set-jfield width name(rect) 5:int)
-  (call name(assert) (and (and (and (and (==:bool (get-jfield Float.x name(pf)) 3.0:double) (==:bool (get-jfield Float.y name(pf)) 4.0:double)) (==:bool (get-jfield Point.x name(pt)) 12:int)) (==:bool (get-jfield Point.y name(pt)) 12:int)) (==:bool (get-jfield Rectangle.width name(rect)) 15:int)))
+  (call name(assert) (and (and (and (and (==:bool (convert[double] (get-jfield Float.x name(pf))) 3.0:double) (==:bool (convert[double] (get-jfield Float.y name(pf))) 4.0:double)) (==:bool (get-jfield Point.x name(pt)) 12:int)) (==:bool (get-jfield Point.y name(pt)) 12:int)) (==:bool (get-jfield Rectangle.width name(rect)) 15:int)))
 ```
 
 ```mir
@@ -80,12 +80,12 @@ assert(st.nval == 3.0 and st.ttype == 24)
 top-level:
   (def dynNum (fn-ref dynNum))
   (def st (jnew StreamTokenizer (jnew StringReader "x")))
-  (set-jfield nval name(st) 3:int)
+  (set-jfield nval name(st) (widen[double] 3:int))
   (set-jfield nval name(st) 2:int)
   (set-jfield nval name(st) 1.5:double)
   (set-jfield nval name(st) 2.0:double)
   (set-jfield nval name(st) 7:int)
-  (set-jfield nval name(st) (call-fn dynNum 2:int))
+  (set-jfield nval name(st) (call-fn dynNum (box 2:int)))
   (set-jfield ttype name(st) 10:int)
   (set-jfield ttype name(st) 5:int)
   (set-jfield ttype name(st) 3:int)
@@ -98,13 +98,13 @@ top-level:
 top-level:
   (def dynNum (fn-ref dynNum))
   (def st (jnew StreamTokenizer (jnew StringReader "x")))
-  (set-jfield nval name(st) 3:int)
+  (set-jfield nval name(st) 3.0:double)
   (set-jfield nval name(st) 2:int)
   (set-jfield nval name(st) 1.5:double)
   (set-jfield nval name(st) 2.0:double)
   (set-jfield nval name(st) 7:int)
   (set-jfield nval name(st) (block
-      (def v 2:int)
+      (def v (box 2:int))
       var(v)))
   (set-jfield ttype name(st) 10:int)
   (set-jfield ttype name(st) 5:int)
@@ -131,7 +131,7 @@ assert(pd.x == 12.0 and pd.y == 5.0)
 ```
 
 ```hir
-;; hir -O0,-O1 top-level
+;; hir -O0 top-level
 top-level:
   (def dynNum (fn-ref dynNum))
   (def r (jnew Double 1.0:double 2.0:double 3.0:double 4.0:double))
@@ -144,7 +144,26 @@ top-level:
   (set-jfield x name(pd) 4.0:double)
   (set-jfield x name(pd) 3.0:double)
   (set-jfield x name(pd) 2.0:double)
-  (set-jfield y name(pd) 5:int)
+  (set-jfield y name(pd) (widen[double] 5:int))
+  (call name(assert) (and (and (and (==:bool (get-jfield Double.x name(r)) 3.0:double) (==:bool (get-jfield Double.y name(r)) 1.5:double)) (==:bool (get-jfield Double.width name(r)) 6.0:double)) (==:bool (get-jfield Double.height name(r)) 2.0:double)))
+  (call name(assert) (and (==:bool (get-jfield Double.x name(pd)) 12.0:double) (==:bool (get-jfield Double.y name(pd)) 5.0:double)))
+```
+
+```hir
+;; hir -O1 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (def r (jnew Double 1.0:double 2.0:double 3.0:double 4.0:double))
+  (set-jfield x name(r) 2.0:double)
+  (set-jfield y name(r) 0.5:double)
+  (set-jfield width name(r) 2.0:double)
+  (set-jfield height name(r) 2.0:double)
+  (def pd (jnew Double 10.0:double 20.0:double))
+  (set-jfield x name(pd) 2.0:double)
+  (set-jfield x name(pd) 4.0:double)
+  (set-jfield x name(pd) 3.0:double)
+  (set-jfield x name(pd) 2.0:double)
+  (set-jfield y name(pd) 5.0:double)
   (call name(assert) (and (and (and (==:bool (get-jfield Double.x name(r)) 3.0:double) (==:bool (get-jfield Double.y name(r)) 1.5:double)) (==:bool (get-jfield Double.width name(r)) 6.0:double)) (==:bool (get-jfield Double.height name(r)) 2.0:double)))
   (call name(assert) (and (==:bool (get-jfield Double.x name(pd)) 12.0:double) (==:bool (get-jfield Double.y name(pd)) 5.0:double)))
 ```
@@ -397,13 +416,13 @@ assert(pick(false, true) == 2.0 and pick(false, false) == 3.5 and sumR(1, 2, 3) 
 ```hir
 ;; hir -O0 fn=pick
 fn pick (a:bool, b:bool) -> double {nothrow}
-  (if var(a) (block 1:int) (if var(b) (block 2:int) (block 3.5:double)))
+  (if var(a) (widen[double] (block 1:int)) (if var(b) (widen[double] (block 2:int)) (block 3.5:double)))
 ```
 
 ```hir
 ;; hir -O1 fn=pick
 fn pick (a:bool, b:bool) -> double {nothrow}
-  (if var(a) (block 1:int) (if var(b) (block 2:int) 3.5:double))
+  (if var(a) 1.0:double (if var(b) 2.0:double 3.5:double))
 ```
 
 ```mir
@@ -417,17 +436,15 @@ fn pick(v0: bool, v1: bool) -> double:
     v2: double = const 3.5
     br bb4(v2)
   bb3:
-    v3: int = const 2
-    v4: double = convert.double v3
-    br bb4(v4)
-  bb4(v5: double):
-    br bb6(v5)
+    v3: double = const 2.0
+    br bb4(v3)
+  bb4(v4: double):
+    br bb6(v4)
   bb5:
-    v6: int = const 1
-    v7: double = convert.double v6
-    br bb6(v7)
-  bb6(v8: double):
-    ret v8
+    v5: double = const 1.0
+    br bb6(v5)
+  bb6(v6: double):
+    ret v6
 ```
 
 ```mir
@@ -597,13 +614,13 @@ assert(f(2) == 3.0 and f(2, 4.5) == 6.5 and f(2, null) == 2.0)
 ```hir
 ;; hir -O0 fn=f
 fn f (x:int, d:obj=1:int) -> double {nothrow unique}
-  (+:double (call name(double) var(x)) (block (if (is var(d) double) (block var(d)) (block 0.0:double))))
+  (+:double (call name(double) var(x)) (block (if (is var(d) double) (block (narrow.is[double] var(d))) (block 0.0:double))))
 ```
 
 ```hir
 ;; hir -O1 fn=f
 fn f (x:int, d:obj=1:int) -> double {nothrow unique}
-  (+:double (call name(double) var(x)) (if (is var(d) double) var(d) 0.0:double))
+  (+:double (call name(double) var(x)) (if (is var(d) double) (narrow.is[double] var(d)) 0.0:double))
 ```
 
 ```mir

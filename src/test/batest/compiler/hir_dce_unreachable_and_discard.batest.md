@@ -86,14 +86,12 @@ fn run (xs:obj) -> int {io}
   (def total 0:int)
   (for x in var(xs)
     (block
-      (if (<:bool var(x) 0:int)
-        (block
-          (continue)
-          (call-fn step "C")))
-      (if (>:bool var(x) 10:int)
-        (block
-          (break)
-          (call-fn step "B")))
+      (if (<:bool var(x) 0:int) (box (block
+            (continue)
+            (call-fn step "C"))))
+      (if (>:bool var(x) 10:int) (box (block
+            (break)
+            (call-fn step "B"))))
       (set total += var(x))))
   var(total)
 ```
@@ -104,8 +102,8 @@ fn run (xs:obj) -> int {io}
   (def total 0:int)
   (for x in var(xs)
     (block
-      (if (<:bool var(x) 0:int) (block (continue)))
-      (if (>:bool var(x) 10:int) (block (break)))
+      (if (<:bool var(x) 0:int) (box (block (continue))))
+      (if (>:bool var(x) 10:int) (box (block (break))))
       (set total += var(x))))
   var(total)
 ```

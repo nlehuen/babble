@@ -156,13 +156,13 @@ fn dblNegI (x:int) -> int {nothrow idempotent injective unique}
 ```hir
 ;; hir -O0 fn=negNarrow
 fn negNarrow (b:byte, s:short) -> int {nothrow unique}
-  (+:int (block (+:int (block (neg var(b))) 0:int)) (block (+:int (block (neg var(s))) 0:int)))
+  (+:int (block (+:int (block (neg (convert[int] var(b)))) 0:int)) (block (+:int (block (neg (convert[int] var(s)))) 0:int)))
 ```
 
 ```hir
 ;; hir -O1 fn=negNarrow
 fn negNarrow (b:byte, s:short) -> int {nothrow unique}
-  (+:int (neg var(b)) (neg var(s)))
+  (+:int (neg (convert[int] var(b))) (neg (convert[int] var(s))))
 ```
 
 ```mir
@@ -392,22 +392,22 @@ assert(f(2, 3) == 15.0)
 ```hir
 ;; hir -O0 fn=f
 fn f (x:int, y:int) -> double {nothrow unique}
-  (+:double (+:double (+:double (+:double (+:double (block (+:double (block (neg var(x))) 1.0:double)) (block (+:double (block (+:int var(x) var(y))) 1.0:double))) (block (+:double (call-fn bigClamp var(x)) 1.0:double))) (call-fn bigClampD var(x))) (call-fn bigClampD (neg var(x)))) (call-fn bigClampD (+:int var(x) var(y))))
+  (+:double (+:double (+:double (+:double (+:double (block (+:double (convert[double] (block (neg var(x)))) 1.0:double)) (block (+:double (convert[double] (block (+:int var(x) var(y)))) 1.0:double))) (block (+:double (convert[double] (call-fn bigClamp var(x))) 1.0:double))) (call-fn bigClampD (widen[double] var(x)))) (call-fn bigClampD (widen[double] (neg var(x))))) (call-fn bigClampD (widen[double] (+:int var(x) var(y)))))
 ```
 
 ```hir
 ;; hir -O1 fn=f
 fn f (x:int, y:int) -> double {nothrow unique}
-  (+:double (+:double (+:double (+:double (+:double (+:double (neg var(x)) 1.0:double) (+:double (+:int var(x) var(y)) 1.0:double)) (+:double (block
-              (def r#1 (if (<:bool var(x) 0:int) 0:int var(x)))
-              var(r#1)) 1.0:double)) (block
-          (def v#1 var(x))
+  (+:double (+:double (+:double (+:double (+:double (+:double (convert[double] (neg var(x))) 1.0:double) (+:double (convert[double] (+:int var(x) var(y))) 1.0:double)) (+:double (convert[double] (block
+                (def r#1 (if (<:bool var(x) 0:int) 0:int var(x)))
+                var(r#1))) 1.0:double)) (block
+          (def v#1 (widen[double] var(x)))
           (def r#2 (if (<:bool var(v#1) 0.0:double) 0.0:double var(v#1)))
           var(r#2))) (block
-        (def v#2 (neg var(x)))
+        (def v#2 (widen[double] (neg var(x))))
         (def r#3 (if (<:bool var(v#2) 0.0:double) 0.0:double var(v#2)))
         var(r#3))) (block
-      (def v#3 (+:int var(x) var(y)))
+      (def v#3 (widen[double] (+:int var(x) var(y))))
       (def r#4 (if (<:bool var(v#3) 0.0:double) 0.0:double var(v#3)))
       var(r#4)))
 ```

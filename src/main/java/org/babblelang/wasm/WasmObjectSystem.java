@@ -8,12 +8,14 @@ import java.util.Map;
 import java.util.Set;
 import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.analysis.PrimitiveKind;
+import org.babblelang.analysis.Resolution;
 import org.babblelang.ir.hir.HirCallArg;
 import org.babblelang.ir.hir.HirClass;
 import org.babblelang.ir.hir.HirExpr;
 import org.babblelang.ir.hir.HirFunction;
 import org.babblelang.ir.hir.HirInterface;
 import org.babblelang.ir.hir.HirParam;
+import org.babblelang.ir.hir.HirPattern;
 import org.babblelang.ir.hir.HirVar;
 import org.babblelang.runtime.ClassShape;
 
@@ -802,18 +804,17 @@ public final class WasmObjectSystem {
     }
 
     private static boolean exprEscapesThis(HirExpr e) {
-        if (e == null) return false;
+        if (e == null
+                || e instanceof HirExpr.Const
+                || e instanceof HirExpr.IntParseFallback
+                || e instanceof HirExpr.CoreExceptionRef
+                || e instanceof HirExpr.CoreCollectionRef
+                || e instanceof HirExpr.NameRead
+                || e instanceof HirExpr.RecurseRef) return false;
         return switch (e) {
-            case HirExpr.Const ignored -> false;
-            case HirExpr.IntParseFallback ignored -> false;
-            case HirExpr.CoreExceptionRef ignored -> false;
-            case HirExpr.CoreCollectionRef ignored -> false;
-            case HirExpr.NameRead ignored -> false;
-            case HirExpr.RecurseRef ignored -> false;
             case HirExpr.VarRead v ->
                     v.var() != null
-                            && (v.var().kind()
-                                            == org.babblelang.analysis.Resolution.Variable.Kind.THIS
+                            && (v.var().kind() == Resolution.Variable.Kind.THIS
                                     || "this".equals(v.var().name()));
             case HirExpr.ThisRef ignored -> true;
             case HirExpr.ThisFieldGet g ->
@@ -848,6 +849,9 @@ public final class WasmObjectSystem {
             case HirExpr.NonNull n -> exprEscapesThis(n.operand());
             case HirExpr.Move m -> exprEscapesThis(m.operand());
             case HirExpr.Freeze f -> exprEscapesThis(f.operand());
+            case HirExpr.Narrow n -> exprEscapesThis(n.operand());
+            case HirExpr.Convert cv -> exprEscapesThis(cv.operand());
+            case HirExpr.Widen w -> exprEscapesThis(w.operand());
             case HirExpr.SpreadAdapt s -> exprEscapesThis(s.value());
             case HirExpr.JavaMethodCall c ->
                     exprEscapesThis(c.receiver()) || anyEscapesThis(c.args());
@@ -868,33 +872,29 @@ public final class WasmObjectSystem {
         };
     }
 
-    private static boolean patternEscapesThis(org.babblelang.ir.hir.HirPattern p) {
+    private static boolean patternEscapesThis(HirPattern p) {
         if (p == null) return false;
         return switch (p) {
-            case org.babblelang.ir.hir.HirPattern.Const ignored -> false;
-            case org.babblelang.ir.hir.HirPattern.TypeTest ignored -> false;
-            case org.babblelang.ir.hir.HirPattern.Wildcard ignored -> false;
-            case org.babblelang.ir.hir.HirPattern.Bind b -> patternEscapesThis(b.inner());
-            case org.babblelang.ir.hir.HirPattern.ValueExpr v -> exprEscapesThis(v.expr());
-            case org.babblelang.ir.hir.HirPattern.Or o -> {
-                for (var alt : o.alternatives()) if (patternEscapesThis(alt)) yield true;
-                yield false;
-            }
-            case org.babblelang.ir.hir.HirPattern.Relational r -> exprEscapesThis(r.rhs());
-            case org.babblelang.ir.hir.HirPattern.RangeTest rt ->
+            case HirPattern.Const ignored -> false;
+            case HirPattern.TypeTest ignored -> false;
+            case HirPattern.Wildcard ignored -> false;
+            case HirPattern.Bind b -> patternEscapesThis(b.inner());
+            case HirPattern.ValueExpr v -> exprEscapesThis(v.expr());
+            case HirPattern.Or o -> anyPatternEscapesThis(o.alternatives());
+            case HirPattern.Relational r -> exprEscapesThis(r.rhs());
+            case HirPattern.RangeTest rt ->
                     exprEscapesThis(rt.lo())
                             || exprEscapesThis(rt.hi())
                             || exprEscapesThis(rt.step());
-            case org.babblelang.ir.hir.HirPattern.Membership m -> exprEscapesThis(m.container());
-            case org.babblelang.ir.hir.HirPattern.RecordDestructure rd -> {
-                for (var fp : rd.fieldPatterns()) if (patternEscapesThis(fp)) yield true;
-                yield false;
-            }
-            case org.babblelang.ir.hir.HirPattern.SequenceDestructure sd -> {
-                for (var ep : sd.elemPatterns()) if (patternEscapesThis(ep)) yield true;
-                yield false;
-            }
+            case HirPattern.Membership m -> exprEscapesThis(m.container());
+            case HirPattern.RecordDestructure rd -> anyPatternEscapesThis(rd.fieldPatterns());
+            case HirPattern.SequenceDestructure sd -> anyPatternEscapesThis(sd.elemPatterns());
         };
+    }
+
+    private static boolean anyPatternEscapesThis(List<HirPattern> ps) {
+        for (HirPattern p : ps) if (patternEscapesThis(p)) return true;
+        return false;
     }
 
     private static boolean anyEscapesThis(List<HirExpr> exprs) {
