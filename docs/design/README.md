@@ -82,6 +82,7 @@ It handles single references, sub-phases, ranges (splitting them when only part 
 | **BIP035** | [`babblebabble` : a Babble interpreter written in Babble](bip035_babblebabble.md) | 2026-11-25 | Draft (`BIP035-Q1`–`Q11` open ; `BIP035-P1`–`P6` planned) | First-class pure-Babble interpreter in `src/main/babble/babblebabble/` (zero `java.*` core, hand-written lexer/Pratt parser/evaluator, `Mode.BABBLEBABBLE`) integrated with `DifferentialTestCase` and `BatestTestCase`, targeting byte-identical Argon, meta-circular "`babblebabblebabble`", and `BIP025` Wasm playground compilation (`RM022`). |
 | **BIP036** | [Compiler simplification, front-end data model and god-class splits](bip036_compiler-simplification-and-god-class-splits.md) | 2026-11-25 | Decided (`BIP036-P1`–`P9` planned) | A lifetime-separated front-end data model (`FileFacts`, single-source `SlotInference`, fresh-per-walk `TypingPass`, `DiagnosticSink`) that retires `TypeChecker.resetPass()`, pure splits of every monolith and god class (JVM and Wasm backends included), a repository-wide 1,500-line ceiling, and clean seams ahead of `BIP015` Option 2 (`RM020`). |
 | **BIP040** | [Constructors (`init`)](bip040_constructors.md) | 2026-11-27 | Decided (`BIP040-D1`–`D10` settled; `BIP040-P1`–`P5` planned) | Dedicated `init` constructor clauses (`init [effects] ( body )` and `[private] init [effects] (params) -> ( body )`) with declarative `class`/`record`/`object` bodies, uninitialized `def`/`var` fields, closed `BIP021` constructor overloading, JEP 513-style `this(...)` delegation, static `FieldInitAnalysis` definite/single-assignment checking, pure-by-default `BIP016`/`BIP017` constructor effects, JVM `<init>` emission with `ACC_FINAL` on all `def` fields, and WasmGC local-staged immutable `(field T)` lowering. |
+| **BIP041** | [`-crib` : fast isolated HTTP `.batest.md` runner](bip041_crib-server.md) | 2026-11-27 | Decided (`BIP041-D1`–`D8` settled ; `BIP041-P1`–`P4` planned) | Loopback HTTP server (`Main -crib`, `POST /crib?<options>`, zero new Maven deps via `jdk.httpserver`) running `.batest.md` payloads across `interpret`, `-O0`, `-O1`, unified `HIR` `-O2`, and optional `wasm-O1`/`wasm-O2` inside a warm, poison-audited, killable worker JVM pool (~10–50 ms/trial) with automatic cross-mode parity diffing for `BIP032` adversarial workflows (`RM021`). |
 
 ## Milestones done
 
@@ -185,7 +186,7 @@ Expression-oriented `match x case <pattern> [if <guard>] then (...) else (...)` 
 
 ## Roadmap
 
-The milestones below sequence what remains: `BIP014-P5` (Half B), `BIP015-Q1`–`Q8`, `BIP018-P0`–`P4`, `BIP026-P2`–`P5`, `BIP032-P1`–`P4`, `BIP033-P1`–`P6`, `BIP035-Q1`–`Q11` / `BIP035-P1`–`P6`, and `BIP036-P1`–`P9`. Work that no BIP specifies yet is in the [backlog](#backlog-awaiting-a-bip); a milestone that needs one of those items starts by writing its BIP.
+The milestones below sequence what remains: `BIP014-P5` (Half B), `BIP015-Q1`–`Q8`, `BIP018-P0`–`P4`, `BIP026-P2`–`P5`, `BIP032-P1`–`P4`, `BIP033-P1`–`P6`, `BIP035-Q1`–`Q11` / `BIP035-P1`–`P6`, `BIP036-P1`–`P9`, `BIP040-P1`–`P5`, and `BIP041-P1`–`P4`. Work that no BIP specifies yet is in the [backlog](#backlog-awaiting-a-bip); a milestone that needs one of those items starts by writing its BIP.
 
 Every milestone ends with `mvn -B package -PO2` green in all execution modes (`interpret`, `-O0`, `-O1`, `-O2`, `wasm-js -O1`), `ParserGrammarTestCase`, `RuntimeBoundaryTestCase`, `ArchitectureBoundaryTestCase`, `AxiomsTestCase`, `-format -check`, the `-Pbatest` coverage gate, and a byte-identical Argon render. The exit criteria below list only what each milestone adds.
 
@@ -205,7 +206,7 @@ The order follows constraints recorded in the BIPs:
 | **RM016** | `Babble 21` & `Babble 25` editions | `BIP018-P1`–`P2` | `RM015`, `RM025` | |
 | **RM017** | Verified parallelism, `Babble 28` & Valhalla | `BIP018-P3`–`P4`, `BIP007` §10 | `RM016`; a parallelism BIP | A thread-safe `Interpreter` can land any time before. |
 | **RM020** | Compiler simplification & god-class splits | `BIP036-P1`–`P9` | `RM013`, `RM018` | Can run now; shrinks the blast radius of `RM014` (`BIP015` Option 2) and `RM023`. |
-| **RM021** | Adversarial soundness (*The Great Escape*) | `BIP032-P1`–`P4` | `RM013`, `RM018` | Can run now, alongside the others; hardens soundness ahead of `RM015` and `RM017`. |
+| **RM021** | Adversarial soundness (*The Great Escape*) | `BIP032-P1`–`P4`, `BIP041-P1`–`P4` | `RM013`, `RM018` | Can run now, alongside the others; `BIP041` (`-crib`) accelerates interactive red-teaming and fuzzing ahead of `RM015` and `RM017`. |
 | **RM022** | `babblebabble` pure-Babble interpreter | `BIP035-Q1`–`Q11` → `BIP035-P1`–`P6` | `RM018` | Draft; independent of `BIP015` and `BIP018`, can run alongside the others. |
 | **RM023** | Tensors with dimensional safety | `BIP033-P1`–`P6` | `RM013`, `RM018` | Independent of `BIP015` and `BIP018` (`RM020` recommended ahead of large front-end additions). |
 | **RM025** | JDK 25 & 27 CI legs | `BIP018-P0` | — | Any time (exempt from `BIP018-D4`). |
@@ -271,11 +272,12 @@ Deliver [BIP036](bip036_compiler-simplification-and-god-class-splits.md) with ze
 
 ### RM021 — Adversarial soundness (*The Great Escape*)
 
-Deliver [BIP032](bip032_the-great-escape.md), turning ad-hoc bug hunting into a permanent adversarial defense layer across types, effects, ownership, optimizer/Wasm parity, Java axioms and algebraic/termination verifiers.
+Deliver [BIP032](bip032_the-great-escape.md) and its fast isolated HTTP `.batest.md` runner [BIP041](bip041_crib-server.md) (`-crib`), turning ad-hoc bug hunting into a permanent adversarial defense layer across types, effects, ownership, optimizer/Wasm parity, Java axioms and algebraic/termination verifiers.
 
-- **Spans:** `BIP032`, `BIP007`, `BIP008`, `BIP014`, `BIP016`, `BIP017`, `BIP019`, `BIP025`, `BIP027`, `BIP028`, `BIP029`, `BIP030`, `BIP034`
+- **Spans:** `BIP032`, `BIP041`, `BIP007`, `BIP008`, `BIP014`, `BIP016`, `BIP017`, `BIP019`, `BIP025`, `BIP027`, `BIP028`, `BIP029`, `BIP030`, `BIP034`, `BIP039`
 - **Depends on:** `RM013`, `RM018`. Independent of `RM014` and `RM020`; can run in parallel.
 - **Deliverables:**
+  - `BIP041-P1`–`P4`: `-crib` loopback HTTP `.batest.md` server (`POST /crib?<options>`, warm poison-audited killable worker JVM pool, JUnit-free `org.babblelang.batest` extraction, per-engine `BabbleCompiler.resolveVerify(engine)`, `ClassValue` cache-leak fixes, automatic multi-mode parity diffing, and optional isolated `wasm-O1`/`wasm-O2` execution) accelerating interactive adversarial trials from ~20 s to ~10–50 ms.
   - `BIP032-P1`: Wave 1 red-team probes (including the 5 static-audit candidate escapes), package-private white-box property tests (`TypeAlgebra`, `EffectSet`, `Reachability.Origin`, axiom monotonicity), and permanent `src/test/batest/soundness/` `.batest.md` regressions.
   - `BIP032-P2`–`P3`: per-engine `BabbleCompiler.resolveVerify(engine)`, Tier 1 runtime canary oracles, parallel-safe Tier 2 multi-mode differential/verifier oracle, layered combinatorial-matrix + AST + corpus/EMI generators, parse-tree-guided `.batest.md`-emitting delta-minimizer, `<= 5s` `EscapeSmokeTestCase`, and opt-in `-Pescape` soak profile.
   - `BIP032-P4`: deep `-Pescape` soak campaigns across all 6 surfaces (including `BIP034` `def`/`var` and portable Wasm parity) and full remediation of confirmed escapes (`BIP032-D7`).
