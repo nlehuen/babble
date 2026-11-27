@@ -438,15 +438,21 @@ public final class HirLiveness {
 
         private BitSet transferWhile(HirExpr.While w, BitSet out, BitSet returnOut, BitSet exnOut) {
             BitSet condIn = transferExpr(w.cond(), out, out, out, returnOut, exnOut);
+            boolean converged = false;
             for (int iter = 0; iter < MAX_LOOP_FIXPOINT_ITERS; iter++) {
                 BitSet bodyIn = transferExpr(w.body(), condIn, out, condIn, returnOut, exnOut);
                 BitSet condOut = union(out, bodyIn);
                 BitSet nextCondIn = transferExpr(w.cond(), condOut, out, condIn, returnOut, exnOut);
                 nextCondIn.or(condIn);
                 if (nextCondIn.equals(condIn)) {
+                    converged = true;
                     break;
                 }
                 condIn = nextCondIn;
+            }
+            if (!converged) {
+                condIn = copy(condIn);
+                condIn.set(0, idToIdx.size());
             }
             // Final pass with converged condIn so every inner node's liveIn/liveOut reflects the
             // fixed point.
@@ -456,15 +462,23 @@ public final class HirLiveness {
 
         private BitSet transferFor(HirExpr.For f, BitSet out, BitSet returnOut, BitSet exnOut) {
             BitSet headerIn = copy(out);
+            boolean converged = false;
             for (int iter = 0; iter < MAX_LOOP_FIXPOINT_ITERS; iter++) {
                 BitSet bodyIn = transferList(f.body(), headerIn, out, headerIn, returnOut, exnOut);
                 killVar(bodyIn, f.loopVar());
                 for (HirVar v : f.bodyDeclaredVars()) killVar(bodyIn, v);
                 BitSet next = union(headerIn, bodyIn);
                 if (next.equals(headerIn)) {
+                    converged = true;
                     break;
                 }
                 headerIn = next;
+            }
+            if (!converged) {
+                headerIn = copy(headerIn);
+                headerIn.set(0, idToIdx.size());
+                killVar(headerIn, f.loopVar());
+                for (HirVar v : f.bodyDeclaredVars()) killVar(headerIn, v);
             }
             BitSet bodyIn = transferList(f.body(), headerIn, out, headerIn, returnOut, exnOut);
             killVar(bodyIn, f.loopVar());

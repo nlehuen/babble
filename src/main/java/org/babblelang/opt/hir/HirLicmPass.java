@@ -123,7 +123,7 @@ public final class HirLicmPass implements HirPass {
         collectLoopBarriers(w.body(), fx, barriers);
 
         Set<Integer> localGuardVars = new HashSet<>();
-        collectGuardTestedVars(w.cond(), localGuardVars);
+        collectGuardTestedVarsInTree(w.cond(), localGuardVars);
         collectGuardTestedVarsInTree(w.body(), localGuardVars);
         // Any guard inside cond itself only guards cond's own RHS (e.g. s != null && s.length() >
         // i)
@@ -176,17 +176,43 @@ public final class HirLicmPass implements HirPass {
             HirEffectAnalysis fx,
             int[] nextVarId,
             int[] rewrites) {
+        // Hoisted defs are placed BEFORE the For expression, so any variable mutation, memory
+        // barrier, or narrowing guard inside the iterable / counted-range setup must block motion.
         Set<Integer> modified = new HashSet<>();
         if (f.loopVar() != null) modified.add(f.loopVar().id());
         for (HirVar v : f.bodyDeclaredVars()) modified.add(v.id());
+        if (f.iterable() != null) HirPurity.collectModifiedVars(f.iterable(), modified);
+        if (f.countedRange() != null) {
+            HirPurity.collectModifiedVars(f.countedRange().start(), modified);
+            HirPurity.collectModifiedVars(f.countedRange().end(), modified);
+            HirPurity.collectModifiedVars(f.countedRange().step(), modified);
+        }
         for (HirExpr s : f.body()) HirPurity.collectModifiedVars(s, modified);
 
         List<IrEffect> barriers = new ArrayList<>();
+        if (f.iterable() != null) collectLoopBarriers(f.iterable(), fx, barriers);
+        if (f.countedRange() != null) {
+            collectLoopBarriers(f.countedRange().start(), fx, barriers);
+            collectLoopBarriers(f.countedRange().end(), fx, barriers);
+            collectLoopBarriers(f.countedRange().step(), fx, barriers);
+        } else if (f.target() != null
+                && f.target().kind() != LoweringTargets.ForKind.ARRAY
+                && f.target().kind() != LoweringTargets.ForKind.COUNTED_RANGE
+                && (!f.meta().effects().isHermetic()
+                        || f.target().kind() != LoweringTargets.ForKind.JAVA_ITERABLE)) {
+            barriers.add(IrEffect.IMPURE_THROW);
+        }
         for (HirExpr s : f.body()) {
             collectLoopBarriers(s, fx, barriers);
         }
 
         Set<Integer> localGuardVars = new HashSet<>();
+        if (f.iterable() != null) collectGuardTestedVarsInTree(f.iterable(), localGuardVars);
+        if (f.countedRange() != null) {
+            collectGuardTestedVarsInTree(f.countedRange().start(), localGuardVars);
+            collectGuardTestedVarsInTree(f.countedRange().end(), localGuardVars);
+            collectGuardTestedVarsInTree(f.countedRange().step(), localGuardVars);
+        }
         for (HirExpr s : f.body()) {
             collectGuardTestedVarsInTree(s, localGuardVars);
         }

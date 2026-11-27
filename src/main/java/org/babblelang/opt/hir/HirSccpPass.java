@@ -288,18 +288,30 @@ public final class HirSccpPass implements HirPass {
         }
 
         private Eval evalVarAssign(HirExpr.VarAssign a, Flow flow, boolean rewriting) {
+            HirVar var = a.var();
+            // Compound assignment evaluates the LHS value before evaluating RHS (e.g. x += (x = 10;
+            // 2)).
+            Lat oldLat =
+                    (a.operator() != null
+                                    && !"=".equals(a.operator())
+                                    && !var.isCaptured()
+                                    && !var.cell())
+                            ? flow.env.get(var.id())
+                            : null;
             Eval rhs = eval(a.value(), flow, rewriting);
             HirExpr.VarAssign cur =
                     (rewriting && rhs.expr() != a.value())
                             ? new HirExpr.VarAssign(
-                                    a.var(),
+                                    var,
                                     a.operator(),
                                     rhs.expr(),
                                     a.targetText(),
                                     a.valueText(),
                                     a.meta())
                             : a;
-            HirVar var = a.var();
+            if (!flow.reachable) {
+                return new Eval(cur, Lat.TOP);
+            }
             if (var.isCaptured() || var.cell()) {
                 return new Eval(cur, Lat.BOTTOM);
             }
@@ -321,7 +333,6 @@ public final class HirSccpPass implements HirPass {
                 return new Eval(cur, Lat.BOTTOM);
             }
             HirExpr.BinaryOp bop = compoundBinaryOp(a.operator());
-            Lat oldLat = flow.env.get(var.id());
             if (bop != null
                     && oldLat != null
                     && oldLat.isConst()
@@ -610,17 +621,30 @@ public final class HirSccpPass implements HirPass {
             }
 
             Flow headerFlow = flow.copy();
+            boolean converged = false;
             for (int iter = 0; iter < MAX_LOOP_FIXPOINT_ITERS; iter++) {
                 Flow afterCond = headerFlow.copy();
                 Eval cEval = eval(w.cond(), afterCond, false);
-                if (cEval.lat().isConst() && !Truth.test(cEval.lat().value())) break;
+                if (cEval.lat().isConst() && !Truth.test(cEval.lat().value())) {
+                    converged = true;
+                    break;
+                }
                 LoopCtx lctx = new LoopCtx();
                 loops.push(lctx);
                 Flow bodyFlow = afterCond.copy();
                 eval(w.body(), bodyFlow, false);
                 loops.pop();
                 Flow backedge = Flow.join(bodyFlow, lctx.continueFlow);
-                if (!backedge.reachable || !widenHeader(headerFlow, backedge)) break;
+                if (!backedge.reachable || !widenHeader(headerFlow, backedge)) {
+                    converged = true;
+                    break;
+                }
+            }
+            if (!converged) {
+                Set<Integer> mod = new HashSet<>();
+                HirPurity.collectModifiedVars(w.cond(), mod);
+                HirPurity.collectModifiedVars(w.body(), mod);
+                headerFlow.removeAll(mod);
             }
 
             Flow afterCond = headerFlow.copy();
@@ -663,6 +687,7 @@ public final class HirSccpPass implements HirPass {
             if (!flow.reachable) return new Eval(f, Lat.TOP);
             Flow headerFlow = flow.copy();
             if (f.loopVar() != null) headerFlow.remove(f.loopVar().id());
+            boolean converged = false;
             for (int iter = 0; iter < MAX_LOOP_FIXPOINT_ITERS; iter++) {
                 LoopCtx lctx = new LoopCtx();
                 loops.push(lctx);
@@ -671,7 +696,15 @@ public final class HirSccpPass implements HirPass {
                 evalStatements(f.body(), bodyFlow, false);
                 loops.pop();
                 Flow backedge = Flow.join(bodyFlow, lctx.continueFlow);
-                if (!backedge.reachable || !widenHeader(headerFlow, backedge)) break;
+                if (!backedge.reachable || !widenHeader(headerFlow, backedge)) {
+                    converged = true;
+                    break;
+                }
+            }
+            if (!converged) {
+                Set<Integer> mod = new HashSet<>();
+                collectModifiedVars(f.body(), mod);
+                headerFlow.removeAll(mod);
             }
             LoopCtx lctx = new LoopCtx();
             loops.push(lctx);
