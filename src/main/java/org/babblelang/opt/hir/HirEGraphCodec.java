@@ -50,6 +50,35 @@ final class HirEGraphCodec {
         return false;
     }
 
+    static boolean isLowerableComparison(HirExpr.Binary b) {
+        if (!b.op().isComparison()
+                || b.left().meta().wideningRank() >= 0
+                || b.right().meta().wideningRank() >= 0) {
+            return false;
+        }
+        PrimitiveKind lk = b.left().meta().kind();
+        if (lk != b.right().meta().kind()) {
+            return false;
+        }
+        if (b.op() == HirExpr.BinaryOp.EQ || b.op() == HirExpr.BinaryOp.NEQ) {
+            return lk.isPrimitive()
+                    || (b.left().meta().stringType() && b.right().meta().stringType());
+        }
+        return HirPurity.isNumericKind(lk) || lk == PrimitiveKind.CHAR;
+    }
+
+    static ENode.Op toComparisonOp(HirExpr.BinaryOp op) {
+        return switch (op) {
+            case EQ -> ENode.Op.EQ;
+            case NEQ -> ENode.Op.NEQ;
+            case LT -> ENode.Op.LT;
+            case LTE -> ENode.Op.LTE;
+            case GT -> ENode.Op.GT;
+            case GTE -> ENode.Op.GTE;
+            default -> throw new IllegalStateException();
+        };
+    }
+
     static final class LowerContext {
         final EGraph graph = new EGraph();
         final HirModule module;
@@ -59,36 +88,6 @@ final class HirEGraphCodec {
 
         LowerContext(HirModule module) {
             this.module = module;
-        }
-
-        private static boolean isLowerableComparison(HirExpr.Binary b) {
-            if (!b.op().isComparison()) {
-                return false;
-            }
-            if (b.left().meta().wideningRank() >= 0 || b.right().meta().wideningRank() >= 0) {
-                return false;
-            }
-            PrimitiveKind lk = b.left().meta().kind();
-            PrimitiveKind rrk = b.right().meta().kind();
-            if (b.op() == HirExpr.BinaryOp.EQ || b.op() == HirExpr.BinaryOp.NEQ) {
-                if (lk.isPrimitive() && lk == rrk) {
-                    return true;
-                }
-                return b.left().meta().stringType() && b.right().meta().stringType();
-            }
-            return lk == rrk && (HirPurity.isNumericKind(lk) || lk == PrimitiveKind.CHAR);
-        }
-
-        private static ENode.Op toComparisonOp(HirExpr.BinaryOp op) {
-            return switch (op) {
-                case EQ -> ENode.Op.EQ;
-                case NEQ -> ENode.Op.NEQ;
-                case LT -> ENode.Op.LT;
-                case LTE -> ENode.Op.LTE;
-                case GT -> ENode.Op.GT;
-                case GTE -> ENode.Op.GTE;
-                default -> throw new IllegalStateException();
-            };
         }
 
         int lower(HirExpr raw) {
@@ -458,8 +457,7 @@ final class HirEGraphCodec {
         }
         return isUnaryJavaCallShape(c, false)
                 && (HirPurity.isMonotoneCall(c, module) || HirPurity.isInjectiveCall(c, module))
-                && c.meta().isNothrow()
-                && c.meta().isTerminating();
+                && HirPurity.isPureNothrowTerminating(c, module);
     }
 
     private static boolean isUnaryJavaCallShape(

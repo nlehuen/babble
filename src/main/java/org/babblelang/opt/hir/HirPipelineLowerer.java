@@ -46,32 +46,42 @@ final class HirPipelineLowerer {
         this.nextVarId = nextVarId;
     }
 
+    private static final class BailOut extends RuntimeException {
+        private static final BailOut INSTANCE = new BailOut();
+
+        private BailOut() {
+            super(null, null, false, false);
+        }
+    }
+
+    private static <T> T req(T val) {
+        if (val == null) {
+            throw BailOut.INSTANCE;
+        }
+        return val;
+    }
+
     /**
      * Lowers {@code best} into replacement statements for {@code stmts[lp.startIdx..lp.endIdx]},
      * returning {@code null} if {@code best} cannot be soundly lowered.
      */
     List<HirExpr> lower(EGraph.ExtractedTree best) {
-        ENode root = best.node();
-        if (root.op() == ENode.Op.PIPE_FOLD_PAIRWISE) {
-            return lowerPairwiseFold(best);
+        try {
+            return switch (best.node().op()) {
+                case PIPE_FOLD_PAIRWISE -> lowerPairwiseFold(best);
+                case PIPE_FOLD -> lowerSequentialFold(best);
+                case PIPE_FOR_EACH -> lowerForEach(best);
+                default -> null;
+            };
+        } catch (BailOut b) {
+            return null;
         }
-        if (root.op() == ENode.Op.PIPE_FOLD) {
-            return lowerSequentialFold(best);
-        }
-        if (root.op() == ENode.Op.PIPE_FOR_EACH) {
-            return lowerForEach(best);
-        }
-        return null;
     }
 
     // ---------------------------------------------------------------- PIPE_FOR_EACH
 
     private List<HirExpr> lowerForEach(EGraph.ExtractedTree root) {
-        String sinkId = root.node().symbol();
-        HirPipelineLifter.SinkInfo sink = lp.sinks.get(sinkId);
-        if (sink == null) {
-            return null;
-        }
+        HirPipelineLifter.SinkInfo sink = req(lp.sinks.get(root.node().symbol()));
         return lowerStreamLoop(
                 root.children().get(0),
                 sink.statements(),
@@ -82,31 +92,14 @@ final class HirPipelineLowerer {
     // ---------------------------------------------------------------- PIPE_FOLD (sequential)
 
     private List<HirExpr> lowerSequentialFold(EGraph.ExtractedTree root) {
-        HirPipelineLifter.FoldInfo fi = lp.folds.get(root.node().symbol());
-        if (fi == null) {
-            return null;
-        }
-        EGraph.ExtractedTree streamTree = root.children().get(0);
-        EGraph.ExtractedTree elemTree = root.children().get(1);
-        List<EGraph.ExtractedTree> stages = collectStages(streamTree);
-        if (stages == null || stages.isEmpty()) {
-            return null;
-        }
+        HirPipelineLifter.FoldInfo fi = req(lp.folds.get(root.node().symbol()));
+        List<EGraph.ExtractedTree> stages = collectStages(root.children().get(0));
         HirPipelineLifter.SourceInfo src = resolveSource(stages.get(0));
-        if (src == null) {
-            return null;
-        }
-        // Pre-assign binders so we can lower elemTree into the fold sink statement
         Map<EGraph.ExtractedTree, HirVar> distinctElemVars = new IdentityHashMap<>();
         List<HirVar> mapDeclaredVars = new ArrayList<>();
-        if (!assignStageBinders(stages, src, distinctElemVars, mapDeclaredVars)) {
-            return null;
-        }
+        assignStageBinders(stages, src, distinctElemVars, mapDeclaredVars);
         int line = fi.assignTemplate().meta().line();
-        HirExpr elemExpr = lowerExpr(elemTree, line, null, null);
-        if (elemExpr == null) {
-            return null;
-        }
+        HirExpr elemExpr = lowerExpr(root.children().get(1), line, null, null);
         HirExpr foldStmt = buildFoldAssign(fi, elemExpr);
         return lowerStreamLoopPreAssigned(
                 stages,
@@ -121,33 +114,19 @@ final class HirPipelineLowerer {
     // ---------------------------------------------------------------- PIPE_FOLD_PAIRWISE (R8)
 
     private List<HirExpr> lowerPairwiseFold(EGraph.ExtractedTree root) {
-        HirPipelineLifter.FoldInfo fi = lp.folds.get(root.node().symbol());
-        if (fi == null) {
-            return null;
-        }
+        HirPipelineLifter.FoldInfo fi = req(lp.folds.get(root.node().symbol()));
         EGraph.ExtractedTree rangeTree = root.children().get(0);
         EGraph.ExtractedTree elemTree = root.children().get(1);
         ENode rangeNode = rangeTree.node();
-        if (rangeNode.op() != ENode.Op.PIPE_RANGE
-                || !PipelineRules.isAscendingRange(rangeNode.symbol())
-                || !rangeNode.isIntegral()) {
-            return null;
-        }
         String rangeBinder = PipelineRules.rangeBinder(rangeNode.symbol());
-        if (rangeBinder == null) {
-            return null;
-        }
         boolean incl = PipelineRules.isInclusiveRange(rangeNode.symbol());
         PrimitiveKind rk = rangeNode.kind();
         int line = fi.assignTemplate().meta().line();
 
-        HirExpr loExpr = lowerExpr(rangeTree.children().get(0), line, null, null);
-        HirExpr hiExpr = lowerExpr(rangeTree.children().get(1), line, null, null);
-        if (loExpr == null || hiExpr == null) {
-            return null;
-        }
-        loExpr = adaptKind(loExpr, rk, line);
-        hiExpr = adaptKind(hiExpr, rk, line);
+        HirExpr loExpr =
+                adaptKind(lowerExpr(rangeTree.children().get(0), line, null, null), rk, line);
+        HirExpr hiExpr =
+                adaptKind(lowerExpr(rangeTree.children().get(1), line, null, null), rk, line);
 
         HirVar loVar = freshDefVar("$lo", rk);
         HirVar hiVar = freshDefVar("$hi", rk);
@@ -167,9 +146,6 @@ final class HirPipelineLowerer {
         HirExpr iPlus1 = binaryExpr(HirExpr.BinaryOp.ADD, iRead, one, rk, line);
         HirExpr elem0 = lowerExpr(elemTree, line, rangeBinder, iRead);
         HirExpr elem1 = lowerExpr(elemTree, line, rangeBinder, iPlus1);
-        if (elem0 == null || elem1 == null) {
-            return null;
-        }
 
         // while ($i < $hi and $i < $hi - 1) then ( acc = op(acc, op(elem($i), elem($i+1))); $i = $i
         // + 2 )
@@ -278,18 +254,10 @@ final class HirPipelineLowerer {
             HirExpr.For consumerFor,
             List<HirVar> bodyDeclaredVars) {
         List<EGraph.ExtractedTree> stages = collectStages(streamTree);
-        if (stages == null || stages.isEmpty()) {
-            return null;
-        }
         HirPipelineLifter.SourceInfo src = resolveSource(stages.get(0));
-        if (src == null) {
-            return null;
-        }
         Map<EGraph.ExtractedTree, HirVar> distinctElemVars = new IdentityHashMap<>();
         List<HirVar> mapDeclaredVars = new ArrayList<>();
-        if (!assignStageBinders(stages, src, distinctElemVars, mapDeclaredVars)) {
-            return null;
-        }
+        assignStageBinders(stages, src, distinctElemVars, mapDeclaredVars);
         return lowerStreamLoopPreAssigned(
                 stages,
                 src,
@@ -320,13 +288,10 @@ final class HirPipelineLowerer {
             PrimitiveKind rk = rootStage.node().kind();
             boolean incl = PipelineRules.isInclusiveRange(spec);
             boolean desc = PipelineRules.isDescendingRange(spec);
-            HirExpr loExpr = lowerExpr(rootStage.children().get(0), line, null, null);
-            HirExpr hiExpr = lowerExpr(rootStage.children().get(1), line, null, null);
-            if (loExpr == null || hiExpr == null) {
-                return null;
-            }
-            loExpr = adaptKind(loExpr, rk, line);
-            hiExpr = adaptKind(hiExpr, rk, line);
+            HirExpr loExpr =
+                    adaptKind(lowerExpr(rootStage.children().get(0), line, null, null), rk, line);
+            HirExpr hiExpr =
+                    adaptKind(lowerExpr(rootStage.children().get(1), line, null, null), rk, line);
 
             if (stages.size() > 1 && stages.get(1).node().op() == ENode.Op.PIPE_GUARD_RANGE) {
                 // Hoist $lo and $hi once for both guard and CountedRangeLoop
@@ -340,9 +305,6 @@ final class HirPipelineLowerer {
                 HirExpr hiRead = varRead(hiVar, line);
                 outerRangeGuard =
                         lowerRangeGuard(stages.get(1).children().get(2), loRead, hiRead, line);
-                if (outerRangeGuard == null) {
-                    return null;
-                }
                 newCountedRange =
                         new HirExpr.CountedRangeLoop(loRead, hiRead, null, incl, desc, rk);
             } else {
@@ -360,15 +322,12 @@ final class HirPipelineLowerer {
             ENode sn = stage.node();
             switch (sn.op()) {
                 case PIPE_MAP -> {
-                    HirVar mapVar = binderToVar.get(sn.symbol());
-                    if (mapVar == null) {
-                        return null;
-                    }
-                    HirExpr rhs = lowerExpr(stage.children().get(1), line, null, null);
-                    if (rhs == null) {
-                        return null;
-                    }
-                    rhs = adaptKind(rhs, mapVar.primitiveKind(), line);
+                    HirVar mapVar = req(binderToVar.get(sn.symbol()));
+                    HirExpr rhs =
+                            adaptKind(
+                                    lowerExpr(stage.children().get(1), line, null, null),
+                                    mapVar.primitiveKind(),
+                                    line);
                     HirExpr def = makeDef(mapVar, rhs, line);
                     List<HirExpr> nextBody = new ArrayList<>(body.size() + 1);
                     nextBody.add(def);
@@ -376,56 +335,48 @@ final class HirPipelineLowerer {
                     body = nextBody;
                 }
                 case PIPE_FILTER, PIPE_GUARD_RANGE -> {
-                    HirExpr pred = lowerExpr(stage.children().get(1), line, null, null);
-                    if (pred == null) {
-                        return null;
-                    }
-                    pred = ensureKind(pred, PrimitiveKind.BOOL, line);
-                    HirExpr thenBranch = wrapThenBranch(body, line);
+                    HirExpr pred =
+                            ensureKind(
+                                    lowerExpr(stage.children().get(1), line, null, null),
+                                    PrimitiveKind.BOOL,
+                                    line);
                     body =
                             List.of(
                                     new HirExpr.If(
                                             pred,
-                                            thenBranch,
+                                            wrapThenBranch(body, line),
                                             null,
                                             ExprMeta.of(line, PrimitiveKind.NONE)));
                 }
                 case PIPE_TAKE_WHILE -> {
-                    HirExpr pred = lowerExpr(stage.children().get(1), line, null, null);
-                    if (pred == null) {
-                        return null;
-                    }
-                    pred = ensureKind(pred, PrimitiveKind.BOOL, line);
-                    HirExpr thenBranch = wrapThenBranch(body, line);
+                    HirExpr pred =
+                            ensureKind(
+                                    lowerExpr(stage.children().get(1), line, null, null),
+                                    PrimitiveKind.BOOL,
+                                    line);
                     HirExpr elseBreak =
                             new HirExpr.Break(null, ExprMeta.of(line, PrimitiveKind.NONE));
                     body =
                             List.of(
                                     new HirExpr.If(
                                             pred,
-                                            thenBranch,
+                                            wrapThenBranch(body, line),
                                             elseBreak,
                                             ExprMeta.of(line, PrimitiveKind.NONE)));
                 }
                 case PIPE_DISTINCT -> {
-                    HirPipelineLifter.DistinctInfo di = lp.distincts.get(sn.symbol());
-                    HirVar elemVar = distinctElemVars.get(stage);
-                    if (di == null || elemVar == null) {
-                        return null;
-                    }
+                    HirPipelineLifter.DistinctInfo di = req(lp.distincts.get(sn.symbol()));
+                    HirVar elemVar = req(distinctElemVars.get(stage));
                     HirExpr seenAdd = buildDistinctAddCall(di, elemVar, line);
-                    HirExpr thenBranch = wrapThenBranch(body, line);
                     body =
                             List.of(
                                     new HirExpr.If(
                                             seenAdd,
-                                            thenBranch,
+                                            wrapThenBranch(body, line),
                                             null,
                                             ExprMeta.of(line, PrimitiveKind.NONE)));
                 }
-                default -> {
-                    return null;
-                }
+                default -> throw BailOut.INSTANCE;
             }
         }
 
@@ -501,17 +452,14 @@ final class HirPipelineLowerer {
     private static List<EGraph.ExtractedTree> collectStages(EGraph.ExtractedTree streamTree) {
         List<EGraph.ExtractedTree> rev = new ArrayList<>();
         EGraph.ExtractedTree cur = streamTree;
-        while (cur != null) {
+        while (true) {
             ENode.Op op = cur.node().op();
             if (op == ENode.Op.PIPE_MATERIALIZE) {
-                return null;
+                throw BailOut.INSTANCE;
             }
             rev.add(cur);
             if (op == ENode.Op.PIPE_SRC || op == ENode.Op.PIPE_RANGE) {
                 break;
-            }
-            if (cur.children().isEmpty()) {
-                return null;
             }
             cur = cur.children().get(0);
         }
@@ -524,16 +472,11 @@ final class HirPipelineLowerer {
 
     private HirPipelineLifter.SourceInfo resolveSource(EGraph.ExtractedTree rootStage) {
         ENode n = rootStage.node();
-        if (n.op() == ENode.Op.PIPE_RANGE) {
-            return lp.sources.get(n.symbol());
-        }
-        if (n.op() == ENode.Op.PIPE_SRC) {
-            return lp.sources.get(PipelineRules.srcId(n.symbol()));
-        }
-        return null;
+        String key = n.op() == ENode.Op.PIPE_RANGE ? n.symbol() : PipelineRules.srcId(n.symbol());
+        return req(lp.sources.get(key));
     }
 
-    private boolean assignStageBinders(
+    private void assignStageBinders(
             List<EGraph.ExtractedTree> stages,
             HirPipelineLifter.SourceInfo src,
             Map<EGraph.ExtractedTree, HirVar> distinctElemVars,
@@ -547,15 +490,12 @@ final class HirPipelineLowerer {
             if (n.op() == ENode.Op.PIPE_MAP) {
                 String bSym = n.symbol();
                 HirPipelineLifter.BindInfo bi = lp.binders.get(bSym);
-                HirVar mapVar;
-                if (bi != null && bi.var() != null && !bi.fromLoopVar()) {
-                    mapVar = bi.var();
-                } else {
-                    String name = bi != null && bi.var() != null ? bi.var().name() : bSym;
-                    PrimitiveKind kind =
-                            bi != null && bi.var() != null ? bi.var().primitiveKind() : n.kind();
-                    mapVar = freshDefVar(name, kind);
-                }
+                HirVar mapVar =
+                        (bi != null && bi.var() != null && !bi.fromLoopVar())
+                                ? bi.var()
+                                : freshDefVar(
+                                        bi != null && bi.var() != null ? bi.var().name() : bSym,
+                                        n.kind());
                 binderToVar.put(bSym, mapVar);
                 mapDeclaredVars.add(mapVar);
                 curVar = mapVar;
@@ -570,7 +510,6 @@ final class HirPipelineLowerer {
                 varSubst.put(e.getKey(), target);
             }
         }
-        return true;
     }
 
     // ---------------------------------------------------------------- expression lowering
@@ -578,23 +517,11 @@ final class HirPipelineLowerer {
     private HirExpr lowerRangeGuard(
             EGraph.ExtractedTree guardTree, HirExpr loRead, HirExpr hiRead, int line) {
         // Guard shape from R7: AND(LTE(lo, hi), CMP(CALL(f, hi), lim))
-        if (guardTree.node().op() != ENode.Op.AND || guardTree.children().size() != 2) {
-            return null;
-        }
         EGraph.ExtractedTree cmpTree = guardTree.children().get(1);
-        HirExpr.BinaryOp cmpOp = toHirBinaryOp(cmpTree.node().op());
-        if (cmpOp == null || cmpTree.children().size() != 2) {
-            return null;
-        }
+        HirExpr.BinaryOp cmpOp = req(toHirBinaryOp(cmpTree.node().op()));
         EGraph.ExtractedTree callTree = cmpTree.children().get(0);
-        if (callTree.node().op() != ENode.Op.CALL || callTree.children().size() != 1) {
-            return null;
-        }
         HirExpr fHi = rebuildUnaryCall(callTree.node().symbol(), hiRead, line);
         HirExpr limExpr = lowerExpr(cmpTree.children().get(1), line, null, null);
-        if (fHi == null || limExpr == null) {
-            return null;
-        }
         HirExpr nonEmpty =
                 binaryExpr(HirExpr.BinaryOp.LTE, loRead, hiRead, PrimitiveKind.BOOL, line);
         HirExpr boundCheck = binaryExpr(cmpOp, fHi, limExpr, PrimitiveKind.BOOL, line);
@@ -633,32 +560,30 @@ final class HirPipelineLowerer {
                                     : ExprMeta.of(line, bv.primitiveKind());
                     yield new HirExpr.VarRead(bv, m);
                 }
-                HirExpr leaf = lp.leaves.get(sym);
-                yield leaf != null ? substituteVars(leaf) : null;
+                yield substituteVars(req(lp.leaves.get(sym)));
             }
-            case NEG -> {
-                HirExpr op = lowerExpr(tree.children().get(0), line, overrideBinder, overrideExpr);
-                yield op == null
-                        ? null
-                        : new HirExpr.Unary(
-                                HirExpr.UnaryOp.NEGATE, op, null, ExprMeta.of(line, n.kind()));
-            }
-            case NOT -> {
-                HirExpr op = lowerExpr(tree.children().get(0), line, overrideBinder, overrideExpr);
-                yield op == null
-                        ? null
-                        : new HirExpr.Unary(
-                                HirExpr.UnaryOp.NOT,
-                                ensureKind(op, PrimitiveKind.BOOL, line),
-                                null,
-                                ExprMeta.of(line, PrimitiveKind.BOOL));
-            }
+            case NEG ->
+                    new HirExpr.Unary(
+                            HirExpr.UnaryOp.NEGATE,
+                            lowerExpr(tree.children().get(0), line, overrideBinder, overrideExpr),
+                            null,
+                            ExprMeta.of(line, n.kind()));
+            case NOT ->
+                    new HirExpr.Unary(
+                            HirExpr.UnaryOp.NOT,
+                            ensureKind(
+                                    lowerExpr(
+                                            tree.children().get(0),
+                                            line,
+                                            overrideBinder,
+                                            overrideExpr),
+                                    PrimitiveKind.BOOL,
+                                    line),
+                            null,
+                            ExprMeta.of(line, PrimitiveKind.BOOL));
             case AND, OR -> {
                 HirExpr l = lowerExpr(tree.children().get(0), line, overrideBinder, overrideExpr);
                 HirExpr r = lowerExpr(tree.children().get(1), line, overrideBinder, overrideExpr);
-                if (l == null || r == null) {
-                    yield null;
-                }
                 HirExpr.LogicOp lop =
                         n.op() == ENode.Op.AND ? HirExpr.LogicOp.AND : HirExpr.LogicOp.OR;
                 yield new HirExpr.Logic(
@@ -671,14 +596,10 @@ final class HirPipelineLowerer {
             case ADD, SUB, MUL, DIV, FLOOR_DIV, MOD, EQ, NEQ, LT, LTE, GT, GTE -> {
                 HirExpr l = lowerExpr(tree.children().get(0), line, overrideBinder, overrideExpr);
                 HirExpr r = lowerExpr(tree.children().get(1), line, overrideBinder, overrideExpr);
-                HirExpr.BinaryOp bop = toHirBinaryOp(n.op());
-                if (l == null || r == null || bop == null) {
-                    yield null;
-                }
-                yield binaryExpr(bop, l, r, n.kind(), line);
+                yield binaryExpr(req(toHirBinaryOp(n.op())), l, r, n.kind(), line);
             }
             case CALL -> lowerCall(tree, line, overrideBinder, overrideExpr);
-            default -> null;
+            default -> throw BailOut.INSTANCE;
         };
     }
 
@@ -687,16 +608,16 @@ final class HirPipelineLowerer {
         ENode n = tree.node();
         String sym = n.symbol();
         if (AlgebraicRules.SYM_MIN.equals(sym) || AlgebraicRules.SYM_MAX.equals(sym)) {
-            if (tree.children().size() != 2 || !n.isIntegral()) {
-                return null;
-            }
-            HirExpr a = lowerExpr(tree.children().get(0), line, overrideBinder, overrideExpr);
-            HirExpr b = lowerExpr(tree.children().get(1), line, overrideBinder, overrideExpr);
-            if (a == null || b == null) {
-                return null;
-            }
-            a = adaptKind(a, n.kind(), line);
-            b = adaptKind(b, n.kind(), line);
+            HirExpr a =
+                    adaptKind(
+                            lowerExpr(tree.children().get(0), line, overrideBinder, overrideExpr),
+                            n.kind(),
+                            line);
+            HirExpr b =
+                    adaptKind(
+                            lowerExpr(tree.children().get(1), line, overrideBinder, overrideExpr),
+                            n.kind(),
+                            line);
             HirExpr aRef = hoistIfComplex(a, "$a", n.kind(), line);
             HirExpr bRef = hoistIfComplex(b, "$b", n.kind(), line);
             boolean isMin = AlgebraicRules.SYM_MIN.equals(sym);
@@ -723,14 +644,8 @@ final class HirPipelineLowerer {
             }
             return substituteVars(opaqueOrig);
         }
-        if (tree.children().size() == 1) {
-            HirExpr arg = lowerExpr(tree.children().get(0), line, overrideBinder, overrideExpr);
-            if (arg == null) {
-                return null;
-            }
-            return rebuildUnaryCall(sym, arg, line);
-        }
-        return null;
+        HirExpr arg = lowerExpr(tree.children().get(0), line, overrideBinder, overrideExpr);
+        return rebuildUnaryCall(sym, arg, line);
     }
 
     private HirExpr hoistIfComplex(HirExpr expr, String prefix, PrimitiveKind kind, int line) {
@@ -774,7 +689,7 @@ final class HirPipelineLowerer {
                     c.args(),
                     c.meta().withLine(line));
         }
-        return null;
+        throw BailOut.INSTANCE;
     }
 
     private HirExpr buildAssocCall(HirExpr callTemplate, HirExpr a, HirExpr b) {
@@ -946,7 +861,7 @@ final class HirPipelineLowerer {
     }
 
     private HirExpr substituteVars(HirExpr expr) {
-        if (expr == null || varSubst.isEmpty()) {
+        if (varSubst.isEmpty()) {
             return expr;
         }
         if (expr instanceof HirExpr.VarRead vr) {
@@ -957,9 +872,6 @@ final class HirPipelineLowerer {
     }
 
     private static HirExpr replaceVarWithExpr(HirExpr expr, int varId, HirExpr replacement) {
-        if (expr == null) {
-            return null;
-        }
         if (expr instanceof HirExpr.VarRead vr && vr.var().id() == varId) {
             return replacement;
         }
@@ -967,26 +879,19 @@ final class HirPipelineLowerer {
     }
 
     private static void collectNestedDeclaredVars(HirExpr expr, Set<Integer> out) {
-        if (expr == null) {
-            return;
-        }
-        if (expr instanceof HirExpr.Block blk) {
-            for (HirVar v : blk.declaredVars()) {
-                out.add(v.id());
-            }
-        } else if (expr instanceof HirExpr.For f) {
-            if (f.loopVar() != null) {
-                out.add(f.loopVar().id());
-            }
-            for (HirVar v : f.bodyDeclaredVars()) {
-                out.add(v.id());
-            }
-        }
-        HirRewriter.rewriteChildren(
+        HirPipelineAnalysis.walkExpr(
                 expr,
-                c -> {
-                    collectNestedDeclaredVars(c, out);
-                    return c;
+                e -> {
+                    if (e instanceof HirExpr.Block blk) {
+                        for (HirVar v : blk.declaredVars()) {
+                            out.add(v.id());
+                        }
+                    } else if (e instanceof HirExpr.For f) {
+                        out.add(f.loopVar().id());
+                        for (HirVar v : f.bodyDeclaredVars()) {
+                            out.add(v.id());
+                        }
+                    }
                 });
     }
 }
