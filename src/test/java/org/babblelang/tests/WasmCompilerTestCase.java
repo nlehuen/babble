@@ -944,10 +944,12 @@ public class WasmCompilerTestCase {
                         false);
         Assertions.assertEquals(0, cmpStatus, "Wasm raytracer_ppm compile failed : " + compileErr);
 
-        // 2. Verify exact byte-for-byte PPM parity between JVM and V8 on both cover & triceratops
+        // 2. Verify exact byte-for-byte PPM parity between JVM and V8 on cover, triceratops &
+        // cornell-box
         String[][] cases = {
             {"cover", "16", "2", "6", "2", "P3\n16 9\n255\n"},
-            {"triceratops", "16", "4", "4", "1", "P3\n16 16\n255\n"}
+            {"triceratops", "16", "4", "4", "1", "P3\n16 16\n255\n"},
+            {"cornell-box", "16", "4", "6", "1", "P3\n16 16\n255\n"}
         };
         for (String[] c : cases) {
             String scene = c[0];
@@ -1296,6 +1298,16 @@ public class WasmCompilerTestCase {
                 triOut.ok(), "Triceratops canvas demo execution failed : " + triOut.error());
         Assertions.assertEquals("\"16x16\"", triOut.resultJson());
         Assertions.assertEquals("pixels=256,rows=16,bad=0\n", triOut.stdout());
+
+        // Cornell Box scene (16x16)
+        NodeWasmRunner.RunOutcome cornellOut =
+                NodeWasmRunner.runJs(
+                        wasmBytes, mjsSource, List.of("cornell-box", "16", "2", "6"), mockTriJs);
+        Assertions.assertTrue(
+                cornellOut.ok(),
+                "Cornell box canvas demo execution failed : " + cornellOut.error());
+        Assertions.assertEquals("\"16x16\"", cornellOut.resultJson());
+        Assertions.assertEquals("pixels=256,rows=16,bad=0\n", cornellOut.stdout());
     }
 
     // ---------------------------------------------------------------- BIP025 Review Regression

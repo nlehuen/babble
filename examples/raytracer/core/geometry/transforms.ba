@@ -1,0 +1,102 @@
+;; Rigid-body geometry instance transforms (Translate and RotateY).
+
+def math = import("../math.ba")
+def Vec3 = import("../vec3.ba").Vec3
+def Ray = import("../ray.ba").Ray
+def AABB = import("../aabb.ba").AABB
+def HitRecord = import("../interfaces.ba").HitRecord
+def Hittable = import("../interfaces.ba").Hittable
+
+export def Translate = class (
+    def target: Hittable,
+    def offset: Vec3
+) implements Hittable (
+    private def bbox: AABB
+
+    init (
+        this.bbox = this.target.boundingBox().offset(this.offset)
+    )
+
+    def boundingBox = fn (): AABB -> (
+        this.bbox
+    )
+
+    def hit = fn (r: Ray, tmin: double, tmax: double): HitRecord? -> (
+        def offsetR: Ray = Ray(r.origin - this.offset, r.dir)
+        def rec: HitRecord? = this.target.hit(offsetR, tmin, tmax)
+        if rec == null then (
+            return null
+        )
+        HitRecord(rec.p + this.offset, rec.normal, rec.mat, rec.t, rec.frontFace)
+    )
+
+    def kind = fn (): string -> ("translate")
+)
+
+export def RotateY = class (
+    def target: Hittable,
+    def angleDeg: double
+) implements Hittable (
+    private def sinTheta: double
+    private def cosTheta: double
+    private def bbox: AABB
+
+    init (
+        def radians: double = math.degreesToRadians(this.angleDeg)
+        this.sinTheta = math.sin(radians)
+        this.cosTheta = math.cos(radians)
+
+        def b: AABB = this.target.boundingBox()
+        var minX: double = math.infinity
+        var maxX: double = math.negInfinity
+        var minZ: double = math.infinity
+        var maxZ: double = math.negInfinity
+
+        for i in 0..1 then (
+            def x: double = if i == 0 then (b.minX) else (b.maxX)
+            for k in 0..1 then (
+                def z: double = if k == 0 then (b.minZ) else (b.maxZ)
+                def newX: double = this.cosTheta * x + this.sinTheta * z
+                def newZ: double = -this.sinTheta * x + this.cosTheta * z
+                if newX < minX then (minX = newX)
+                if newX > maxX then (maxX = newX)
+                if newZ < minZ then (minZ = newZ)
+                if newZ > maxZ then (maxZ = newZ)
+            )
+        )
+
+        this.bbox = AABB(minX, maxX, b.minY, b.maxY, minZ, maxZ).padToMinimums()
+    )
+
+    def boundingBox = fn (): AABB -> (
+        this.bbox
+    )
+
+    def hit = fn (r: Ray, tmin: double, tmax: double): HitRecord? -> (
+        def origX: double = this.cosTheta * r.origin.x - this.sinTheta * r.origin.z
+        def origZ: double = this.sinTheta * r.origin.x + this.cosTheta * r.origin.z
+        def dirX: double = this.cosTheta * r.dir.x - this.sinTheta * r.dir.z
+        def dirZ: double = this.sinTheta * r.dir.x + this.cosTheta * r.dir.z
+
+        def rotatedR: Ray = Ray(Vec3(origX, r.origin.y, origZ), Vec3(dirX, r.dir.y, dirZ))
+        def rec: HitRecord? = this.target.hit(rotatedR, tmin, tmax)
+        if rec == null then (
+            return null
+        )
+
+        def pX: double = this.cosTheta * rec.p.x + this.sinTheta * rec.p.z
+        def pZ: double = -this.sinTheta * rec.p.x + this.cosTheta * rec.p.z
+        def nX: double = this.cosTheta * rec.normal.x + this.sinTheta * rec.normal.z
+        def nZ: double = -this.sinTheta * rec.normal.x + this.cosTheta * rec.normal.z
+
+        HitRecord(
+            Vec3(pX, rec.p.y, pZ),
+            Vec3(nX, rec.normal.y, nZ),
+            rec.mat,
+            rec.t,
+            rec.frontFace
+        )
+    )
+
+    def kind = fn (): string -> ("rotate_y")
+)

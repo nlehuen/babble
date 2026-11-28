@@ -109,6 +109,7 @@
         <option value="cover" selected>Weekend Cover</option>
         <option value="three-spheres">Three Spheres</option>
         <option value="triceratops">Baby Triceratops</option>
+        <option value="cornell-box">Cornell Box</option>
       </select>
     </label>
     <label>Width <input id="width" type="number" value="320" min="32" max="1200" step="16" /></label>
@@ -139,6 +140,7 @@
       cover: { aspect: 16 / 9, width: 320, samples: 8, depth: 12, showGrid: true },
       "three-spheres": { aspect: 16 / 9, width: 320, samples: 12, depth: 12, showGrid: false },
       triceratops: { aspect: 1.0, width: 160, samples: 16, depth: 5, showGrid: false },
+      "cornell-box": { aspect: 1.0, width: 300, samples: 32, depth: 10, showGrid: false },
     };
 
     function applyPreset() {

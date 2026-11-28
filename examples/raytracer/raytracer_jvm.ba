@@ -11,6 +11,7 @@
     Examples:
         java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer/raytracer_jvm.ba cover demo.png 800 20 16
         java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer/raytracer_jvm.ba triceratops triceratops.png
+        java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer/raytracer_jvm.ba cornell-box cornell_box.png 400 256 16
 ;;)
 
 def registry = import("scenes/registry.ba")

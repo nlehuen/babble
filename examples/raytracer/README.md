@@ -6,16 +6,16 @@ Every scene renders **byte-for-byte identically** across `interpret`, compiled J
 
 ## Rendered Scenes
 
-| Weekend Cover (`cover`, 800×450) | Baby Triceratops (`triceratops`, 160×160) |
-|---|---|
-| ![Weekend Cover rendered in pure Babble](assets/scene.png) | ![Baby Triceratops rendered in pure Babble](assets/triceratops.png) |
+| Weekend Cover (`cover`, 800×450) | Baby Triceratops (`triceratops`, 160×160) | Cornell Box (`cornell-box`, 400×400) |
+|---|---|---|
+| ![Weekend Cover rendered in pure Babble](assets/scene.png) | ![Baby Triceratops rendered in pure Babble](assets/triceratops.png) | ![Cornell Box rendered in pure Babble](assets/cornell_box.png) |
 
 ## Architecture
 
 ```mermaid
 flowchart LR
     Core["core/<br/>100% pure Babble (WASM_BARE)<br/>math, rng, vec3, ray, aabb,<br/>materials, geometry/, camera, scene"]
-    Scenes["scenes/<br/>100% pure Babble (WASM_BARE)<br/>weekend_cover, three_spheres,<br/>triceratops, registry"]
+    Scenes["scenes/<br/>100% pure Babble (WASM_BARE)<br/>weekend_cover, three_spheres,<br/>triceratops, cornell_box, registry"]
     IO_PPM["io/sink.ba + io/ppm.ba<br/>Portable STDOUT PPM (JVM + Wasm)"]
     IO_JVM["io/jvm/png.ba<br/>JVM Thread pool + BufferedImage + PNG"]
     IO_WASM["io/wasm/canvas.ba<br/>axiom wasm.canvas.*"]
@@ -30,14 +30,15 @@ flowchart LR
 
 1. **`core/` — Rendering engine, materials, and geometries (`WASM_BARE`-clean)**
    - **Numerics & RNG**: `math.ba` (Newton-Raphson `sqrt`, Taylor `sin`/`cos`/`tan`, `powInt`, clamping — zero `java.lang.Math`) and `rng.ba` (deterministic 32-bit LCG with per-scanline `Rng.forRow(seed, y)` so 1-thread and 16-thread renders match bit-for-bit).
-   - **Math & Interfaces**: `vec3.ba` (`record Vec3` with `Vec3.srgb`), `ray.ba`, `interval.ba`, flat 6-double `aabb.ba`, `interfaces.ba` (`Describable`, `Scatter`, `Material`, `HitRecord`, `Hittable`, `emptyHittable`), `color.ba`, `background.ba` (`SkyBackground`, `SolidBackground`).
+   - **Math & Interfaces**: `vec3.ba` (`record Vec3` with `Vec3.srgb`), `ray.ba`, `interval.ba`, flat 6-double `aabb.ba`, `interfaces.ba` (`Describable`, `Scatter`, `AreaLight`, `Material`, `HitRecord`, `Hittable`, `emptyHittable`), `color.ba`, `background.ba` (`SkyBackground`, `SolidBackground`).
    - **Core Material Library (`materials.ba`)**: Immutable `record` materials implementing `Material` — `Lambertian`, `Metal`, `Dielectric`, `Emissive`, and `Toon`.
-   - **Core Geometry Library (`geometry/`)**: `Sphere`, oriented `Ellipsoid`, analytic tapered `RoundCone` (+ `addQuadraticBezierTube`), Fourier-contoured 3D `SculptedLobe`, pure-Babble `HittableList` (over `list of Hittable`), and pure-Babble `BVHNode`.
-   - **Rendering (`camera.ba`, `scene.ba`, `core.ba`)**: Pure thin-lens `Camera` with `BIP017` effect-polymorphic `renderRow` (`fn calling emit`), plus `Scene` record bundling world, camera, and seed.
+   - **Core Geometry Library (`geometry/`)**: `Sphere`, planar `Quad` & 6-sided `Box`, rigid-body `Translate` & `RotateY` transforms, oriented `Ellipsoid`, analytic tapered `RoundCone` (+ `addQuadraticBezierTube`), Fourier-contoured 3D `SculptedLobe`, pure-Babble `HittableList` (over `list of Hittable`), and pure-Babble `BVHNode`.
+   - **Rendering (`camera.ba`, `scene.ba`, `core.ba`)**: Pure thin-lens `Camera` with optional direct area-light sampling (Next Event Estimation) and `BIP017` effect-polymorphic `renderRow` (`fn calling emit`), plus `Scene` record bundling world, camera, and seed.
 2. **`scenes/` — Pure scene definitions (`WASM_BARE`-clean)**
    - `weekend_cover.ba` (*Ray Tracing in One Weekend* Ch. 14 22×22 marble cover scene)
    - `three_spheres.ba` (*Ray Tracing in One Weekend* Ch. 13 three-spheres scene)
    - `triceratops.ba` (Baby Triceratops sculpted from `SculptedLobe`, `Ellipsoid`, `RoundCone`, `Sphere`, `Toon`, and `Emissive` — now 100% WebAssembly-portable!)
+   - `cornell_box.ba` (*Ray Tracing: The Next Week* Ch. 8 classic Cornell Box with green/red walls, ceiling `AreaLight`, and two rotated matte `Box` instances)
    - `registry.ba` (`match`-based lookup by scene name)
 3. **`io/` — Thin target-specific IO & execution adapters**
    - `io/sink.ba` & `io/ppm.ba`: Pure-Babble `PixelSink` interface, sequential scanline driver, and portable ASCII `P3` PPM writer (`STDOUT`).
@@ -61,6 +62,9 @@ java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer/raytracer_jvm.ba cov
 # Baby Triceratops (160x160, 64 spp, 16 threads)
 java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer/raytracer_jvm.ba triceratops examples/raytracer/assets/triceratops.png
 
+# Cornell Box (400x400, 256 spp, 16 threads)
+java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer/raytracer_jvm.ba cornell-box examples/raytracer/assets/cornell_box.png 400 256 16
+
 # Score the Triceratops render against assets/triceratops.jpg
 python3 examples/raytracer/assets/score_triceratops.py
 ```
@@ -81,6 +85,7 @@ java -jar raytracer.jar > scene.ppm
 java -jar target/babble-1.0-SNAPSHOT.jar -compile -target wasm-js examples/raytracer/raytracer_ppm.ba -o raytracer.wasm
 node raytracer.mjs > scene.ppm
 node raytracer.mjs triceratops 160 16 > triceratops.ppm
+node raytracer.mjs cornell-box 300 32 > cornell_box.ppm
 ```
 
 ### 3. Interactive WebAssembly 3.0 browser `<canvas>` (`raytracer_wasm.ba` + `wasm_canvas.html`)
@@ -90,7 +95,7 @@ java -jar target/babble-1.0-SNAPSHOT.jar -compile -target wasm-js \
     examples/raytracer/raytracer_wasm.ba \
     -o examples/raytracer/raytracer_wasm.wasm
 java -jar target/babble-1.0-SNAPSHOT.jar -dev-server -d examples/raytracer -p 8080
-# Open http://127.0.0.1:8080/wasm_canvas.html and pick Cover, Three Spheres, or Baby Triceratops
+# Open http://127.0.0.1:8080/wasm_canvas.html and pick Cover, Three Spheres, Baby Triceratops, or Cornell Box
 ```
 
 ### 4. Pure-Babble Self-Test Suite (`selftest.ba`)

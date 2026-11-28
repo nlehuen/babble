@@ -1,0 +1,82 @@
+;; Book 2 Chapter 8 scene: classic Cornell Box with green/red walls, ceiling area light,
+;; and two rotated matte boxes (tall box back-left, short box front-right).
+
+def Vec3 = import("../core/vec3.ba").Vec3
+def AreaLight = import("../core/interfaces.ba").AreaLight
+def SolidBackground = import("../core/background.ba").SolidBackground
+def Lambertian = import("../core/materials.ba").Lambertian
+def Quad = import("../core/geometry/quad.ba").Quad
+def Box = import("../core/geometry/quad.ba").Box
+def Translate = import("../core/geometry/transforms.ba").Translate
+def RotateY = import("../core/geometry/transforms.ba").RotateY
+def HittableList = import("../core/geometry/hittable_list.ba").HittableList
+def BVHNode = import("../core/geometry/bvh.ba").BVHNode
+def Camera = import("../core/camera.ba").Camera
+def Scene = import("../core/scene.ba").Scene
+
+export def ceilingLight: AreaLight = AreaLight(
+    Vec3(343.0, 554.0, 332.0),
+    Vec3(-130.0, 0.0, 0.0),
+    Vec3(0.0, 0.0, -105.0),
+    Vec3(15.0, 15.0, 15.0)
+)
+
+export def buildList = fn (): unique HittableList -> (
+    def world: HittableList = HittableList()
+
+    def red = Lambertian(Vec3(0.65, 0.05, 0.05))
+    def white = Lambertian(Vec3(0.73, 0.73, 0.73))
+    def green = Lambertian(Vec3(0.12, 0.45, 0.15))
+
+    ;; Room walls & ceiling area light (555 x 555 x 555 cube)
+    world.add(Quad(Vec3(555.0, 0.0, 0.0), Vec3(0.0, 555.0, 0.0), Vec3(0.0, 0.0, 555.0), green))
+    world.add(Quad(Vec3(0.0, 0.0, 0.0), Vec3(0.0, 555.0, 0.0), Vec3(0.0, 0.0, 555.0), red))
+    world.add(Quad.fromLight(ceilingLight, oneSided: true))
+    world.add(Quad(Vec3(0.0, 0.0, 0.0), Vec3(555.0, 0.0, 0.0), Vec3(0.0, 0.0, 555.0), white))
+    world.add(Quad(Vec3(555.0, 555.0, 555.0), Vec3(-555.0, 0.0, 0.0), Vec3(0.0, 0.0, -555.0), white))
+    world.add(Quad(Vec3(0.0, 0.0, 555.0), Vec3(555.0, 0.0, 0.0), Vec3(0.0, 555.0, 0.0), white))
+
+    ;; Tall rotated box (back-left)
+    world.add(
+        Translate(
+            RotateY(Box(Vec3(0.0, 0.0, 0.0), Vec3(165.0, 330.0, 165.0), white), 15.0),
+            Vec3(265.0, 0.0, 295.0)
+        )
+    )
+
+    ;; Short rotated box (front-right)
+    world.add(
+        Translate(
+            RotateY(Box(Vec3(0.0, 0.0, 0.0), Vec3(165.0, 165.0, 165.0), white), -18.0),
+            Vec3(130.0, 0.0, 65.0)
+        )
+    )
+
+    world
+)
+
+export def build = fn (
+    imageWidth: int = 400,
+    samplesPerPixel: int = 64,
+    maxDepth: int = 10,
+    seed: int = 2026
+): Scene -> (
+    def worldList: HittableList = buildList()
+    def lights: list of AreaLight = list()
+    lights.add(ceilingLight)
+    def camera: Camera = Camera(
+        aspectRatio: 1.0,
+        imageWidth: imageWidth,
+        samplesPerPixel: samplesPerPixel,
+        maxDepth: maxDepth,
+        vfov: 40.0,
+        lookFrom: Vec3(278.0, 278.0, -800.0),
+        lookAt: Vec3(278.0, 278.0, 0.0),
+        vup: Vec3(0.0, 1.0, 0.0),
+        defocusAngle: 0.0,
+        focusDist: 800.0,
+        background: SolidBackground(Vec3.zero),
+        lights: lights
+    )
+    Scene("cornell-box", BVHNode.fromList(worldList), camera, seed)
+)

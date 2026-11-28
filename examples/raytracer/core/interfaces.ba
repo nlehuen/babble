@@ -17,11 +17,34 @@ export def Describable = interface (
 export def Scatter = record (
     attenuation: Vec3,
     scattered: Ray?,
-    emission: Vec3 = Vec3.zero
+    emission: Vec3 = Vec3.zero,
+    isDiffuse: bool = false
 ) () static (
     ;; Pure emission: terminates the ray directly with constant radiance.
     def emit = fn (emission: Vec3): Scatter -> (
-        this(Vec3.zero, null, emission)
+        this(Vec3.zero, null, emission, false)
+    )
+)
+
+;; Planar parallelogram area light for direct light sampling (Next Event Estimation).
+;; Emits along the unit normal direction of `u.cross(v)`.
+export def AreaLight = record (
+    q: Vec3,
+    u: Vec3,
+    v: Vec3,
+    emission: Vec3
+) (
+    def normal: Vec3
+    def area: double
+
+    init (
+        def n: Vec3 = this.u.cross(this.v)
+        this.area = n.length()
+        this.normal = n / this.area
+    )
+
+    def samplePoint = fn (mut rng: Rng): Vec3 -> (
+        this.q + this.u * rng.nextDouble() + this.v * rng.nextDouble()
     )
 )
 

@@ -1,0 +1,130 @@
+;; Planar quadrilateral primitive (Quad) and 6-sided axis-aligned box (Box).
+
+def math = import("../math.ba")
+def Vec3 = import("../vec3.ba").Vec3
+def Ray = import("../ray.ba").Ray
+def AABB = import("../aabb.ba").AABB
+def AreaLight = import("../interfaces.ba").AreaLight
+def Describable = import("../interfaces.ba").Describable
+def HitRecord = import("../interfaces.ba").HitRecord
+def Hittable = import("../interfaces.ba").Hittable
+def Material = import("../interfaces.ba").Material
+def Emissive = import("../materials.ba").Emissive
+
+export def Quad = class (
+    def q: Vec3,
+    def u: Vec3,
+    def v: Vec3,
+    def mat: Material
+) implements Hittable, Describable (
+    def normal: Vec3
+    private def d: double
+    private def w: Vec3
+    private def bbox: AABB
+
+    init (
+        def n: Vec3 = this.u.cross(this.v)
+        this.normal = n.unit()
+        this.d = this.normal.dot(this.q)
+        this.w = n / n.dot(n)
+
+        def diag1: AABB = AABB.fromPoints(this.q, this.q + this.u + this.v)
+        def diag2: AABB = AABB.fromPoints(this.q + this.u, this.q + this.v)
+        this.bbox = AABB.enclose(diag1, diag2).padToMinimums()
+    )
+
+    def boundingBox = fn (): AABB -> (
+        this.bbox
+    )
+
+    def hit = fn (r: Ray, tmin: double, tmax: double): HitRecord? -> (
+        def denom: double = this.normal.dot(r.dir)
+        if math.abs(denom) < 0.00000001 then (
+            return null
+        )
+        def t: double = (this.d - this.normal.dot(r.origin)) / denom
+        if t <= tmin or tmax <= t then (
+            return null
+        )
+        def intersection: Vec3 = r.at(t)
+        def planar: Vec3 = intersection - this.q
+        def alpha: double = this.w.dot(planar.cross(this.v))
+        def beta: double = this.w.dot(this.u.cross(planar))
+        if alpha < 0.0 or alpha > 1.0 or beta < 0.0 or beta > 1.0 then (
+            return null
+        )
+        HitRecord.create(r, intersection, this.normal, t, this.mat)
+    )
+
+    def kind = fn (): string -> ("quad")
+) static (
+    ;; Builds an emissive Quad matching an AreaLight's exact geometry and orientation.
+    def fromLight = fn (light: AreaLight, oneSided: bool = true): Quad -> (
+        this(light.q, light.u, light.v, Emissive(light.emission, oneSided))
+    )
+)
+
+;; Axis-aligned 3D box composed of six outward-facing Quads between corners `a` and `b`.
+export def Box = class (
+    def a: Vec3,
+    def b: Vec3,
+    def mat: Material
+) implements Hittable, Describable (
+    private def front: Quad
+    private def right: Quad
+    private def back: Quad
+    private def left: Quad
+    private def top: Quad
+    private def bottom: Quad
+    private def bbox: AABB
+
+    init (
+        def minX: double = math.min(this.a.x, this.b.x)
+        def minY: double = math.min(this.a.y, this.b.y)
+        def minZ: double = math.min(this.a.z, this.b.z)
+        def maxX: double = math.max(this.a.x, this.b.x)
+        def maxY: double = math.max(this.a.y, this.b.y)
+        def maxZ: double = math.max(this.a.z, this.b.z)
+
+        def dx: Vec3 = Vec3(maxX - minX, 0.0, 0.0)
+        def dy: Vec3 = Vec3(0.0, maxY - minY, 0.0)
+        def dz: Vec3 = Vec3(0.0, 0.0, maxZ - minZ)
+
+        this.front = Quad(Vec3(minX, minY, maxZ), dx, dy, this.mat)
+        this.right = Quad(Vec3(maxX, minY, maxZ), -dz, dy, this.mat)
+        this.back = Quad(Vec3(maxX, minY, minZ), -dx, dy, this.mat)
+        this.left = Quad(Vec3(minX, minY, minZ), dz, dy, this.mat)
+        this.top = Quad(Vec3(minX, maxY, maxZ), dx, -dz, this.mat)
+        this.bottom = Quad(Vec3(minX, minY, minZ), dx, dz, this.mat)
+        this.bbox = AABB(minX, maxX, minY, maxY, minZ, maxZ).padToMinimums()
+    )
+
+    def boundingBox = fn (): AABB -> (
+        this.bbox
+    )
+
+    def hit = fn (r: Ray, tmin: double, tmax: double): HitRecord? -> (
+        if not this.bbox.hit(r, tmin, tmax) then (
+            return null
+        )
+        var closest: HitRecord? = null
+        var closestT: double = tmax
+
+        def h0: HitRecord? = this.front.hit(r, tmin, closestT)
+        if h0 != null then (closest = h0; closestT = h0.t)
+        def h1: HitRecord? = this.right.hit(r, tmin, closestT)
+        if h1 != null then (closest = h1; closestT = h1.t)
+        def h2: HitRecord? = this.back.hit(r, tmin, closestT)
+        if h2 != null then (closest = h2; closestT = h2.t)
+        def h3: HitRecord? = this.left.hit(r, tmin, closestT)
+        if h3 != null then (closest = h3; closestT = h3.t)
+        def h4: HitRecord? = this.top.hit(r, tmin, closestT)
+        if h4 != null then (closest = h4; closestT = h4.t)
+        def h5: HitRecord? = this.bottom.hit(r, tmin, closestT)
+        if h5 != null then (closest = h5)
+
+        closest
+    )
+
+    def kind = fn (): string -> ("box")
+)

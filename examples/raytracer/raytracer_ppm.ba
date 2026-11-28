@@ -11,7 +11,7 @@
         java -jar target/babble-1.0-SNAPSHOT.jar -compile -target wasm-js examples/raytracer/raytracer_ppm.ba -o raytracer.wasm
         node raytracer.mjs [scene] [width] [samples] [maxDepth] [gridRadius] > scene.ppm
 
-    Scenes: cover (default), three-spheres, triceratops.
+    Scenes: cover (default), three-spheres, triceratops, cornell-box.
 ;;)
 
 def registry = import("scenes/registry.ba")

@@ -14,7 +14,7 @@ export def Lambertian = record (albedo: Vec3) implements Material (
         if scatterDirection.nearZero() then (
             scatterDirection = rec.normal
         )
-        Scatter(this.albedo, Ray(rec.p, scatterDirection))
+        Scatter(this.albedo, Ray(rec.p, scatterDirection), Vec3.zero, true)
     )
 
     def kind = fn (): string -> ("lambertian")
@@ -79,8 +79,11 @@ export def Dielectric = record (refractionIndex: double) implements Material (
 
 ;; Emissive / unlit flat material: terminates rays directly with constant radiance.
 ;; Serves both as an area light (with color > 1) and as flat ink/highlight shading.
-export def Emissive = record (color: Vec3) implements Material (
+export def Emissive = record (color: Vec3, oneSided: bool = false) implements Material (
     def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: Rng): Scatter? -> (
+        if this.oneSided and not rec.frontFace then (
+            return null
+        )
         Scatter.emit(this.color)
     )
 
