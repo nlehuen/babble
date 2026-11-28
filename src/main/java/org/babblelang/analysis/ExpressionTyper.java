@@ -150,7 +150,7 @@ final class ExpressionTyper {
             elseType = Type.NULL;
             elseEnv = baseEnv;
         }
-        checker.env = TypeEnv.joinBranches(baseEnv, thenEnv, elseEnv);
+        checker.env = TypeEnv.joinBranches(baseEnv, thenEnv, elseEnv, checker.algebra);
 
         boolean used = role.isUsed();
         if (expected != null && expected != Type.ERROR && used) {
@@ -265,7 +265,7 @@ final class ExpressionTyper {
         } finally {
             checker.loopStack.pop();
         }
-        checker.env = TypeEnv.joinBranches(afterTest, checker.env, afterTest);
+        checker.env = TypeEnv.joinBranches(afterTest, checker.env, afterTest, checker.algebra);
         return finishLoop(ctx, ctx.whileBlock, "while", bodyType, loop, expected, role);
     }
 
@@ -317,7 +317,7 @@ final class ExpressionTyper {
         } finally {
             checker.loopStack.pop();
         }
-        checker.env = TypeEnv.joinBranches(beforeLoop, checker.env, beforeLoop);
+        checker.env = TypeEnv.joinBranches(beforeLoop, checker.env, beforeLoop, checker.algebra);
         return finishLoop(ctx, ctx.forBlock, "for", bodyType, loop, expected, role);
     }
 
@@ -698,7 +698,9 @@ final class ExpressionTyper {
             }
             return type;
         } finally {
-            checker.env = TypeEnv.joinBranches(blockEntryEnv, checker.env, blockEntryEnv);
+            checker.env =
+                    TypeEnv.joinBranches(
+                            blockEntryEnv, checker.env, blockEntryEnv, checker.algebra);
         }
     }
 
@@ -972,7 +974,7 @@ final class ExpressionTyper {
         try {
             checker.synth(ctx.right);
         } finally {
-            checker.env = TypeEnv.joinBranches(saved, checker.env, saved);
+            checker.env = TypeEnv.joinBranches(saved, checker.env, saved, checker.algebra);
         }
         return Type.BOOL;
     }

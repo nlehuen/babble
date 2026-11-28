@@ -77,6 +77,15 @@ final class Faces {
      * override-equivalent) interfaces.
      */
     static Object function(Callable callable, Class<?> type, Class<?>[] markers, ScriptRuntime rt) {
+        return function(callable, type, markers, null, rt);
+    }
+
+    static Object function(
+            Callable callable,
+            Class<?> type,
+            Class<?>[] markers,
+            String[] paramDescriptors,
+            ScriptRuntime rt) {
         List<Class<?>> normalizedMarkers = normalizeMarkers(type, markers);
         SamFactory sam =
                 normalizedMarkers.isEmpty()
@@ -96,7 +105,7 @@ final class Faces {
         }
         if (sam.factory != null) {
             try {
-                return sam.factory.invokeExact(new SamInvoker(callable, sam, rt));
+                return sam.factory.invokeExact(new SamInvoker(callable, sam, paramDescriptors, rt));
             } catch (RuntimeException | Error e) {
                 throw e;
             } catch (Throwable t) {
@@ -114,7 +123,9 @@ final class Faces {
             }
         }
         return Proxy.newProxyInstance(
-                loader(proxyInterfaces), proxyInterfaces, new FunctionHandler(callable, sam, rt));
+                loader(proxyInterfaces),
+                proxyInterfaces,
+                new FunctionHandler(callable, sam, paramDescriptors, rt));
     }
 
     private static List<Class<?>> normalizeMarkers(Class<?> samType, Class<?>[] markers) {
@@ -329,18 +340,27 @@ final class Faces {
     static final class SamInvoker {
         private final Callable callable;
         private final SamFactory sam;
+        private final String[] paramDescriptors;
         private final ScriptRuntime rt;
 
-        SamInvoker(Callable callable, SamFactory sam, ScriptRuntime rt) {
+        SamInvoker(Callable callable, SamFactory sam, String[] paramDescriptors, ScriptRuntime rt) {
             this.callable = callable;
             this.sam = sam;
+            this.paramDescriptors = paramDescriptors;
             this.rt = rt;
         }
 
         private Object dispatch(Object[] args) {
             Class<?>[] paramTypes = sam.parameterTypes;
             for (int i = 0; i < args.length; i++) {
-                args[i] = JavaTypes.checkParameter(Values.fromJava(args[i]), paramTypes[i]);
+                Object val = JavaTypes.checkParameter(Values.fromJava(args[i]), paramTypes[i]);
+                if (paramDescriptors != null
+                        && i < paramDescriptors.length
+                        && paramDescriptors[i] != null
+                        && !paramDescriptors[i].isEmpty()) {
+                    val = Types.check(val, paramDescriptors[i]);
+                }
+                args[i] = val;
             }
             if (sam.method.isVarArgs()
                     && callable instanceof BabbleFunction bf
@@ -628,11 +648,14 @@ final class Faces {
     private static final class FunctionHandler implements InvocationHandler {
         private final Callable callable;
         private final SamFactory sam;
+        private final String[] paramDescriptors;
         private final ScriptRuntime rt;
 
-        FunctionHandler(Callable callable, SamFactory sam, ScriptRuntime rt) {
+        FunctionHandler(
+                Callable callable, SamFactory sam, String[] paramDescriptors, ScriptRuntime rt) {
             this.callable = callable;
             this.sam = sam;
+            this.paramDescriptors = paramDescriptors;
             this.rt = rt;
         }
 
@@ -651,6 +674,13 @@ final class Faces {
                     && called.getParameterCount() == sam.parameterTypes.length) {
                 Object[] babble =
                         JavaTypes.checkParameters(Values.fromJava(args), sam.parameterTypes);
+                if (paramDescriptors != null) {
+                    for (int i = 0; i < babble.length && i < paramDescriptors.length; i++) {
+                        if (paramDescriptors[i] != null && !paramDescriptors[i].isEmpty()) {
+                            babble[i] = Types.check(babble[i], paramDescriptors[i]);
+                        }
+                    }
+                }
                 if (sam.method.isVarArgs()
                         && callable instanceof BabbleFunction bf
                         && bf.restIndex() == babble.length - 1

@@ -1,6 +1,6 @@
 # Soundness regressions : `interop` (`J2`, `J3`) curated determinism, Java varargs parity & array element nullness
 
-Promoted from `BIP032` quarantine (`interop_j2_string_format_volatile_tostring.batest.md`, `interop_j3_varargs_array_double_wrap_parity.batest.md`, `interop_j2_string_case_mapping_default_locale.batest.md`, `interop_j3_java_array_return_null_elements.batest.md`) and sister vectors covering `java/lang/curated.ba`, `java/util/curated.ba`, `AxiomData`, `JavaNullability`, and `JavaTypeBridge`.
+Promoted from `BIP032` quarantine (`interop_j2_string_format_volatile_tostring.batest.md`, `interop_j3_varargs_array_double_wrap_parity.batest.md`, `interop_j2_string_case_mapping_default_locale.batest.md`, `interop_j3_java_array_return_null_elements.batest.md`, `interop_j2_curated_nullability_and_map_entry_immutability.batest.md`, `interop_j2_java_iterable_next_io.batest.md`, `interop_j3_sam_adapter_missing_inbound_check.batest.md`) and sister vectors covering `java/lang/curated.ba`, `java/util/curated.ba`, `AxiomData`, `JavaNullability`, `JavaTypeBridge`, `ControlAndOpEmitter`, and `Faces`.
 
 ## String.format with volatile toString must not be accepted in deterministic function
 
@@ -129,4 +129,66 @@ def s: any = a.get(0)
 
 ```error
 Type error : expected any, got any?
+```
+
+## ArrayDeque.poll must be typed nullable E?
+
+```babble
+def q = java.util.ArrayDeque of string ()
+def s: string = q.poll()
+println(s.length())
+```
+
+```error
+Type error : expected string, got string?
+```
+
+## Integer.getInteger with nullable fallback must return nullable int?
+
+```babble
+def n: int = java.lang.Integer.getInteger("babble.no.such.prop", null)
+println(n)
+```
+
+```error
+Type error : expected int, got int?
+```
+
+## Map.Entry must not be immutable when live map mutations update its value
+
+```babble
+def m = map of (string, int) (entry("a", 1))
+def e = m.entrySet().iterator().next()
+def fr = freeze(e)
+m.put("a", 99)
+println(fr.getValue())
+```
+
+```error
+Cannot freeze expression : value is not unique or deeply immutable
+```
+
+## Java Iterator implementation with io next() is rejected by Iterator.next axiom
+
+```babble
+def BombIter = class (var done: bool = false) implements java.util.Iterator of int (
+    def hasNext = fn nothrow (): bool -> (not this.done)
+    def next = fn io mut (): int -> (this.done = true; print("PWNED!"); 42)
+)
+```
+
+```error
+Function next violates hermetic guarantee of axiom java.util.Iterator.next
+```
+
+## Cast-free HashMap.compute passing null to BiFunction SAM enforces inbound parameter check
+
+```babble
+def m = java.util.HashMap of (string, string) ()
+def f: java.util.function.BiFunction of (string, string, string) = fn (k: string, v: string): string -> ("" + v.length())
+println(m.compute("missing", f))
+```
+
+```error
+Type error : expected string, got null
 ```

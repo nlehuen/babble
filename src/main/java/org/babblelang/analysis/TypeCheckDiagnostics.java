@@ -384,6 +384,14 @@ final class TypeCheckDiagnostics {
             checker.isTargetTypes.put(ctx, Type.ERROR);
             return Type.ERROR;
         }
+        String erasedGeneric = findErasedGenericName(target);
+        if (erasedGeneric != null) {
+            warn(
+                    "Cannot test erased type arguments with 'is' : use 'is " + erasedGeneric + "'",
+                    ctx.right);
+            checker.isTargetTypes.put(ctx, Type.ERROR);
+            return Type.ERROR;
+        }
         if (singleSimple != null
                 && singleSimple.typeName().coreTypeKeyword() != null
                 && (singleSimple.nullMod == null
@@ -394,6 +402,72 @@ final class TypeCheckDiagnostics {
         checker.pass.analysis.lowering().setCheckedType(ctx, LoweringAnalyzer.descriptor(target));
         checker.isTargetTypes.put(ctx, target);
         return target;
+    }
+
+    /**
+     * Returns the raw type name of any parameterized generic class/interface/Java type contained in
+     * {@code target} whose type arguments are erased at runtime, or {@code null} if {@code target}
+     * is reifiable (arrays are reifiable unless their element type itself contains erased type
+     * arguments).
+     */
+    static String findErasedGenericName(Type target) {
+        if (target == null || target == Type.ERROR) {
+            return null;
+        }
+        if (target instanceof Type.Frozen f) {
+            return findErasedGenericName(f.of());
+        }
+        if (target instanceof Type.Union u) {
+            for (Type m : u.members()) {
+                String name = findErasedGenericName(m);
+                if (name != null) {
+                    return name;
+                }
+            }
+            return null;
+        }
+        if (target instanceof Type.Intersection inter) {
+            for (Type m : inter.members()) {
+                String name = findErasedGenericName(m);
+                if (name != null) {
+                    return name;
+                }
+            }
+            return null;
+        }
+        if (target instanceof Type.Array) {
+            // Arrays are handled separately by isArrayTypeErasedAtRuntime / unchecked cast
+            // warnings.
+            return null;
+        }
+        if (target instanceof Type.Instance inst && hasNonWildcardTypeArgs(inst.typeArguments())) {
+            return inst.node().name != null ? inst.node().name : inst.toString();
+        }
+        if (target instanceof Type.JavaInstance ji && hasNonWildcardTypeArgs(ji.typeArguments())) {
+            if (ji.type() == java.util.List.class) {
+                return "list";
+            }
+            if (ji.type() == java.util.Set.class) {
+                return "set";
+            }
+            if (ji.type() == java.util.Map.class) {
+                return "map";
+            }
+            if (ji.type() == org.babblelang.runtime.Range.class) {
+                return "range";
+            }
+            return ji.type().getCanonicalName();
+        }
+        return null;
+    }
+
+    private static boolean hasNonWildcardTypeArgs(java.util.List<Type> args) {
+        for (Type arg : args) {
+            if (!Type.NULLABLE_ANY.equals(arg)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean isArrayTypeErasedAtRuntime(Type.Array array) {

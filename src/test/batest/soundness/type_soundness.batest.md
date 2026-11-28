@@ -1,6 +1,6 @@
-# Soundness regressions : `types` (`T1`, `T2`, `T3`, `T5`) generic & array variance, flow narrowing & variadic joins
+# Soundness regressions : `types` (`T1`, `T2`, `T3`, `T5`, `T6`) generic & array variance, flow narrowing, erased aliases & field init
 
-Promoted from `BIP032` quarantine (`types_t1_record_covariance_mutable_field.batest.md`, `types_t1_borrow_covariance_contravariant_method.batest.md`, `types_t3_flow_narrowing_shortcircuit_reassign.batest.md`, `types_t2_array_covariance_erased_generic_element.batest.md`, `types_t5_variadic_join_drops_rest.batest.md`) and sister vectors covering `TypeVariance`, `TypeAlgebra`, `Narrowing`, and `ExpressionTyper`.
+Promoted from `BIP032` quarantine (`types_t1_record_covariance_mutable_field.batest.md`, `types_t1_borrow_covariance_contravariant_method.batest.md`, `types_t3_flow_narrowing_shortcircuit_reassign.batest.md`, `types_t2_array_covariance_erased_generic_element.batest.md`, `types_t5_variadic_join_drops_rest.batest.md`, `types_t1_erased_generic_is_type_alias.batest.md`, `types_t3_join_branches_stale_narrowing.batest.md`, `types_t6_field_init_shortcircuit_and.batest.md`) and sister vectors covering `TypeVariance`, `TypeAlgebra`, `Narrowing`, `TypeEnv`, `TypeCheckDiagnostics`, `MatchTyper`, `FieldInitAnalysis`, and `ExpressionTyper`.
 
 ```babble
 ;; babble preamble
@@ -284,4 +284,66 @@ c(1, 2)
 
 ```error
 Too many parameters : 1 declared, 2 given
+```
+
+## Type alias to parameterized class must not bypass erased generic is check
+
+```babble
+def StrCell = type (Cell of string)
+def x: any = Cell of int (42)
+if x is StrCell then (println(x.v.length())) else (println(0))
+```
+
+```error
+Cannot test erased type arguments with 'is' : use 'is Cell'
+```
+
+## Type alias to parameterized class must not bypass erased generic match check
+
+```babble
+def StrCell = type (Cell of string)
+def x: any = Cell of int (42)
+match x
+case is StrCell then (println(x.v.length()))
+else (println(0))
+```
+
+```error
+Cannot test erased type arguments with 'is' : use 'is Cell'
+```
+
+## Block reassigning and re-narrowing var to null must not restore outer non-null narrowing
+
+```babble
+def boom = fn (var x: string?): int -> (
+    if x != null then (
+        def dummy = (
+            x = null
+            if x != null then (return 0)
+            0
+        )
+        x.length() + dummy
+    ) else (0)
+)
+println(boom("hi"))
+```
+
+```error
+Not a scope : x
+```
+
+## Short-circuit and RHS assignment must not count as definite field initialization
+
+```babble
+def InitBox = class () (
+    def x: string
+    init (cond: bool) -> (
+        def _ = cond and (this.x = "ok"; true)
+    )
+)
+println(InitBox(false).x.length())
+```
+
+```error
+Field may not be initialized by init : x
 ```

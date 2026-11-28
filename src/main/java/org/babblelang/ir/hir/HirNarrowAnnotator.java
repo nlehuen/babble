@@ -150,6 +150,26 @@ final class HirNarrowAnnotator {
                 HirExpr ne = i.elseBranch() != null ? annotateExpr(i.elseBranch(), elseEnv) : null;
                 invalidateMutated(i.thenBranch(), env);
                 invalidateMutated(i.elseBranch(), env);
+                // Early-exit guard narrowing: if one branch always exits (return/throw/break/
+                // continue), subsequent statements in the enclosing block are guarded by the
+                // surviving branch's narrowing hints!
+                boolean thenExits = alwaysExits(i.thenBranch());
+                boolean elseExits = i.elseBranch() != null && alwaysExits(i.elseBranch());
+                if (!hints.isEmpty()) {
+                    if (thenExits && !elseExits) {
+                        for (NarrowHint h : hints) {
+                            if (!h.narrowOnTrue && !mutatesVar(i.elseBranch(), h.var.id())) {
+                                addBinding(env, h, guardId);
+                            }
+                        }
+                    } else if (elseExits && !thenExits) {
+                        for (NarrowHint h : hints) {
+                            if (h.narrowOnTrue && !mutatesVar(i.thenBranch(), h.var.id())) {
+                                addBinding(env, h, guardId);
+                            }
+                        }
+                    }
+                }
                 yield (nc == i.cond() && nt == i.thenBranch() && ne == i.elseBranch())
                         ? i
                         : new HirExpr.If(nc, nt, ne, i.meta());
@@ -443,6 +463,40 @@ final class HirNarrowAnnotator {
                 return expr;
             }
         }
+    }
+
+    private static boolean alwaysExits(HirExpr expr) {
+        if (expr == null) {
+            return false;
+        }
+        return switch (expr) {
+            case HirExpr.Return ignored -> true;
+            case HirExpr.Throw ignored -> true;
+            case HirExpr.Break ignored -> true;
+            case HirExpr.Continue ignored -> true;
+            case HirExpr.Block b -> {
+                for (HirExpr s : b.statements()) {
+                    if (alwaysExits(s)) {
+                        yield true;
+                    }
+                }
+                yield false;
+            }
+            case HirExpr.If i ->
+                    i.elseBranch() != null
+                            && alwaysExits(i.thenBranch())
+                            && alwaysExits(i.elseBranch());
+            default -> false;
+        };
+    }
+
+    private static boolean mutatesVar(HirExpr expr, int varId) {
+        if (expr == null) {
+            return false;
+        }
+        Set<Integer> mutated = new HashSet<>();
+        collectMutatedVars(expr, mutated);
+        return mutated.contains(varId);
     }
 
     private static void invalidateMutated(HirExpr expr, Map<Integer, NarrowBinding> env) {

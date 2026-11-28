@@ -1,6 +1,6 @@
-# Soundness regressions : `effects` (`E2`) & `ownership` (`O1`) capture-escape contracts
+# Soundness regressions : `effects` (`E2`, `E3`, `E5`) & `ownership` (`O1`, `O2`) capture-escape, operators & bound methods
 
-Promoted from `BIP032` quarantine (`effects_e2_object_calling_io_exit.batest.md`) and sister capture-escape variants covering `InitEffectAnalyzer`, `EffectBodyWalker`, `EffectModifiers`, `CallEffectAnalyzer`, and `ModalKindTable`.
+Promoted from `BIP032` quarantine (`effects_e2_object_calling_io_exit.batest.md`, `effects_e2_operator_method_launders_calling_and_borrow.batest.md`, `effects_e3_bound_method_bypasses_mut_and_frozen.batest.md`) and sister capture-escape variants covering `InitEffectAnalyzer`, `EffectBodyWalker`, `OperatorAndLoopEffectAnalyzer`, `EffectModifiers`, `CallEffectAnalyzer`, `MemberTypes`, and `ModalKindTable`.
 
 ```babble
 ;; babble preamble
@@ -255,4 +255,80 @@ def wrapList = fn (xs: list of int) -> (
 )
 assert(wrapPure(fn (): int -> (7)).run() == 7)
 assert(wrapList(list(99)).first() == 99)
+```
+
+## Binary operator plus must not launder io callback out of calling clause
+
+```babble
+def Wrap = class () (
+    def plus = fn (f: fn (): int): fn (): int -> (f)
+)
+def launder = fn calling f (f: fn (): int): fn (): int -> (Wrap() + f)
+def sneaky: fn (): int = launder(fn io (): int -> (print("PWNED!"); 0))
+def _ = sneaky()
+```
+
+```error
+Parameter in calling clause escapes via return : remove f from calling
+```
+
+## Unary operator neg must not escape borrowed parameter
+
+```babble
+def Box = class (var n: int) (
+    def neg = fn (): Box -> (this)
+)
+var leaked: Box? = null
+def steal = fn io (b: Box) -> (leaked = -b)
+steal(Box(1))
+```
+
+```error
+Borrowed parameter b escapes via outer variable leaked : mark parameter as shared b
+```
+
+## Parenthesized bound mut method must not mutate frozen receiver
+
+```babble
+def Box = class (var n: int) (
+    def inc = fn mut (): int -> (this.n = this.n + 1; this.n)
+)
+def bad = fn io (fb: frozen Box): int -> ((fb.inc)())
+def _ = bad(freeze(Box(1)))
+```
+
+```error
+Cannot call mut method on frozen value
+```
+
+## Calling first-class bound mut method on global must be rejected in pure function
+
+```babble
+def Box = class (var n: int) (
+    def inc = fn mut (): int -> (this.n = this.n + 1; this.n)
+)
+def globalBox = Box(0)
+def bumpGlobal = globalBox.inc
+def pureMut = fn (): int -> (bumpGlobal())
+def _ = pureMut()
+```
+
+```error
+Function pureMut violates pure guarantee (performs I/O or external mutation) : mark function as io
+```
+
+## Bound getter on frozen receiver must preserve frozen return type
+
+```babble
+def Box = class (var n: int) ()
+def Outer = class (def inner: Box) (
+    def getInner = fn (): Box -> (this.inner)
+)
+def fo: frozen Outer = freeze(Outer(Box(1)))
+def leaked: Box = (fo.getInner)()
+leaked.n = 99
+```
+
+```error
+Type error : expected Box, got frozen Box
 ```

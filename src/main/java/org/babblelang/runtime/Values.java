@@ -181,8 +181,21 @@ public final class Values {
      */
     public static Object toJavaSam(
             Object value, Class<?> samInterface, Class<?>[] markers, ScriptRuntime rt) {
+        return toJavaSam(value, samInterface, markers, null, rt);
+    }
+
+    /**
+     * Eagerly adapts a Babble callable to a Java functional interface with inbound Babble parameter
+     * type checks ({@code BIP032}).
+     */
+    public static Object toJavaSam(
+            Object value,
+            Class<?> samInterface,
+            Class<?>[] markers,
+            String[] paramDescriptors,
+            ScriptRuntime rt) {
         if (value != null && isBabbleCallable(value)) {
-            return Faces.function((Callable) value, samInterface, markers, rt);
+            return Faces.function((Callable) value, samInterface, markers, paramDescriptors, rt);
         }
         return value;
     }
@@ -193,6 +206,16 @@ public final class Values {
      */
     public static Object toJavaSamByName(
             Object value, String samName, String[] markerNames, ScriptRuntime rt) {
+        return toJavaSamByName(value, samName, markerNames, null, rt);
+    }
+
+    /** Name-based {@link #toJavaSam} with inbound Babble parameter type checks ({@code BIP032}). */
+    public static Object toJavaSamByName(
+            Object value,
+            String samName,
+            String[] markerNames,
+            String[] paramDescriptors,
+            ScriptRuntime rt) {
         if (value == null || !isBabbleCallable(value)) {
             return value;
         }
@@ -206,7 +229,7 @@ public final class Values {
                     markers[i] = Class.forName(markerNames[i], false, cl);
                 }
             }
-            return Faces.function((Callable) value, sam, markers, rt);
+            return Faces.function((Callable) value, sam, markers, paramDescriptors, rt);
         } catch (ClassNotFoundException e) {
             throw new IllegalArgumentException("Unknown Java interface : " + samName, e);
         }

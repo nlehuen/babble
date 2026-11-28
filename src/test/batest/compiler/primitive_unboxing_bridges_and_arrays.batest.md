@@ -141,7 +141,7 @@ assert(u.f() == 11.5 and u.f(3) == 4.5)
 ;; hir -O0,-O1 class=C
 class C
   (def f (fn-ref C.f))
-  fn C.f (x:double=10.0:double, fl:float=1.5:float) -> double {nothrow monotone unique}
+  fn C.f (x:double=10.0:double, fl:float=1.5:float) -> double {nothrow unique}
     (+:double var(x) (call name(double) var(fl)))
 ```
 
@@ -149,7 +149,7 @@ class C
 ;; hir -O2 class=C
 class C
   (def f (fn-ref C.f))
-  fn C.f (x:double=10.0:double, fl:float=1.5:float) -> double {nothrow monotone unique}
+  fn C.f (x:double=10.0:double, fl:float=1.5:float) -> double {nothrow unique}
     (+:double var(x) (call name(double) var(fl)))
 ```
 

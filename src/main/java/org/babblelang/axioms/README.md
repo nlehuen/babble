@@ -54,4 +54,3 @@ Every assumption the analysis, compiler, interpreter, and optimizer make about s
 - `java/lang/curated.ba` : `java.lang.Object.hashCode` and `java.lang.Object.toString` (assumed pure volatile on every implementation)
 - `java/util/curated.ba` : `java.util.Collection`, `java.util.List`, `java.util.Map`, `java.util.Iterator`, `java.util.ListIterator` (core collection/iterator effect contracts assumed for every implementation)
 - `java/util/curated.ba` : `java.util.Comparator` (`compare` assumed pure on every implementation)
-- `java/util/curated.ba` : `java.util.Map.Entry` (assumed deeply immutable despite `setValue`)

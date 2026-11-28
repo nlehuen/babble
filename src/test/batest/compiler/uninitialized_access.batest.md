@@ -38,7 +38,7 @@ class Box
   (def peek (fn-ref Box.peek))
   (def a (call-method this.peek))
   (def late 5:int)
-  fn Box.peek () -> int {nothrow unique}
+  fn Box.peek () -> int {pure unique}
     (get-this-field late)
 ```
 
@@ -151,7 +151,7 @@ class UA (a:int=1:int)
   (def ok (call-method this.peek (call name(UB))))
   (def v (call-method this.peek (if (==:bool (get-this-field a) 1:int) (block this) (block (call name(UB))))))
   (def late 5:int)
-  fn UA.peek (u:obj) -> int {nothrow unique}
+  fn UA.peek (u:obj) -> int {pure unique}
     (select var(u).late)
 ```
 
@@ -162,7 +162,7 @@ class UA (a:int=1:int)
   (def ok (call-method this.peek (call name(UB))))
   (def v (call-method this.peek (if (==:bool (get-this-field a) 1:int) this (call name(UB)))))
   (def late 5:int)
-  fn UA.peek (u:obj) -> int {nothrow unique}
+  fn UA.peek (u:obj) -> int {pure unique}
     (select var(u).late)
 ```
 
@@ -491,7 +491,7 @@ class UA (early:bool)
   (def peek (fn-ref UA.peek))
   (def v (if var(early) (block (call-method this.peek this)) (block 0:int)))
   (def late 5:int)
-  fn UA.peek (u:obj) -> int {nothrow unique}
+  fn UA.peek (u:obj) -> int {pure unique}
     (select var(u).late)
 ```
 
@@ -501,7 +501,7 @@ class UA (early:bool)
   (def peek (fn-ref UA.peek))
   (def v (if var(early) (call-method this.peek this) 0:int))
   (def late 5:int)
-  fn UA.peek (u:obj) -> int {nothrow unique}
+  fn UA.peek (u:obj) -> int {pure unique}
     (select var(u).late)
 ```
 
@@ -511,7 +511,7 @@ class UA (early:bool)
   (def peek (fn-ref UA.peek))
   (def v (if var(early) (call-method this.peek this) 0:int))
   (def late 5:int)
-  fn UA.peek (u:obj) -> int {nothrow unique}
+  fn UA.peek (u:obj) -> int {pure unique}
     (select var(u).late)
 ```
 
@@ -539,7 +539,7 @@ class UA (early:bool)
   (def peek (fn-ref UA.peek))
   (def v (if var(early) (block (call-method this.peek this)) (block 0:int)))
   (def late 5:int)
-  fn UA.peek (u:obj) -> int {nothrow unique}
+  fn UA.peek (u:obj) -> int {pure unique}
     (select var(u).late)
 ```
 
@@ -549,6 +549,6 @@ class UA (early:bool)
   (def peek (fn-ref UA.peek))
   (def v (if var(early) (call-method this.peek this) 0:int))
   (def late 5:int)
-  fn UA.peek (u:obj) -> int {nothrow unique}
+  fn UA.peek (u:obj) -> int {pure unique}
     (select var(u).late)
 ```

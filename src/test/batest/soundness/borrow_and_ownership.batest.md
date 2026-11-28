@@ -1,6 +1,6 @@
 # Soundness regressions : `ownership` (`O2`, `O3`, `O4`) unique capture, projection, fresh containers & exclusivity
 
-Promoted from `BIP032` quarantine (`ownership_o3_closure_capture_unique_fbip.batest.md`, `ownership_o4_collection_get_mut_exclusivity.batest.md`, `ownership_o4_mut_exclusivity_field_alias.batest.md`, `ownership_o4_mut_exclusivity_closure_capture.batest.md`, `ownership_o4_mut_exclusivity_match_rest_slice.batest.md`, `ownership_o3_fresh_container_view_aliases_shared_arg.batest.md`) and sister vectors covering `InitEffectAnalyzer`, `MatchEffectAnalyzer`, `Reachability`, `EffectBodyWalker`, and `CallEffectAnalyzer`.
+Promoted from `BIP032` quarantine (`ownership_o3_closure_capture_unique_fbip.batest.md`, `ownership_o4_collection_get_mut_exclusivity.batest.md`, `ownership_o4_mut_exclusivity_field_alias.batest.md`, `ownership_o4_mut_exclusivity_closure_capture.batest.md`, `ownership_o4_mut_exclusivity_match_rest_slice.batest.md`, `ownership_o3_fresh_container_view_aliases_shared_arg.batest.md`, `ownership_o4_mut_exclusivity_container_and_recurse.batest.md`, `effects_e2_operator_method_launders_calling_and_borrow.batest.md`) and sister vectors covering `InitEffectAnalyzer`, `MatchEffectAnalyzer`, `Reachability`, `EffectBodyWalker`, `OperatorAndLoopEffectAnalyzer`, and `CallEffectAnalyzer`.
 
 ```babble
 ;; babble preamble
@@ -455,4 +455,61 @@ Argument for unique parameter xs must be unique
 def addL = fn (unique xs: list of int): list of int -> (def r = list(from: move(xs)) ; r.add(9) ; r)
 def t = fn (): string -> (string(addL(java.util.Optional.of(list(1, 2)).get())))
 assert(t() == "[1, 2, 9]")
+```
+
+## Binary operator plus must enforce mut exclusivity between receiver and argument
+
+```babble
+def OpBox = class (var n: int) (
+    def plus = fn mut (mut other: OpBox): bool -> (
+        this.n = 1
+        same(this, other)
+    )
+)
+def b = OpBox(0)
+println(b + b)
+```
+
+```error
+Exclusivity error : mut target b aliases argument b
+```
+
+## Passing container holding mutable object alongside that object must fail mut exclusivity
+
+```babble
+def Holder = class (var b: Box) ()
+def collide = fn (mut h: Holder, mut b: Box): int -> (
+    h.b.x = 99
+    b.x
+)
+def b = Box(1)
+def h = Holder(b)
+println(collide(h, b))
+```
+
+```error
+Exclusivity error : mut target h aliases argument b
+```
+
+## Self-recursive mut method calling recurse(this, ...) must fail mut exclusivity
+
+```babble
+def RecBox = class (var n: int) (
+    def aliasSelf = fn mut (mut other: RecBox, depth: int): int -> (
+        if depth == 0 then (
+            this.n = 1
+            other.n = 2
+            this.n
+        ) else (
+            recurse(this, depth - 1)
+        )
+    )
+)
+def a = RecBox(0)
+def b = RecBox(0)
+println(a.aliasSelf(b, 1))
+```
+
+```error
+Exclusivity error : mut target this aliases argument this
 ```

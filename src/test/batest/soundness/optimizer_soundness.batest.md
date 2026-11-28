@@ -1,6 +1,6 @@
-# Soundness regressions : `opt` (`R4`, `R5`) LICM, SCCP, AEGraph, liveness, and Wasm parity
+# Soundness regressions : `opt` (`R3`, `R4`, `R5`) const-folding, numeric parity, LICM, SCCP, AEGraph, tail calls & Wasm parity
 
-Promoted from `BIP032` quarantine (`opt_r4_licm_for_iterable_verify_error.batest.md`, `opt_r5_o2_sccp_compound_assign_order.batest.md`, `opt_r5_o2_sccp_loop_fixpoint_cap.batest.md`, `opt_r5_aegraph_unique_param_mut_rle.batest.md`, `opt_r5_wasm_o2_byte_range_error_message.batest.md`) and sister optimizer vectors covering `HirLicmPass`, `HirSccpPass`, `HirLiveness`, `HirEffectAnalysis`, and `AeGraphBuilder`.
+Promoted from `BIP032` quarantine (`opt_r4_licm_for_iterable_verify_error.batest.md`, `opt_r5_o2_sccp_compound_assign_order.batest.md`, `opt_r5_o2_sccp_loop_fixpoint_cap.batest.md`, `opt_r5_aegraph_unique_param_mut_rle.batest.md`, `opt_r5_wasm_o2_byte_range_error_message.batest.md`, `opt_r3_double_range_contains_order_divergence.batest.md`, `opt_r3_mixed_int_float_comparison_parity.batest.md`, `opt_r4_licm_early_exit_null_guard_hoist.batest.md`, `opt_r5_tail_calls_reassigned_var_method.batest.md`) and sister optimizer vectors covering `HirConstFolder`, `HirConvertMaterializer`, `HirLicmPass`, `HirSccpPass`, `HirLiveness`, `HirEffectAnalysis`, `TailCalls`, and `AeGraphBuilder`.
 
 ## For-loop with mutating iterable and loop-invariant body arithmetic verifies and matches interpret
 
@@ -301,4 +301,113 @@ println(f(byte(1), byte(127)))
 
 ```error
 Out of the byte range : c+1 = 128
+```
+
+## DoubleRange.contains agrees across all modes on -0.0 and NaN
+
+```babble
+def f = fn (x: double): bool -> ((0.0..1.0).contains(x))
+def g = fn (hi: double): bool -> ((0.0..hi).contains(1.0))
+assert(f(-0.0) and not g(0.0 / 0.0))
+```
+
+## Comparing int with float does not lossily round int to float
+
+```babble
+def cmp = fn (a: int, b: float): bool -> (a == b)
+assert(not cmp(16777217, float(16777216)) and (16777217 > float(16777216)))
+```
+
+## Zero-trip while loop with early-exit null check must not hoist guarded field load
+
+```babble
+def Point = record (x: int) ()
+def test = fn (p: Point?, n: int): int -> (
+    var s = 0
+    var i = 0
+    while i < n then (
+        if p == null then (return s)
+        s += p.x
+        i += 1
+    )
+    s
+)
+assert(test(null, 0) == 0 and test(Point(5), 3) == 15)
+```
+
+## Early-exit reversed null and negated type-test guards prevent LICM hoisting
+
+```babble
+def Pt = record (x: int) ()
+def g1 = fn (p: Pt?, n: int): int -> (
+    var s = 0; var i = 0
+    while i < n then (if null == p then (return s); s += p.x; i += 1)
+    s
+)
+def g2 = fn (p: any, n: int): int -> (
+    var s = 0; var i = 0
+    while i < n then (if not (p is Pt) then (return s); s += p.x; i += 1)
+    s
+)
+assert(g1(null, 0) == 0 and g2(Pt(4), 2) == 8)
+```
+
+## Early-exit match guard prevents LICM hoisting
+
+```babble
+def Pt = record (x: int) ()
+def g3 = fn (p: Pt?, n: int): int -> (
+    var s = 0; var i = 0
+    while i < n then (
+        def v = match p case null then (return s) case is Pt if p.x > 0 then (p.x) else (return s)
+        s += v; i += 1
+    )
+    s
+)
+assert(g3(null, 0) == 0 and g3(Pt(3), 2) == 6)
+```
+
+## Early-exit short-circuit null guard inside counted for-loop prevents LICM hoisting
+
+```babble
+def Pt = record (x: int) ()
+def g4 = fn (p: Pt?, q: Pt?, n: int): int -> (
+    var s = 0
+    for i in 0..<n then (
+        if p != null and q != null then (s += p.x + q.x) else (return s)
+    )
+    s
+)
+assert(g4(null, Pt(1), 0) == 0 and g4(Pt(2), Pt(3), 2) == 10)
+```
+
+## Early-exit null guard prevents LICM hoisting of guarded array size and compound field load
+
+```babble
+def Pt = record (x: int) ()
+def g5 = fn (a: (array of int)?, p: Pt?, n: int): int -> (
+    var s = 0; var i = 0
+    while i < n then (
+        if a == null or p == null then (return s)
+        s += (a.size() + 1) + (p.x * 2)
+        i += 1
+    )
+    s
+)
+assert(g5(null, null, 0) == 0 and g5(array.of(1, 2), Pt(5), 2) == 26)
+```
+
+## Reassigning var method field before tail call invokes the new function
+
+```babble
+def C = class () (
+    var step: fn mut (int): int = fn mut (n: int): int -> (
+        if n <= 0 then (0)
+        else (
+            this.step = fn mut (k: int): int -> (999)
+            this.step(n - 1)
+        )
+    )
+)
+assert(C().step(2) == 999)
 ```

@@ -15,6 +15,7 @@ import org.antlr.v4.runtime.tree.ParseTree;
 import org.babblelang.effects.Effect;
 import org.babblelang.parser.BabbleParser;
 import org.babblelang.runtime.ClassShape;
+import org.babblelang.runtime.Operators;
 
 /**
  * Compile-time effect, parameter/receiver mutability, borrow-escape, static {@code mut}
@@ -1119,13 +1120,62 @@ final class EffectChecker {
                     }
                 }
             }
-        } else if (tree instanceof BabbleParser.BinaryOpContext bin
-                && "+".equals(bin.op.getText())) {
-            addToStringTargets(checker.rawTypeOf(bin.left), callableSet, out);
-            addToStringTargets(checker.rawTypeOf(bin.right), callableSet, out);
+        } else if (tree instanceof BabbleParser.BinaryOpContext bin) {
+            String op = bin.op.getText();
+            if ("+".equals(op)) {
+                addToStringTargets(checker.rawTypeOf(bin.left), callableSet, out);
+                addToStringTargets(checker.rawTypeOf(bin.right), callableSet, out);
+            }
+            String opMethod = Operators.method(op);
+            if (opMethod != null) {
+                addOperatorTargets(checker.rawTypeOf(bin.left), opMethod, callableSet, out);
+            }
+        } else if (tree instanceof BabbleParser.NegateContext neg) {
+            addOperatorTargets(checker.rawTypeOf(neg.operand), Operators.NEGATE, callableSet, out);
+        } else if (tree instanceof BabbleParser.AssignExpressionContext assign) {
+            String baseOp = Operators.compound(assign.op.getText());
+            String opMethod = baseOp != null ? Operators.method(baseOp) : null;
+            if (opMethod != null) {
+                addOperatorTargets(checker.rawTypeOf(assign), opMethod, callableSet, out);
+            }
         }
         for (int i = 0; i < tree.getChildCount(); i++) {
             collectCallsInCallable(tree.getChild(i), owner, callableSet, out);
+        }
+    }
+
+    private void addOperatorTargets(
+            Type type,
+            String methodName,
+            Set<ParserRuleContext> callableSet,
+            Set<ParserRuleContext> out) {
+        if (type == null) {
+            return;
+        }
+        for (Type m : Type.membersOf(TypeAlgebra.unwrapFrozen(type))) {
+            if (m instanceof Type.Instance inst) {
+                TypeNode.Member mem = checker.findMemberOnNode(inst.node(), methodName);
+                if (mem == null) {
+                    continue;
+                }
+                if (mem.function != null && callableSet.contains(mem.function)) {
+                    out.add(mem.function);
+                }
+                Type mt = checker.memberTypeForEffects(inst.node(), mem);
+                if (mt instanceof Type.Function tf) {
+                    BabbleParser.FunctionLiteralContext lit = checker.literalOf(tf);
+                    if (lit != null && callableSet.contains(lit)) {
+                        out.add(lit);
+                    }
+                } else if (mt instanceof Type.Overloaded ov) {
+                    for (Type.Function tf : ov.alternatives()) {
+                        BabbleParser.FunctionLiteralContext lit = checker.literalOf(tf);
+                        if (lit != null && callableSet.contains(lit)) {
+                            out.add(lit);
+                        }
+                    }
+                }
+            }
         }
     }
 

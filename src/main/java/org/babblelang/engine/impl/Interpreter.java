@@ -1264,8 +1264,9 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         boolean isIterable =
                 target != null
                         && (target.kind() == LoweringTargets.ForKind.BABBLE_ITERABLE
-                                || target.kind()
-                                        == LoweringTargets.ForKind.BABBLE_TO_JAVA_ITERABLE);
+                                || target.kind() == LoweringTargets.ForKind.BABBLE_TO_JAVA_ITERABLE
+                                || (target.kind() == LoweringTargets.ForKind.DYNAMIC_UNION
+                                        && Members.hasMember(iterable, "iterator")));
         Object iterObj = iterable;
         if (isIterable) {
             Callable iterFn = (Callable) Members.select(iterable, "iterator", "iterator");

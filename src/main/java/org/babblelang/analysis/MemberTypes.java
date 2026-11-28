@@ -96,10 +96,26 @@ final class MemberTypes {
         }
         if (receiver instanceof Type.Frozen frozen) {
             Type inner = member(frozen.of(), name, own, at, receiverText);
-            if (inner == Type.ERROR
-                    || inner instanceof Type.Function
-                    || inner instanceof Type.JavaMethod) {
+            if (inner == Type.ERROR || inner instanceof Type.JavaMethod) {
                 return inner;
+            }
+            if (inner instanceof Type.Function tf) {
+                Type frRes = Type.frozen(tf.result());
+                return frRes.equals(tf.result()) ? tf : tf.withResult(frRes);
+            }
+            if (inner instanceof Type.Overloaded ov) {
+                List<Type.Function> wrapped = new ArrayList<>(ov.alternatives().size());
+                boolean changed = false;
+                for (Type.Function alt : ov.alternatives()) {
+                    Type frRes = Type.frozen(alt.result());
+                    if (!frRes.equals(alt.result())) {
+                        wrapped.add(alt.withResult(frRes));
+                        changed = true;
+                    } else {
+                        wrapped.add(alt);
+                    }
+                }
+                return changed ? new Type.Overloaded(List.copyOf(wrapped)) : ov;
             }
             return Type.frozen(inner);
         }

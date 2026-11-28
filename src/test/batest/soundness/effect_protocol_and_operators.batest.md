@@ -1,6 +1,6 @@
-# Soundness regressions : `effects` (`E1`, `E4`) & `interop` (`J2`) protocols
+# Soundness regressions : `effects` (`E1`, `E3`, `E4`), `interop` (`J2`) & `verifiers` (`A3`) protocols
 
-Promoted from `BIP032` quarantine (`effects_e1_nothrow_untyped_catch_java_error.batest.md`, `effects_e4_compound_assign_operator_io_pwned.batest.md`, `interop_j2_string_valueof_io_tostring_pwned.batest.md`) and sister vectors covering `TryEffectAnalyzer`, `EffectBodyWalker`, `JavaEffectResolver`, and `java/lang/curated.ba`.
+Promoted from `BIP032` quarantine (`effects_e1_nothrow_untyped_catch_java_error.batest.md`, `effects_e4_compound_assign_operator_io_pwned.batest.md`, `interop_j2_string_valueof_io_tostring_pwned.batest.md`, `effects_e1_nothrow_tdz_hir_dce.batest.md`, `effects_e3_negate_union_drops_io.batest.md`, `effects_e3_for_loop_union_and_babble_iterable.batest.md`, `verifiers_a3_operator_recursion_terminating_dce.batest.md`) and sister vectors covering `TryEffectAnalyzer`, `EffectBodyWalker`, `OperatorAndLoopEffectAnalyzer`, `EffectChecker`, `EffectAstExtractors`, `JavaEffectResolver`, and `java/lang/curated.ba`.
 
 ```babble
 ;; babble preamble
@@ -213,4 +213,145 @@ def readBuf = fn (sb: java.lang.StringBuilder): string -> (sb.toString())
 def sb = java.lang.StringBuilder()
 sb.append(Good("ok").toString())
 assert(readBuf(sb) == "ok")
+```
+
+## Top-level forward def TDZ throw must not be certified nothrow
+
+```babble
+def peek = fn nothrow (): int -> (s.length())
+def s: string = "hello"
+```
+
+```error
+Function peek declared nothrow violates nothrow guarantee
+```
+
+## Class inline field forward TDZ throw must not be certified nothrow
+
+```babble
+def C = class () (
+    def peek = fn nothrow (): int -> (this.s.length())
+    def a: int = this.peek()
+    def s: string = "hello"
+)
+```
+
+```error
+Function peek declared nothrow violates nothrow guarantee
+```
+
+## Non-nothrow forward def TDZ throw is preserved and not deleted by DCE
+
+```babble
+def peek = fn (): int -> (s.length())
+def run = fn (): int -> (
+    def u = peek()
+    42
+)
+println(run())
+def s: string = "hello"
+```
+
+```error
+Name used before definition : s
+```
+
+## Unary negate on class-numeric union must not drop io effect of neg method
+
+```babble
+def Bomb = class () (
+    def neg = fn io (): int -> (print("PWNED!"); 0)
+)
+def leak = fn (u: Bomb | int): int -> (-u)
+def _ = leak(Bomb())
+```
+
+```error
+Function leak violates pure guarantee (performs I/O or external mutation) : mark function as io
+```
+
+## For loop over union of Babble iterables must not drop io effect
+
+```babble
+def BombIter = class () (
+    def hasNext = fn io (): bool -> (print("PWNED!"); false)
+    def next = fn (): int -> (0)
+)
+def B1 = class () (def iterator = fn (): BombIter -> (BombIter()))
+def B2 = class () (def iterator = fn (): BombIter -> (BombIter()))
+def leak = fn (u: B1 | B2): int -> (for x in u then (def _ = x); 0)
+```
+
+```error
+Function leak violates pure guarantee (performs I/O or external mutation) : mark function as io
+```
+
+## For loop over frozen Babble iterable returning this must not mutate frozen receiver
+
+```babble
+def SelfIter = class (var v: int = 0) (
+    def iterator = fn (): SelfIter -> (this)
+    def hasNext = fn (): bool -> (this.v == 0)
+    def next = fn mut (): int -> (this.v = 99; 99)
+)
+def bad = fn io (s: frozen SelfIter): int -> (
+    var r = 0
+    for x in s then (r = x)
+    r
+)
+```
+
+```error
+Cannot mutate frozen value via for loop
+```
+
+## Pure for loop over union of Babble iterables runs consistently across all backends
+
+```babble
+def It = class (def v: int, var i: int = 0) (
+    def hasNext = fn (): bool -> (this.i == 0)
+    def next = fn mut (): int -> (this.i = 1; this.v)
+)
+def A = class () (def iterator = fn (): It -> (It(10)))
+def B = class () (def iterator = fn (): It -> (It(20)))
+def sum = fn (u: A | B): int -> (var s = 0; for x in u then (s += x); s)
+assert(sum(A()) == 10 and sum(B()) == 20)
+```
+
+## Recursive unary neg operator method must not be certified terminating and deleted by DCE
+
+```babble
+def Bomb = class () (
+    def neg = fn nothrow (): int -> (-this)
+)
+def run = fn (): int -> (
+    def b = Bomb()
+    def unused = b.neg()
+    42
+)
+println(run())
+```
+
+```error
+Stack overflow
+```
+
+## Recursive binary plus operator method must not be certified terminating and deleted by DCE
+
+```babble
+def Bomb = class () (
+    def plus = fn nothrow (n: int): int -> (
+        if n <= 0 then (0) else ((this + n) + this.plus(n - 1))
+    )
+)
+def run = fn (): int -> (
+    def b = Bomb()
+    def unused = b.plus(1)
+    42
+)
+println(run())
+```
+
+```error
+Stack overflow
 ```

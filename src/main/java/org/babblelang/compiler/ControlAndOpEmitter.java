@@ -640,6 +640,7 @@ final class ControlAndOpEmitter {
                 }
             }
         }
+        String[] paramDescs = target.paramDescriptors();
         if (accessible) {
             mv.visitLdcInsn(Type.getType(sam));
             if (markers.length == 0) {
@@ -648,16 +649,31 @@ final class ControlAndOpEmitter {
                 String field = emitter.constantPool.classArrayField(markers);
                 mv.visitFieldInsn(GETSTATIC, emitter.className, field, "[Ljava/lang/Class;");
             }
-            mv.visitVarInsn(ALOAD, c.rtLocal);
-            c.line(ln);
-            mv.visitMethodInsn(
-                    INVOKESTATIC,
-                    VALUES,
-                    "toJavaSam",
-                    "(Ljava/lang/Object;Ljava/lang/Class;[Ljava/lang/Class;L"
-                            + SCRIPT_RUNTIME
-                            + ";)Ljava/lang/Object;",
-                    false);
+            if (paramDescs.length > 0) {
+                String pField = emitter.constantPool.stringArrayField(paramDescs);
+                mv.visitFieldInsn(GETSTATIC, emitter.className, pField, "[Ljava/lang/String;");
+                mv.visitVarInsn(ALOAD, c.rtLocal);
+                c.line(ln);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        VALUES,
+                        "toJavaSam",
+                        "(Ljava/lang/Object;Ljava/lang/Class;[Ljava/lang/Class;[Ljava/lang/String;L"
+                                + SCRIPT_RUNTIME
+                                + ";)Ljava/lang/Object;",
+                        false);
+            } else {
+                mv.visitVarInsn(ALOAD, c.rtLocal);
+                c.line(ln);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        VALUES,
+                        "toJavaSam",
+                        "(Ljava/lang/Object;Ljava/lang/Class;[Ljava/lang/Class;L"
+                                + SCRIPT_RUNTIME
+                                + ";)Ljava/lang/Object;",
+                        false);
+            }
         } else {
             mv.visitLdcInsn(sam.getName());
             if (markers.length == 0) {
@@ -670,16 +686,31 @@ final class ControlAndOpEmitter {
                 String field = emitter.constantPool.stringArrayField(names);
                 mv.visitFieldInsn(GETSTATIC, emitter.className, field, "[Ljava/lang/String;");
             }
-            mv.visitVarInsn(ALOAD, c.rtLocal);
-            c.line(ln);
-            mv.visitMethodInsn(
-                    INVOKESTATIC,
-                    VALUES,
-                    "toJavaSamByName",
-                    "(Ljava/lang/Object;Ljava/lang/String;[Ljava/lang/String;L"
-                            + SCRIPT_RUNTIME
-                            + ";)Ljava/lang/Object;",
-                    false);
+            if (paramDescs.length > 0) {
+                String pField = emitter.constantPool.stringArrayField(paramDescs);
+                mv.visitFieldInsn(GETSTATIC, emitter.className, pField, "[Ljava/lang/String;");
+                mv.visitVarInsn(ALOAD, c.rtLocal);
+                c.line(ln);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        VALUES,
+                        "toJavaSamByName",
+                        "(Ljava/lang/Object;Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;L"
+                                + SCRIPT_RUNTIME
+                                + ";)Ljava/lang/Object;",
+                        false);
+            } else {
+                mv.visitVarInsn(ALOAD, c.rtLocal);
+                c.line(ln);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        VALUES,
+                        "toJavaSamByName",
+                        "(Ljava/lang/Object;Ljava/lang/String;[Ljava/lang/String;L"
+                                + SCRIPT_RUNTIME
+                                + ";)Ljava/lang/Object;",
+                        false);
+            }
         }
     }
 

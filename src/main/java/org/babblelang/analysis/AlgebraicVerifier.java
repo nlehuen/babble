@@ -436,9 +436,13 @@ final class AlgebraicVerifier {
         }
     }
 
-    record RelVal(Sign sign, boolean injective) {
-        static final RelVal CONST = new RelVal(Sign.CONST, false);
-        static final RelVal TOP = new RelVal(Sign.TOP, false);
+    record RelVal(Sign sign, boolean injective, boolean nanPreserving) {
+        static final RelVal CONST = new RelVal(Sign.CONST, false, false);
+        static final RelVal TOP = new RelVal(Sign.TOP, false, false);
+
+        RelVal(Sign sign, boolean injective) {
+            this(sign, injective, false);
+        }
     }
 
     static boolean isMonotone(Term body, List<Type.Parameter> params, Type result) {
@@ -506,7 +510,11 @@ final class AlgebraicVerifier {
         return switch (term) {
             case Param p ->
                     p.index() == targetParam
-                            ? new RelVal(isOrderedType(p.type()) ? Sign.INC : Sign.TOP, true)
+                            ? new RelVal(
+                                    isOrderedType(p.type()) ? Sign.INC : Sign.TOP,
+                                    true,
+                                    p.kind() == PrimitiveKind.FLOAT
+                                            || p.kind() == PrimitiveKind.DOUBLE)
                             : RelVal.CONST;
             case Const c -> RelVal.CONST;
             case Opaque o -> RelVal.CONST;
@@ -530,7 +538,12 @@ final class AlgebraicVerifier {
                 return new RelVal(Sign.TOP, sub.injective());
             }
             if (u.kind() == PrimitiveKind.FLOAT || u.kind() == PrimitiveKind.DOUBLE) {
-                return new RelVal(sub.sign().negate(), sub.injective());
+                // Under Double.compare/Float.compare total order, NaN is the top element and
+                // -NaN == NaN, so negation only composes into monotone double-negation when the
+                // operand preserves NaN (not after clamping min/max or opaque monotone calls).
+                return sub.nanPreserving()
+                        ? new RelVal(sub.sign().negate(), sub.injective(), true)
+                        : new RelVal(Sign.TOP, sub.injective(), false);
             }
         }
         if (u.op() == ENode.Op.NOT && u.kind() == PrimitiveKind.BOOL) {
@@ -569,29 +582,49 @@ final class AlgebraicVerifier {
         }
         if (b.kind() == PrimitiveKind.DOUBLE || b.kind() == PrimitiveKind.FLOAT) {
             if (b.op() == ENode.Op.ADD) {
-                if (isNonFiniteConst(b.left()) || isNonFiniteConst(b.right())) {
+                if ((r.sign() == Sign.CONST && evalConstDouble(b.right()) == null)
+                        || (l.sign() == Sign.CONST && evalConstDouble(b.left()) == null)) {
                     return RelVal.TOP;
                 }
-                return new RelVal(Sign.add(l.sign(), r.sign()), false);
+                return new RelVal(
+                        Sign.add(l.sign(), r.sign()),
+                        false,
+                        l.nanPreserving() || r.nanPreserving());
             }
             if (b.op() == ENode.Op.SUB) {
-                if (isNonFiniteConst(b.left()) || isNonFiniteConst(b.right())) {
+                if ((r.sign() == Sign.CONST && evalConstDouble(b.right()) == null)
+                        || (l.sign() == Sign.CONST && evalConstDouble(b.left()) == null)) {
                     return RelVal.TOP;
                 }
-                return new RelVal(Sign.add(l.sign(), r.sign().negate()), false);
+                Sign rNeg =
+                        r.sign() == Sign.CONST
+                                ? Sign.CONST
+                                : (r.nanPreserving() ? r.sign().negate() : Sign.TOP);
+                return new RelVal(
+                        Sign.add(l.sign(), rNeg), false, l.nanPreserving() || r.nanPreserving());
             }
             if (b.op() == ENode.Op.MUL) {
                 if (l.sign() != Sign.CONST && r.sign() == Sign.CONST) {
                     Double k = evalConstDouble(b.right());
                     if (k != null && k != 0.0) {
-                        return new RelVal(k > 0.0 ? l.sign() : l.sign().negate(), false);
+                        if (k > 0.0) {
+                            return new RelVal(l.sign(), false, l.nanPreserving());
+                        }
+                        return l.nanPreserving()
+                                ? new RelVal(l.sign().negate(), false, true)
+                                : RelVal.TOP;
                     }
                     return RelVal.TOP;
                 }
                 if (l.sign() == Sign.CONST && r.sign() != Sign.CONST) {
                     Double k = evalConstDouble(b.left());
                     if (k != null && k != 0.0) {
-                        return new RelVal(k > 0.0 ? r.sign() : r.sign().negate(), false);
+                        if (k > 0.0) {
+                            return new RelVal(r.sign(), false, r.nanPreserving());
+                        }
+                        return r.nanPreserving()
+                                ? new RelVal(r.sign().negate(), false, true)
+                                : RelVal.TOP;
                     }
                     return RelVal.TOP;
                 }
@@ -599,7 +632,12 @@ final class AlgebraicVerifier {
             if (b.op() == ENode.Op.DIV && l.sign() != Sign.CONST && r.sign() == Sign.CONST) {
                 Double k = evalConstDouble(b.right());
                 if (k != null && k != 0.0) {
-                    return new RelVal(k > 0.0 ? l.sign() : l.sign().negate(), false);
+                    if (k > 0.0) {
+                        return new RelVal(l.sign(), false, l.nanPreserving());
+                    }
+                    return l.nanPreserving()
+                            ? new RelVal(l.sign().negate(), false, true)
+                            : RelVal.TOP;
                 }
             }
             return RelVal.TOP;
@@ -629,7 +667,8 @@ final class AlgebraicVerifier {
         }
         if (isMonotoneNumericWidening(src, dst)) {
             boolean lossless = isLosslessWidening(src, dst);
-            return new RelVal(sub.sign(), lossless && sub.injective());
+            boolean preservesNan = sub.nanPreserving() && (dst == Type.DOUBLE || dst == Type.FLOAT);
+            return new RelVal(sub.sign(), lossless && sub.injective(), preservesNan);
         }
         return RelVal.TOP;
     }
@@ -643,9 +682,31 @@ final class AlgebraicVerifier {
         }
         // Order-preserving min/max patterns: `if a < b then (a) else (b)` etc.
         if (isOrderedType(ite.type()) && isMinMaxIte(ite)) {
-            return new RelVal(Sign.join(t.sign(), e.sign()), false);
+            Sign joined = Sign.join(t.sign(), e.sign());
+            boolean isFloat =
+                    ite.kind() == PrimitiveKind.FLOAT || ite.kind() == PrimitiveKind.DOUBLE;
+            if (isFloat && (joined != Sign.INC || !isFloatSoundMinIte(ite))) {
+                return RelVal.TOP;
+            }
+            return new RelVal(joined, false);
         }
         return RelVal.TOP;
+    }
+
+    private static boolean isFloatSoundMinIte(Ite ite) {
+        // Under IEEE-754 + Double.compare total order, NaN makes any comparison false and takes
+        // the else branch. Min-patterns (`if a < b then a else b` / `if a > b then b else a`)
+        // remain monotone on NaN, whereas max-patterns (`if a > b then a else b`) drop from
+        // finite positive values down to 0.0 on NaN.
+        if (!(ite.cond() instanceof Binary cmp)) {
+            return false;
+        }
+        return ((cmp.op() == ENode.Op.LT || cmp.op() == ENode.Op.LTE)
+                        && cmp.left().equals(ite.thenBranch())
+                        && cmp.right().equals(ite.elseBranch()))
+                || ((cmp.op() == ENode.Op.GT || cmp.op() == ENode.Op.GTE)
+                        && cmp.right().equals(ite.thenBranch())
+                        && cmp.left().equals(ite.elseBranch()));
     }
 
     private static boolean isMinMaxIte(Ite ite) {
@@ -690,7 +751,9 @@ final class AlgebraicVerifier {
             for (RelVal ar : argRels) {
                 combined = Sign.join(combined, ar.sign());
             }
-            if (combined == Sign.INC || combined == Sign.DEC) {
+            boolean isFloat =
+                    call.kind() == PrimitiveKind.FLOAT || call.kind() == PrimitiveKind.DOUBLE;
+            if (combined == Sign.INC || (combined == Sign.DEC && !isFloat)) {
                 monoSign = combined;
             }
         }

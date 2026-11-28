@@ -273,13 +273,14 @@ assert(m1(2.0) == 10.0 and m2(1.0) == 8.0 and m3(2) == 10)
 ## Call RelSignDomain : monotone DEC/TOP and injective multi-arg partial application
 
 ```babble
-def idD = fn monotone (x: double): double -> ( x + 1.0 )
-def decC = fn monotone (x: double): double -> ( -idD(-x) )
-def topC = fn (x: double): double -> ( idD(x * x) )
-def tp = fn injective (a: int, b: int): Pair -> ( Pair(a, a + b) )
-def c1 = fn (x: int): Pair -> ( tp(1, x) )
-def c2 = fn (x: int): Pair -> ( tp(x, x) )
-assert(decC(2.0) == 1.0 and topC(2.0) == 5.0 and c1(3).b == 4)
+def idD = fn monotone (x: double): double -> (x + 1.0)
+def idB = fn monotone (b: bool) -> (b)
+def decC = fn monotone (b: bool) -> (not idB(not b))
+def topC = fn (x: double) -> (idD(x * x))
+def tp = fn injective (a: int, b: int) -> (Pair(a, a + b))
+def c1 = fn (x: int) -> (tp(1, x))
+def c2 = fn (x: int) -> (tp(x, x))
+assert(decC(true) and topC(2.0) == 5.0 and c1(3).b == 4)
 ```
 
 ## Call extractCall : non-injective arg, TypeApply, static Java, and instance method calls

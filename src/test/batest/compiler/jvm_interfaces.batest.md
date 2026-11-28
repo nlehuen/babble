@@ -259,7 +259,7 @@ class DBox (v:double)
   (def xf (fn-ref DBox.xf))
   fn DBox.get () -> double {nothrow unique}
     var(v)
-  fn DBox.xf (x:double) -> double {nothrow monotone unique}
+  fn DBox.xf (x:double) -> double {nothrow unique}
     (+:double var(x) var(v))
 ```
 
@@ -270,7 +270,7 @@ class DBox (v:double)
   (def xf (fn-ref DBox.xf))
   fn DBox.get () -> double {nothrow unique}
     var(v)
-  fn DBox.xf (x:double) -> double {nothrow monotone unique}
+  fn DBox.xf (x:double) -> double {nothrow unique}
     (+:double var(x) var(v))
 ```
 

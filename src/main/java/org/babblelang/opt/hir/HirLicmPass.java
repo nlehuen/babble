@@ -446,6 +446,7 @@ public final class HirLicmPass implements HirPass {
             case HirExpr.VarRead v -> {
                 if (v.var().cell()
                         || modified.contains(v.var().id())
+                        || localGuardVars.contains(v.var().id())
                         || (v.var().mayBeUndefined() && !v.var().definitelyDefined())) {
                     ok[0] = false;
                 }
@@ -460,14 +461,8 @@ public final class HirLicmPass implements HirPass {
                     ok[0] = false;
                 }
             }
-            case HirExpr.Narrow n -> {
-                HirExpr inner = n.operand();
-                if (inner instanceof HirExpr.VarRead vr && localGuardVars.contains(vr.var().id())) {
-                    ok[0] = false;
-                    return;
-                }
-                checkOperandsInvariant(inner, modified, localGuardVars, ok);
-            }
+            case HirExpr.Narrow n ->
+                    checkOperandsInvariant(n.operand(), modified, localGuardVars, ok);
             case HirExpr.DirectBabbleCall c -> {
                 if (!(c.callee() instanceof HirExpr.NameRead
                         || c.callee() instanceof HirExpr.FunctionRef)) {
@@ -597,6 +592,9 @@ public final class HirLicmPass implements HirPass {
             case HirExpr.Logic l -> collectGuardTestedVars(l.left(), out);
             case HirExpr.While w -> collectGuardTestedVars(w.cond(), out);
             case HirExpr.Match m -> {
+                if (unwrapNarrow(m.scrutinee()) instanceof HirExpr.VarRead vr) {
+                    out.add(vr.var().id());
+                }
                 for (HirExpr.MatchArm arm : m.arms()) {
                     if (arm.guard() != null) {
                         collectGuardTestedVars(arm.guard(), out);
@@ -614,9 +612,6 @@ public final class HirLicmPass implements HirPass {
     }
 
     private static void collectGuardTestedVars(HirExpr cond, Set<Integer> out) {
-        if (cond == null) {
-            return;
-        }
         HirExpr cur = HirRewriter.unwrapTransparent(cond);
         while (cur instanceof HirExpr.Unary u && u.op() == HirExpr.UnaryOp.NOT) {
             cur = HirRewriter.unwrapTransparent(u.operand());

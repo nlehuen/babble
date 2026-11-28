@@ -389,8 +389,7 @@ public final class EGraph {
                 && c1.literal() instanceof Character ch1) {
             cmp = Character.compare(ch0, ch1);
         } else if (c0.literal() instanceof Number n0 && c1.literal() instanceof Number n1) {
-            PrimitiveKind common =
-                    numericOrder(c0.kind()) >= numericOrder(c1.kind()) ? c0.kind() : c1.kind();
+            PrimitiveKind common = PrimitiveKind.comparisonKind(c0.kind(), c1.kind());
             cmp =
                     switch (common) {
                         case BYTE, SHORT, INT -> Integer.compare(n0.intValue(), n1.intValue());

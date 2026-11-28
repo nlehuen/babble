@@ -154,16 +154,25 @@ final class TypeEnv {
     }
 
     /**
-     * Joins two post-branch environments: evicts any declaration whose narrowing was killed in
-     * either branch relative to {@code base}.
+     * Joins two post-branch environments: evicts any declaration whose narrowing was killed or
+     * replaced by a type no longer subsumed by {@code base}'s narrowing in either branch.
      */
-    static TypeEnv joinBranches(TypeEnv base, TypeEnv branchA, TypeEnv branchB) {
+    static TypeEnv joinBranches(
+            TypeEnv base, TypeEnv branchA, TypeEnv branchB, TypeAlgebra algebra) {
         if (base.narrowings.isEmpty()) {
             return EMPTY;
         }
         Map<ParserRuleContext, Type> joined = null;
-        for (ParserRuleContext decl : base.narrowings.keySet()) {
-            if (branchA.narrowings.get(decl) == null || branchB.narrowings.get(decl) == null) {
+        for (Map.Entry<ParserRuleContext, Type> entry : base.narrowings.entrySet()) {
+            ParserRuleContext decl = entry.getKey();
+            Type baseType = entry.getValue();
+            Type typeA = branchA.narrowings.get(decl);
+            Type typeB = branchB.narrowings.get(decl);
+            boolean keepA =
+                    typeA != null && (typeA.equals(baseType) || algebra.subtype(typeA, baseType));
+            boolean keepB =
+                    typeB != null && (typeB.equals(baseType) || algebra.subtype(typeB, baseType));
+            if (!keepA || !keepB) {
                 if (joined == null) {
                     joined = new IdentityHashMap<>(base.narrowings);
                 }

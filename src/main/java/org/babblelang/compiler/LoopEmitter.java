@@ -553,10 +553,23 @@ final class LoopEmitter {
         mv.visitJumpInsn(GOTO, iterLoop);
 
         mv.visitLabel(notIter);
+        String iterSite =
+                emitter.constantPool.callSiteField(
+                        new CallSite(
+                                emitter.sourceName, f.meta().line(), "iterator", new String[0]));
         mv.visitVarInsn(ALOAD, rawLocal);
-        mv.visitTypeInsn(CHECKCAST, "java/lang/Iterable");
+        mv.visitVarInsn(ALOAD, c.rtLocal);
+        mv.visitFieldInsn(GETSTATIC, emitter.className, iterSite, "L" + CALL_SITE + ";");
         mv.visitMethodInsn(
-                INVOKEINTERFACE, "java/lang/Iterable", "iterator", "()Ljava/util/Iterator;", true);
+                INVOKESTATIC,
+                RUNTIME + "CoreCollections",
+                "toJavaIterator",
+                "(Ljava/lang/Object;L"
+                        + SCRIPT_RUNTIME
+                        + ";L"
+                        + CALL_SITE
+                        + ";)Ljava/util/Iterator;",
+                false);
         mv.visitVarInsn(ASTORE, itLocal);
 
         mv.visitLabel(iterLoop);

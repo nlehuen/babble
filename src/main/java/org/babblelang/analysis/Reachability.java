@@ -935,6 +935,10 @@ final class Reachability {
     }
 
     static boolean staticallySameObject(Origin a, Origin b) {
+        return staticallyAliases(a, false, b, false);
+    }
+
+    static boolean staticallyAliases(Origin a, boolean aShallow, Origin b, boolean bShallow) {
         if (a == Origin.IMMUTABLE || b == Origin.IMMUTABLE) {
             return false;
         }
@@ -945,29 +949,43 @@ final class Reachability {
                 }
             }
         }
-        if (!a.paths.isEmpty() && !b.paths.isEmpty()) {
-            for (PathKey pa : a.paths) {
-                for (PathKey pb : b.paths) {
+        Set<PathKey> aPaths = aShallow ? a.paths : allReachablePaths(a);
+        Set<PathKey> bPaths = bShallow ? b.paths : allReachablePaths(b);
+        if (!aPaths.isEmpty() && !bPaths.isEmpty()) {
+            for (PathKey pa : aPaths) {
+                for (PathKey pb : bPaths) {
                     if (pa.overlaps(pb)) {
                         return true;
                     }
                 }
             }
         }
-        if (!a.paths.isEmpty() && !b.directKeys.isEmpty()) {
-            for (PathKey pa : a.paths) {
+        if (!aPaths.isEmpty() && !b.directKeys.isEmpty()) {
+            for (PathKey pa : aPaths) {
                 if (b.directKeys.contains(pa.root())) {
                     return true;
                 }
             }
         }
-        if (!b.paths.isEmpty() && !a.directKeys.isEmpty()) {
-            for (PathKey pb : b.paths) {
+        if (!bPaths.isEmpty() && !a.directKeys.isEmpty()) {
+            for (PathKey pb : bPaths) {
                 if (a.directKeys.contains(pb.root())) {
                     return true;
                 }
             }
         }
         return false;
+    }
+
+    private static Set<PathKey> allReachablePaths(Origin o) {
+        if (o.elementPaths.isEmpty() && o.fieldPaths.isEmpty()) {
+            return o.paths;
+        }
+        Set<PathKey> all = new HashSet<>(o.paths);
+        all.addAll(o.elementPaths);
+        for (Set<PathKey> fp : o.fieldPaths.values()) {
+            all.addAll(fp);
+        }
+        return all;
     }
 }

@@ -183,6 +183,115 @@ final class FieldInitAnalysis {
         }
     }
 
+    /**
+     * Conservative check runnable before {@link #run} (during {@link EffectChecker#inferAll}):
+     * returns {@code true} iff any inline class-body statement or {@code init} block can observe
+     * {@code this} before all body fields are initialized (potentially triggering field TDZ).
+     */
+    static boolean classMayThrowFieldTdz(
+            TypeNode node, BabbleParser.ClassExpressionContext clsCtx) {
+        if (clsCtx == null || clsCtx.classBlock == null) {
+            return false;
+        }
+        FieldMap fm = FieldMap.of(node);
+        if (fm.count == 0) {
+            return false;
+        }
+        BitSet initialized = new BitSet(fm.count);
+        for (int i = 0; i < fm.count; i++) {
+            if (node.parameterMembers.contains(fm.memberIndex[i])) {
+                initialized.set(i);
+            }
+        }
+        for (BabbleParser.ExpressionContext stmt : clsCtx.classBlock.expression()) {
+            if (stmt instanceof BabbleParser.InitExpressionContext) {
+                continue;
+            }
+            if (stmt instanceof BabbleParser.DefExpressionContext def) {
+                if (def.value == null
+                        || def.value instanceof BabbleParser.FunctionLiteralContext
+                        || def.value instanceof BabbleParser.OverloadExpressionContext) {
+                    continue;
+                }
+                if (exprUsesUnsafeThisStatic(def.value, fm, initialized)) {
+                    return true;
+                }
+                Integer slot = fm.fieldBit.get(def.name.getText());
+                if (slot != null) {
+                    initialized.set(slot);
+                }
+            } else if (exprUsesUnsafeThisStatic(stmt, fm, initialized)) {
+                return true;
+            }
+        }
+        for (TypeNode.Constructor ctor : node.constructors) {
+            if (ctor.initBlock != null
+                    && initTreeUsesUnsafeThis(ctor.initBlock.initBlock, fm, initialized)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean initTreeUsesUnsafeThis(
+            org.antlr.v4.runtime.tree.ParseTree tree, FieldMap fm, BitSet initialized) {
+        if (tree == null
+                || tree instanceof BabbleParser.FunctionLiteralContext
+                || tree instanceof BabbleParser.ClassExpressionContext
+                || tree instanceof BabbleParser.ObjectExpressionContext
+                || tree instanceof BabbleParser.InterfaceExpressionContext) {
+            return false;
+        }
+        if (tree instanceof BabbleParser.CallContext call
+                && call.expression() instanceof BabbleParser.ThisExpressionContext) {
+            return initTreeUsesUnsafeThis(call.callParameters(), fm, initialized);
+        }
+        if (tree instanceof BabbleParser.AssignExpressionContext assign
+                && ScopeAnalysis.assignReceiver(assign)
+                        instanceof BabbleParser.ThisExpressionContext) {
+            return initTreeUsesUnsafeThis(assign.value, fm, initialized);
+        }
+        if (tree instanceof BabbleParser.SelectorContext sel
+                && sel.expression() instanceof BabbleParser.ThisExpressionContext) {
+            Integer slot = fm.fieldBit.get(ScopeAnalysis.selectorName(sel));
+            return slot == null || !initialized.get(slot);
+        }
+        if (tree instanceof BabbleParser.ThisExpressionContext) {
+            return true;
+        }
+        for (int i = 0; i < tree.getChildCount(); i++) {
+            if (initTreeUsesUnsafeThis(tree.getChild(i), fm, initialized)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean exprUsesUnsafeThisStatic(
+            org.antlr.v4.runtime.tree.ParseTree tree, FieldMap fm, BitSet initialized) {
+        if (tree == null
+                || tree instanceof BabbleParser.FunctionLiteralContext
+                || tree instanceof BabbleParser.ClassExpressionContext
+                || tree instanceof BabbleParser.ObjectExpressionContext
+                || tree instanceof BabbleParser.InterfaceExpressionContext) {
+            return false;
+        }
+        if (tree instanceof BabbleParser.SelectorContext sel
+                && sel.expression() instanceof BabbleParser.ThisExpressionContext) {
+            Integer slot = fm.fieldBit.get(ScopeAnalysis.selectorName(sel));
+            return slot == null || !initialized.get(slot);
+        }
+        if (tree instanceof BabbleParser.ThisExpressionContext) {
+            return true;
+        }
+        for (int i = 0; i < tree.getChildCount(); i++) {
+            if (exprUsesUnsafeThisStatic(tree.getChild(i), fm, initialized)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private boolean isInlineDefFinalSafe(
             TypeNode node, FieldMap fm, BabbleParser.BlockContext classBlock) {
         if (classBlock == null) {
@@ -1028,6 +1137,36 @@ final class FieldInitAnalysis {
                 BitSet du = (BitSet) afterIter.du.clone();
                 du.and(bodyOut.du);
                 return new InitState((BitSet) afterIter.da.clone(), du, false);
+            }
+            case BabbleParser.BooleanOpContext boolOp -> {
+                InitState afterLeft =
+                        walkExpr(
+                                node,
+                                ctor,
+                                fm,
+                                boolOp.left,
+                                state,
+                                loopDepth,
+                                inClosure,
+                                thisUsedBeforeAll,
+                                defFinalSafe);
+                InitState afterRight =
+                        walkExpr(
+                                node,
+                                ctor,
+                                fm,
+                                boolOp.right,
+                                afterLeft.copy(),
+                                loopDepth,
+                                inClosure,
+                                thisUsedBeforeAll,
+                                defFinalSafe);
+                // Short-circuit: `right` may or may not execute, so only `left`'s DA holds
+                // unconditionally, while DU must hold on both paths.
+                BitSet da = (BitSet) afterLeft.da.clone();
+                BitSet du = (BitSet) afterLeft.du.clone();
+                du.and(afterRight.du);
+                return new InitState(da, du, afterLeft.unreachable);
             }
             case BabbleParser.ThrowExpressionContext thr -> {
                 InitState after =
