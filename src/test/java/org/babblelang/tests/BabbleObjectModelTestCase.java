@@ -102,9 +102,11 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
 
     @Test
     public void testMembersAreReachedThroughThisOnly() {
-        assertFails(
+        assertStaticFails(
                 "def C = class () ( def size = 0 ; def get = fn volatile () -> ( size ) ) ; C().get()",
-                "No such name : size");
+                "No such name : size",
+                1,
+                65);
         // obj.x sees the object's members, and nothing of the scope that created it.
         assertStaticFails(
                 "def hidden = 1 ; def o = object ( def v = 1 ) ; o.hidden",
@@ -183,9 +185,11 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
                 1,
                 22);
         // A header member binds no name.
-        assertFails(
+        assertStaticFails(
                 "def C = class (def a : int) ( def get = fn volatile () -> ( a ) ) ; C(1).get()",
-                "No such name : a");
+                "No such name : a",
+                1,
+                61);
     }
 
     @Test

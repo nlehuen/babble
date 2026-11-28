@@ -412,7 +412,7 @@ public final class BuiltinAxioms {
                 sink.report("Expected axiom declaration", expr);
                 continue;
             }
-            if (AxiomData.isBabbleNameAxiom(ax)) {
+            if (AxiomData.isBabbleFunctionAxiom(ax)) {
                 String bName = AxiomData.babbleName(ax);
                 Type.Function fn =
                         AxiomData.parseBabbleAxiomFunction(
@@ -424,6 +424,12 @@ public final class BuiltinAxioms {
                         babbleBuiltinsOut.put(bName, fn);
                     }
                 }
+                continue;
+            }
+            if (AxiomData.isBabbleValueAxiom(ax)) {
+                sink.report(
+                        "Built-in prelude axiom must be a function : " + AxiomData.babbleName(ax),
+                        ax);
                 continue;
             }
             AxiomData.ParsedAxiom parsed = AxiomData.parse(ax, null, curated, sink);

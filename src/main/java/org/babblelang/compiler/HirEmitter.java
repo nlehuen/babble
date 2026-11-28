@@ -570,8 +570,12 @@ final class HirEmitter {
             case HirExpr.CoreCollectionRef r -> emitCoreCollectionRef(r);
             case HirExpr.CoreExceptionRef r -> emitCoreExceptionRef(r);
             case HirExpr.VarRead v -> loadVariable(v.var(), v.meta().line());
-            case HirExpr.NameRead n ->
-                    loadName(n.name(), n.finalBinding() && n.definitelyDefined(), n.meta().line());
+            case HirExpr.NameRead n -> {
+                loadName(n.name(), n.finalBinding() && n.definitelyDefined(), n.meta().line());
+                if (n.meta().checkedType() != null) {
+                    controlOps.checkType(n.meta().checkedType());
+                }
+            }
             case HirExpr.ThisRef t -> loadVarOrName(t.var(), "this", t.meta().line());
             case HirExpr.RecurseRef r -> loadVarOrName(r.var(), "$recurse", r.meta().line());
             case HirExpr.Def d -> assigns.emitDef(d);

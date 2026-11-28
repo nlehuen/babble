@@ -918,13 +918,16 @@ public class TypeCheckerTestCase {
                         + "def m = import(path)\n"
                         + "m.foo\n"
                         + "import(1)\n"
-                        + "externalBinding + 1",
+                        + "externalBinding + 1\n"
+                        + "axiom hostAny: any\n"
+                        + "hostAny + 1",
                 "2:16 Type error : expected java.lang.Appendable, got string",
                 "4:8 Type error : expected bool, got int",
                 "6:1 Not a scope : classof(1)",
                 "11:1 Not a scope : m",
                 "12:8 Type error : expected string, got int",
-                "13:1 Not a number : externalBinding");
+                "13:1 No such name : externalBinding",
+                "15:1 Not a number : hostAny");
     }
 
     @Test

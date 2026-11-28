@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import org.babblelang.effects.Effect;
 
 /**
@@ -21,22 +22,37 @@ import org.babblelang.effects.Effect;
 public final class HostEffects {
 
     public static final HostEffects DEFAULT =
-            new HostEffects(true, true, AxiomData.AxiomTable.EMPTY, BuiltinAxioms.standard());
+            new HostEffects(
+                    true, true, AxiomData.AxiomTable.EMPTY, BuiltinAxioms.standard(), Set.of());
 
     private final boolean allowAxioms;
     private final boolean bytecodeEffectAnalysis;
     private final AxiomData.AxiomTable hostAxioms;
     private final BuiltinAxioms builtinAxioms;
+    private final Set<String> hostBindings;
 
     HostEffects(
             boolean allowAxioms,
             boolean bytecodeEffectAnalysis,
             AxiomData.AxiomTable hostAxioms,
             BuiltinAxioms builtinAxioms) {
+        this(allowAxioms, bytecodeEffectAnalysis, hostAxioms, builtinAxioms, Set.of());
+    }
+
+    HostEffects(
+            boolean allowAxioms,
+            boolean bytecodeEffectAnalysis,
+            AxiomData.AxiomTable hostAxioms,
+            BuiltinAxioms builtinAxioms,
+            Set<String> hostBindings) {
         this.allowAxioms = allowAxioms;
         this.bytecodeEffectAnalysis = bytecodeEffectAnalysis;
         this.hostAxioms = hostAxioms != null ? hostAxioms : AxiomData.AxiomTable.EMPTY;
         this.builtinAxioms = builtinAxioms != null ? builtinAxioms : BuiltinAxioms.standard();
+        this.hostBindings =
+                hostBindings == null || hostBindings.isEmpty()
+                        ? Set.of()
+                        : Set.copyOf(hostBindings);
     }
 
     public boolean allowAxioms() {
@@ -49,6 +65,30 @@ public final class HostEffects {
 
     public BuiltinAxioms builtinAxioms() {
         return builtinAxioms;
+    }
+
+    /**
+     * External binding names currently present in the host's {@code ENGINE_SCOPE}, for {@code
+     * eval}.
+     */
+    public Set<String> hostBindings() {
+        return hostBindings;
+    }
+
+    /** Returns a copy of this policy seeded with the given host binding names. */
+    public HostEffects withHostBindings(Set<String> bindings) {
+        if (bindings == null || bindings.isEmpty()) {
+            return hostBindings.isEmpty()
+                    ? this
+                    : new HostEffects(
+                            allowAxioms,
+                            bytecodeEffectAnalysis,
+                            hostAxioms,
+                            builtinAxioms,
+                            Set.of());
+        }
+        return new HostEffects(
+                allowAxioms, bytecodeEffectAnalysis, hostAxioms, builtinAxioms, bindings);
     }
 
     /** The host's assumptions, as axioms. */

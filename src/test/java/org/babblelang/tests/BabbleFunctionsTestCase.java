@@ -241,16 +241,26 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
                 "org.babblelang.runtime.BabbleException: No such parameter : c in <input> at line number 7 at column number 1",
                 leftover.getMessage());
 
-        // An error inside a default value is reported where it is.
-        ScriptException inDefault =
+        // An error inside a default value is reported where it is (both at runtime and statically).
+        ScriptException inDefaultRuntime =
+                Assertions.assertThrows(
+                        ScriptException.class,
+                        () ->
+                                interpret(
+                                        "axiom missingHost: int\ndef f = fn volatile (a:int,\n b:int = a + missingHost) -> (\n  a\n)\n\nf(1)"));
+        Assertions.assertEquals(
+                "org.babblelang.runtime.BabbleException: No such name : missingHost in <input> at line number 3",
+                inDefaultRuntime.getMessage());
+
+        ScriptException inDefaultStatic =
                 Assertions.assertThrows(
                         ScriptException.class,
                         () ->
                                 interpret(
                                         "def f = fn volatile (a:int,\n b:int = a + (nosuchname as int)) -> (\n  a\n)\n\nf(1)"));
         Assertions.assertEquals(
-                "org.babblelang.runtime.BabbleException: No such name : nosuchname in <input> at line number 2",
-                inDefault.getMessage());
+                "org.babblelang.runtime.BabbleException: No such name : nosuchname in <input> at line number 2 at column number 15",
+                inDefaultStatic.getMessage());
     }
 
     @Test

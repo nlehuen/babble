@@ -288,6 +288,100 @@ final class TypeAnnotations {
         return result;
     }
 
+    /** Resolves the type of a Babble value axiom ({@code axiom name: T}). */
+    Type axiomValueAnnotation(BabbleParser.AxiomValueTypeContext avt, ScopeNode scope) {
+        List<Type> members = new ArrayList<>();
+        List<Type> group = new ArrayList<>();
+        List<ParserRuleContext> groupNodes = new ArrayList<>();
+        Type headType = axiomValueHeadAnnotation(avt.axiomValueHead(), scope);
+        if (headType == Type.ERROR) {
+            return Type.ERROR;
+        }
+        group.add(headType);
+        groupNodes.add(avt.axiomValueHead());
+        for (int i = 1; i < avt.getChildCount(); i++) {
+            ParseTree child = avt.getChild(i);
+            if (child instanceof BabbleParser.NullableTypeContext part) {
+                Type operand = nullableAnnotation(part, scope, false);
+                if (operand == Type.ERROR) {
+                    return Type.ERROR;
+                }
+                group.add(operand);
+                groupNodes.add(part);
+            } else if (child instanceof TerminalNode terminal
+                    && terminal.getSymbol().getType() == BabbleLexer.PIPE) {
+                Type combined = combineIntersectionGroup(group, groupNodes);
+                if (combined == Type.ERROR) {
+                    return Type.ERROR;
+                }
+                members.add(combined);
+                group = new ArrayList<>();
+                groupNodes = new ArrayList<>();
+            }
+        }
+        Type last = combineIntersectionGroup(group, groupNodes);
+        if (last == Type.ERROR) {
+            return Type.ERROR;
+        }
+        members.add(last);
+        return Type.union(members);
+    }
+
+    private Type axiomValueHeadAnnotation(
+            BabbleParser.AxiomValueHeadContext head, ScopeNode scope) {
+        if (head.simpleType() != null) {
+            return simpleAnnotation(head.simpleType(), scope, false);
+        }
+        if (head.OVERLOAD() != null) {
+            return resolveOverloadTypes(head.type(), "axiom", head, scope, false);
+        }
+        if (head.NULL() != null) {
+            return Type.NULL;
+        }
+        Type base = annotation(head.type(0), scope, false);
+        if (base == Type.ERROR) {
+            return Type.ERROR;
+        }
+        if (head.frozen != null) {
+            base = Type.frozen(base);
+        }
+        return applyNullMod(base, head.nullMod, head);
+    }
+
+    private Type combineIntersectionGroup(List<Type> operands, List<ParserRuleContext> nodes) {
+        if (operands.size() == 1) {
+            return operands.get(0);
+        }
+        StringBuilder text = new StringBuilder();
+        for (ParserRuleContext node : nodes) {
+            if (!text.isEmpty()) {
+                text.append(" & ");
+            }
+            text.append(node.getText().replace("?", ""));
+        }
+        for (int i = 0; i < operands.size(); i++) {
+            Type operand = operands.get(i);
+            if (Type.containsNull(operand)) {
+                checker.warn(
+                        "Nullable inside an intersection : "
+                                + nodes.get(i).getText()
+                                + " (write ("
+                                + text
+                                + ")?)",
+                        nodes.get(i));
+                return Type.ERROR;
+            }
+            if (!isIntersectable(operand)) {
+                checker.warn("Only interfaces intersect : " + text, nodes.get(i));
+                return Type.ERROR;
+            }
+            if (operand instanceof Type.JavaInstance java && java.type() == Object.class) {
+                operands.set(i, Type.ANY);
+            }
+        }
+        return Type.intersection(operands);
+    }
+
     /** One operand of a union : a single type, or the intersection of several (BIP022-D1). */
     Type groupAnnotation(
             List<BabbleParser.NullableTypeContext> group, ScopeNode scope, boolean allowRaw) {
@@ -418,36 +512,51 @@ final class TypeAnnotations {
                     resolveCapturedCallings(function.effectPrefix(), fnParams).keySet());
         }
         if (primary instanceof BabbleParser.OverloadTypeContext overload) {
-            List<Type.Function> alts = new ArrayList<>();
-            boolean failed = false;
-            for (BabbleParser.TypeContext operand : overload.type()) {
-                Type t = annotation(operand, scope, allowRaw);
-                if (t == Type.ERROR) {
-                    failed = true;
-                } else if (t instanceof Type.Function fn) {
-                    alts.add(fn);
-                } else if (t instanceof Type.Overloaded nested) {
-                    alts.addAll(nested.alternatives());
-                } else {
-                    checker.warn("Type error : expected function type, got " + t, operand);
-                    failed = true;
-                }
-            }
-            if (failed) {
-                return Type.ERROR;
-            }
-            String setName = overloadTypeOwnerName(overload);
-            String ambig = OverloadSolver.checkWellFormed(checker.algebra(), setName, alts);
-            if (ambig != null) {
-                checker.warn(ambig, overload);
-                return Type.ERROR;
-            }
-            return new Type.Overloaded(alts);
+            return resolveOverloadTypes(
+                    overload.type(), overloadTypeOwnerName(overload), overload, scope, allowRaw);
         }
         if (primary instanceof BabbleParser.NullTypeContext) {
             return Type.NULL;
         }
-        BabbleParser.SimpleTypeContext simple = (BabbleParser.SimpleTypeContext) primary;
+        BabbleParser.SimpleTypeContext simple =
+                ((BabbleParser.NonParenSimpleContext) primary).simpleType();
+        return simpleAnnotation(simple, scope, allowRaw);
+    }
+
+    private Type resolveOverloadTypes(
+            List<BabbleParser.TypeContext> typeList,
+            String setName,
+            ParserRuleContext at,
+            ScopeNode scope,
+            boolean allowRaw) {
+        List<Type.Function> alts = new ArrayList<>();
+        boolean failed = false;
+        for (BabbleParser.TypeContext operand : typeList) {
+            Type t = annotation(operand, scope, allowRaw);
+            if (t == Type.ERROR) {
+                failed = true;
+            } else if (t instanceof Type.Function fn) {
+                alts.add(fn);
+            } else if (t instanceof Type.Overloaded nested) {
+                alts.addAll(nested.alternatives());
+            } else {
+                checker.warn("Type error : expected function type, got " + t, operand);
+                failed = true;
+            }
+        }
+        if (failed) {
+            return Type.ERROR;
+        }
+        String ambig = OverloadSolver.checkWellFormed(checker.algebra(), setName, alts);
+        if (ambig != null) {
+            checker.warn(ambig, at);
+            return Type.ERROR;
+        }
+        return new Type.Overloaded(alts);
+    }
+
+    Type simpleAnnotation(
+            BabbleParser.SimpleTypeContext simple, ScopeNode scope, boolean allowRaw) {
         Type result = simpleType(simple, scope, allowRaw);
         if (result == null) {
             checker.warn("Unknown type : " + simple.typeName().getText(), simple);

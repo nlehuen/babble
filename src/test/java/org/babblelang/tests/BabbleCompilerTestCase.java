@@ -304,7 +304,7 @@ public class BabbleCompilerTestCase {
                 Assertions.assertThrows(
                         ScriptException.class, () -> engine.eval("1\nnosuchname", bindings));
         Assertions.assertEquals(
-                "org.babblelang.runtime.BabbleException: No such name : nosuchname in named.ba at line number 2",
+                "org.babblelang.runtime.BabbleException: No such name : nosuchname in named.ba at line number 2 at column number 1",
                 e.getMessage());
     }
 
@@ -312,7 +312,7 @@ public class BabbleCompilerTestCase {
     public void testACompiledScriptCanBeEvaluatedManyTimes() throws Exception {
         CompiledBabbleScript script =
                 compile(
-                        "def counter = fn () -> ( var c = 0 ; fn () -> ( c = c + 1 ) ) ; def c = counter() ; c() ; c() + (start as int)");
+                        "axiom start: int ; def counter = fn () -> ( var c = 0 ; fn () -> ( c = c + 1 ) ) ; def c = counter() ; c() ; c() + start");
         Bindings first = new SimpleBindings();
         first.put("start", 10);
         Bindings second = new SimpleBindings();

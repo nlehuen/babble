@@ -134,7 +134,7 @@ public class ReplTestCase {
         assertFails(
                 session,
                 "def even = fn io (n : int) : bool -> ( if n == 0 then ( true ) else ( odd(n - 1) ) )",
-                "odd is not callable");
+                "No such name : odd");
         // Functions that call each other go in one input.
         session.eval(
                 "def even = fn (n : int) : bool -> ( if n == 0 then ( true ) else ( odd(n - 1) ) )\n"
@@ -152,8 +152,11 @@ public class ReplTestCase {
         assertFails(session, "b", "No such name : b");
         assertFails(session, "def c = ", "Syntax error : unexpected end of input");
         assertFails(session, "def = 3", "Syntax error : unexpected '='");
+        // Undeclared names are rejected before running : nothing of the input remains.
+        assertFails(session, "def u = 1 ; nosuch ; def v = 2", "No such name : nosuch");
+        assertFails(session, "u", "No such name : u");
         // Failing while it runs : what it defined until then remains.
-        assertFails(session, "def d = 1 ; nosuch ; def e = 2", "No such name : nosuch");
+        assertFails(session, "def d = 1 ; throw exception(\"boom\") ; def e = 2", "boom");
         Assertions.assertEquals(1, session.eval("d"));
         assertFails(session, "e", "Name used before definition : e");
         ScriptException e =
@@ -396,7 +399,7 @@ public class ReplTestCase {
     public void testErrorsDoNotEndTheLoop() throws Exception {
         Assertions.assertEquals(
                 List.of(
-                        "Error : No such name : nosuch",
+                        "Error : No such name : nosuch in <input> at line number 1, column 1",
                         "Error : Syntax error : unexpected '='",
                         "Error : Lexical error at line 1:2 : token recognition error at: '#'",
                         "Error : Not a number : true in <input> at line number 2, column 7",
@@ -423,7 +426,7 @@ public class ReplTestCase {
         Assertions.assertEquals(
                 List.of(
                         "Unknown command : :nope (:help lists them)",
-                        "Error : No such name : f",
+                        "Error : No such name : f in <input> at line number 1, column 1",
                         "1"),
                 transcript(":nope", "def f = fn () -> (", ":cancel", "f", "1", ":quit", "2"));
         Assertions.assertEquals(List.of("1"), transcript("1", "  :q  ", "2"));
@@ -631,7 +634,7 @@ public class ReplTestCase {
     @Test
     public void testTypeCommandLeavesTheSessionAlone() throws Exception {
         Assertions.assertEquals(
-                List.of("int", "Error : No such name : y"),
+                List.of("int", "Error : No such name : y in <input> at line number 1, column 1"),
                 transcript(":type println(\"ran\") ; def y = 3", "y"));
         List<String> errors =
                 transcript(
@@ -644,8 +647,10 @@ public class ReplTestCase {
         Assertions.assertEquals(6, errors.size(), errors.toString());
         Assertions.assertEquals(
                 "Error : Not a number : true in <input> at line number 1, column 5", errors.get(0));
-        // An unknown name is looked up at runtime, as eval would : statically, it is any.
-        Assertions.assertEquals("any", errors.get(1));
+        // An unknown name is rejected statically by :type as well as eval.
+        Assertions.assertEquals(
+                "Error : No such name : nosuch in <input> at line number 1, column 1",
+                errors.get(1));
         Assertions.assertEquals("Error : Syntax error : unexpected '='", errors.get(2));
         Assertions.assertEquals(":type needs a complete expression : :type 1 + 2", errors.get(3));
         Assertions.assertEquals(":type needs a complete expression : :type 1 + 2", errors.get(4));
@@ -990,5 +995,28 @@ public class ReplTestCase {
         BabbleSession session = session();
         Assertions.assertTrue(
                 org.babblelang.repl.Completions.at(session, "in", 2).candidates().contains("init"));
+    }
+
+    @Test
+    public void testValueAxiomPersistsAcrossReplInputsAndHostBindingsSeeded() throws Exception {
+        BabbleScriptEngine engine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        ScriptContext context = new SimpleScriptContext();
+        context.setBindings(engine.createBindings(), ScriptContext.ENGINE_SCOPE);
+        context.setAttribute("hostVal", 41, ScriptContext.ENGINE_SCOPE);
+        context.setAttribute("hostLabel", "world", ScriptContext.ENGINE_SCOPE);
+        StringWriter out = new StringWriter();
+        context.setWriter(out);
+        context.setErrorWriter(out);
+        BabbleSession session = engine.newSession(context);
+
+        // Seeded ENGINE_SCOPE binding works as `any`, while undeclared names fail statically.
+        Assertions.assertEquals("world", session.eval("hostLabel"));
+        assertFails(session, "typo", "No such name : typo");
+
+        // A value axiom in its own input persists into later inputs with its static type.
+        Assertions.assertNull(session.eval("axiom hostVal: int"));
+        Assertions.assertEquals("int", session.typeOf("hostVal"));
+        Assertions.assertEquals(42, session.eval("hostVal + 1"));
     }
 }

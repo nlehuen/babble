@@ -457,7 +457,7 @@ public class WasmWriterTestCase {
         // STDIN rejected on wasm-js
         var stdinMods =
                 engine.compileSourceToHir(
-                        "def x = STDIN; x",
+                        "axiom STDIN: any ; def x = STDIN; x",
                         "stdin.ba",
                         org.babblelang.analysis.CompilationTarget.WASM_JS);
         var stdinDiags =

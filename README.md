@@ -647,7 +647,7 @@ a.addFrom(b)
 ;; a.addFrom(a)   ;; Error : Exclusivity error : mut target a aliases argument a
 ```
 
-`axiom Target: fn ...` and `axiom Target: class notnull ( ... )` declare trusted contracts on Java
+`axiom Target: fn ...`, `axiom Target: class notnull ( ... )`, and `axiom name: T` declare trusted contracts on Java
 classes, methods, constructors, or Babble host bindings (`fn ... : T!` and `fn ... (…): T!` keep
 bytecode-inferred effects while stating explicit return/parameter nullability with `!` or `?`);
 built-in assumptions about JDK classes, third-party nullability annotations, optimizer folding, and
@@ -684,7 +684,7 @@ class Point
 >> Point(1, 2)
 Point(x: 1, y: 2)
 >> name + nosuch
-Error : No such name : nosuch
+Error : No such name : nosuch in <input> at line number 1, column 8
 >> :type twice
 fn (f : fn (n : int) : int, v : int) : int
 >> :type Point(1, 2)
@@ -875,6 +875,13 @@ ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
 engine.put("name", "world");
 engine.eval("println(\"Hello, \", name)");
 ```
+
+Undeclared bare names are rejected at compile time (`No such name : …`) across scripts, modules,
+the interactive mode, `babblec` jars, and WebAssembly. `eval` (and `BabbleSession`) seed the keys
+currently present in the `ScriptContext`'s `ENGINE_SCOPE` as read-only `any` bindings so one-line
+JSR 223 scripts work directly ; pre-compiled `CompiledScript`s (`engine.compile(...)`) and modules
+declare any external host binding statically with `axiom name: T` (e.g. `axiom name: string`),
+which gives it a real static type and enforces it at the runtime boundary.
 
 A script that imports modules by relative paths needs its own file name, which the host gives
 with `engine.put(ScriptEngine.FILENAME, path)` ; without it, paths are relative to the working

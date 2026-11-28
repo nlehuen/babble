@@ -259,9 +259,13 @@ with JLS §15.12.2 Phase 3 Java varargs resolution and direct array lowering.)*
 * `print`/`println` take any number of `any` ; `assert(c : bool, message : any = null)` ; `same(a :
   any, b : any) : bool` ; `classof(v : any) : any` (a class value of unknown class) ; `int(v :
   any) : int` and `double(v : any) : double` stay as they are (they already check at runtime).
-* Script bindings (`engine.put(…)`, `args`) are `any` : a `CompiledScript` is compiled before its
-  bindings are known, and runs with whichever it is given. `args` is the exception : `Main`
-  always binds a `java.util.List` of strings, so it is declared `java.util.List(string)`.
+* Undeclared bare names are rejected at compile time (`No such name : …`) for both reads and
+  assignments, and read-only built-ins, `axiom`s, and host bindings cannot be reassigned.
+  `BabbleScriptEngine.eval` (and `BabbleSession`) seed the keys currently present in the
+  `ScriptContext`'s `ENGINE_SCOPE` as read-only `any` bindings ; pre-compiled `CompiledScript`s,
+  modules, `babblec` jars, and WebAssembly require an explicit `axiom name: T` (or
+  `axiom name: fn …`, `BIP019`) for any external host binding, giving it a static type checked at
+  the runtime boundary (`Types.check`). `args` is a built-in declared `java.util.List(string)`.
 * `import(name)` with a name that isn't a string literal is `any` ; static imports keep their
   module types.
 * Interactive sessions (REPL, `BIP008-D5`) : each input in an `AnalysisSession` is analysed and compiled
@@ -278,6 +282,9 @@ with JLS §15.12.2 Phase 3 Java varargs resolution and direct array lowering.)*
   parameters, results, `def`s, unqualified assignments, and `this.x` direct field writes are removed,
   keeping `Values.toDouble` where `widensToDouble` marks an `int`→`double` conversion.
 * External boundaries retain runtime checks :
+  * reads of Babble-name `axiom` bindings (`axiom name: T` / `axiom f: fn …`, `BIP019`) : `Types.check`
+    validates the runtime host binding on read in both `Interpreter` and `HirEmitter`, preventing
+    raw `ClassCastException` or `NullPointerException` when a host provides the wrong type ;
   * calls and field reads exiting Java : `JavaTypes.checkBoxed` (in `JavaMethod`, `JavaLinker`,
     `JavaClass`, and `JavaDefaultCall`) checks boxed primitive returns and fields (`Integer`,
     `Double`, `Boolean`) that map to non-nullable Babble `int`, `double`, `bool`, failing with

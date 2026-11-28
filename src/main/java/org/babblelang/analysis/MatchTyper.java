@@ -718,9 +718,10 @@ final class MatchTyper {
         }
         if (!(parts.get(0) instanceof BabbleParser.NonParenTypeContext nonParen)
                 || !(nonParen.nonParenNullableType()
-                        instanceof BabbleParser.SimpleTypeContext simple)) {
+                        instanceof BabbleParser.NonParenSimpleContext nonParenSimple)) {
             return false;
         }
+        BabbleParser.SimpleTypeContext simple = nonParenSimple.simpleType();
         if (simple.OF() != null || simple.frozen != null || simple.nullMod != null) {
             return false;
         }
@@ -1373,7 +1374,8 @@ final class MatchTyper {
         if (parts.size() == 1
                 && parts.get(0) instanceof BabbleParser.NonParenTypeContext nonParen
                 && nonParen.nonParenNullableType()
-                        instanceof BabbleParser.SimpleTypeContext simple) {
+                        instanceof BabbleParser.NonParenSimpleContext nonParenSimple) {
+            BabbleParser.SimpleTypeContext simple = nonParenSimple.simpleType();
             singleSimple = simple;
             if (!checkSingleSimpleType(simple, scope, hasArgs)) {
                 return Type.ERROR;
@@ -1396,7 +1398,8 @@ final class MatchTyper {
         if (typeCtx.nullableType().size() == 1
                 && typeCtx.nullableType(0) instanceof BabbleParser.NonParenTypeContext nonParen
                 && nonParen.nonParenNullableType()
-                        instanceof BabbleParser.SimpleTypeContext simple) {
+                        instanceof BabbleParser.NonParenSimpleContext nonParenSimple) {
+            BabbleParser.SimpleTypeContext simple = nonParenSimple.simpleType();
             singleSimple = simple;
             if (!checkSingleSimpleType(simple, scope, hasArgs)) {
                 return Type.ERROR;

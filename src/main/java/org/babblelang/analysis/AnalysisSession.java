@@ -111,7 +111,11 @@ public final class AnalysisSession {
         }
         ScopeNode file = pass.fileScope;
         if (file.names.isEmpty()) {
-            // Nothing the following inputs could see : they stay nested in the same scope.
+            // Keep scoped Babble/Wasm axioms visible to following inputs without opening a runtime
+            // namespace.
+            if (!file.babbleAxioms.isEmpty() || !file.wasmAxioms.isEmpty()) {
+                scope = file;
+            }
             return false;
         }
         scope = file;

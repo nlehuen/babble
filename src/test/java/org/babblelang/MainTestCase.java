@@ -108,28 +108,38 @@ public class MainTestCase {
     @Test
     public void testAFailingScript() throws Exception {
         String failing =
-                script("failing.ba", "def a = 1\nprintln(\"before\")\nnosuch\nprintln(\"after\")");
+                script(
+                        "failing.ba",
+                        "def a = 1\nprintln(\"before\")\nthrow exception(\"boom\")\nprintln(\"after\")");
         Run run = run("", failing);
         Assertions.assertEquals(
                 new Run(
                         Main.FAILED,
                         List.of("before"),
-                        List.of(
-                                "Error : No such name : nosuch in "
-                                        + failing
-                                        + " at line number 3")),
+                        List.of("Error : boom in " + failing + " at line number 3")),
                 run);
         // With -keep-alive, the interactive mode starts all the same, with what the script defined
         // until then.
         Assertions.assertEquals(
                 new Run(
                         0,
-                        List.of(
-                                "before",
-                                "Error : No such name : nosuch in " + failing + " at line number 3",
-                                "1"),
+                        List.of("before", "Error : boom in " + failing + " at line number 3", "1"),
                         List.of()),
                 run("a\n", "-keep-alive", failing));
+
+        String undeclared =
+                script(
+                        "undeclared.ba",
+                        "def a = 1\nprintln(\"before\")\nnosuch\nprintln(\"after\")");
+        Assertions.assertEquals(
+                new Run(
+                        Main.FAILED,
+                        List.of(),
+                        List.of(
+                                "Error : No such name : nosuch in "
+                                        + undeclared
+                                        + " at line number 3, column 1")),
+                run("", undeclared));
 
         String syntax = script("syntax.ba", "def a = 1\ndef = 2");
         Assertions.assertEquals(

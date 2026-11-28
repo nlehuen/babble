@@ -195,6 +195,10 @@ final class TypeCheckDiagnostics {
             checker.synth(axiom);
             return;
         }
+        if (tree instanceof BabbleParser.ValuePatternContext vp
+                && BlockScopes.isWildcardExpr(vp.expr)) {
+            return;
+        }
         if (tree instanceof BabbleParser.TypeContext type) {
             // Only annotations are walked to : implements lists, super qualifiers, and is/as
             // targets are handled elsewhere.
@@ -340,7 +344,8 @@ final class TypeCheckDiagnostics {
         if (ctx.right.nullableType().size() == 1
                 && ctx.right.nullableType(0) instanceof BabbleParser.NonParenTypeContext nonParen
                 && nonParen.nonParenNullableType()
-                        instanceof BabbleParser.SimpleTypeContext simple) {
+                        instanceof BabbleParser.NonParenSimpleContext nonParenSimple) {
+            BabbleParser.SimpleTypeContext simple = nonParenSimple.simpleType();
             singleSimple = simple;
             if ("void".equals(simple.typeName().getText())) {
                 warn("Type error : cannot test 'is void'", simple);

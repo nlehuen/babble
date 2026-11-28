@@ -42,18 +42,19 @@ public class BabbleScopesTestCase extends BabbleTestBase {
 
     @Test
     public void testBlockScope() {
-        assertFails("def a = 1 ; (def b = 2) ; a ; b", "No such name : b");
-        assertFails("var a = 1 ; (def b = 2) ; a = 1 ; b = 5", "No such name : b");
+        assertStaticFails("def a = 1 ; (def b = 2) ; a ; b", "No such name : b", 31);
+        assertStaticFails("var a = 1 ; (def b = 2) ; a = 1 ; b = 5", "No such name : b", 35);
         // Rejected before anything runs.
         assertFails("def a = 1 ; def a = 2", "Name already defined : a");
     }
 
     @Test
     public void testBranchesAndLoopBodiesAreScopes() {
-        assertFails("def i = 1 ; if i > 0 then ( def y = 1 ) ; y", "No such name : y");
-        assertFails(
+        assertStaticFails("def i = 1 ; if i > 0 then ( def y = 1 ) ; y", "No such name : y", 43);
+        assertStaticFails(
                 "var i = 0 ; while i < 3 then ( def x = i * 2 ; i = i + 1 ) ; x",
-                "No such name : x");
+                "No such name : x",
+                62);
     }
 
     @Test

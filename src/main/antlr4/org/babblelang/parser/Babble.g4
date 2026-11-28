@@ -36,7 +36,16 @@ axiomEffectPrefix: axiomEffectWord+ callingClause?
                  | callingClause;
 
 axiomType: FN (OF typeParameters)? axiomEffectPrefix? fnTypeParameters? (':' uniqueReturn=UNIQUE? type)?
-         | CLASS classWords+=ID* NL* '(' axiomMembers ')' (NL* STATIC NL* '(' axiomMembers ')')?;
+         | CLASS classWords+=ID* NL* '(' axiomMembers ')' (NL* STATIC NL* '(' axiomMembers ')')?
+         | axiomValueType;
+
+axiomValueType: axiomValueHead (('|' | '&') NL* nullableType)*;
+
+axiomValueHead: simpleType
+              | frozen=FROZEN? '(' NL* type NL* ')' nullMod=('?' | '!')?
+              | OVERLOAD '(' NL* type (NL* ',' NL* type)* NL* ')'
+              | NULL
+              ;
 
 axiomMembers: sep? (axiomMember (sep axiomMember)* sep?)?;
 
@@ -192,13 +201,15 @@ nullableType: nonParenNullableType                                              
             | frozen=FROZEN? '(' NL* type NL* ')' nullMod=('?' | '!')?                # parenType
             ;
 
-nonParenNullableType: frozen=FROZEN? typeName ( OF ( '(' NL* type (NL* ',' NL* type)* NL* ')' nullMod=('?' | '!')?
-                                                   | nonParenNullableType )
-                                              | nullMod=('?' | '!')? )                # simpleType
+nonParenNullableType: simpleType                                                      # nonParenSimple
                     | FN (OF typeParameters)? effectPrefix? fnTypeParameters (':' uniqueReturn=UNIQUE? type)? # functionType
                     | OVERLOAD '(' NL* type (NL* ',' NL* type)* NL* ')'               # overloadType
                     | NULL                                                            # nullType
                     ;
+
+simpleType: frozen=FROZEN? typeName ( OF ( '(' NL* type (NL* ',' NL* type)* NL* ')' nullMod=('?' | '!')?
+                                         | nonParenNullableType )
+                                    | nullMod=('?' | '!')? );
 
 typeName: coreTypeKeyword
         | ID ('.' memberName)*

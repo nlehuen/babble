@@ -229,7 +229,13 @@ public final class Formatter {
                                         : (parent instanceof BabbleParser.OverloadExpressionContext
                                                         || parent
                                                                 instanceof
-                                                                BabbleParser.OverloadTypeContext)
+                                                                BabbleParser.OverloadTypeContext
+                                                        || parent
+                                                                        instanceof
+                                                                        BabbleParser
+                                                                                        .AxiomValueHeadContext
+                                                                                avh
+                                                                && avh.OVERLOAD() != null)
                                                 ? ((ParserRuleContext) parent)
                                                         .getStart()
                                                         .getTokenIndex()
@@ -272,6 +278,7 @@ public final class Formatter {
                 || parent instanceof BabbleParser.CallingClauseContext
                 || parent instanceof BabbleParser.OverloadExpressionContext
                 || parent instanceof BabbleParser.OverloadTypeContext
+                || parent instanceof BabbleParser.AxiomValueHeadContext
                 || parent instanceof BabbleParser.PatternArgsContext) {
             return IN_LIST;
         }

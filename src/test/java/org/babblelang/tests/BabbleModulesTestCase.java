@@ -71,7 +71,7 @@ public class BabbleModulesTestCase extends BabbleTestBase {
         Assertions.assertTrue(message.contains("at line number 2"), message);
         // The names of a module are not names of the script importing it, and conversely.
         Assertions.assertTrue(
-                failure("import(\"lib.ba\") ; open()").contains("open is not callable"));
+                failure("import(\"lib.ba\") ; open()").contains("No such name : open"));
         file("needy.ba", "export def get = fn volatile () -> ( mine )");
         Assertions.assertTrue(
                 failure("def mine = 1 ; import(\"needy.ba\").get()")
