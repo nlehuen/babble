@@ -1,5 +1,6 @@
 package org.babblelang.analysis;
 
+import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -147,6 +148,7 @@ final class TryEffectAnalyzer {
                 tryType != Type.NOTHING ? afterTry : null;
         Reachability.Origin resultOrig =
                 tryType != Type.NOTHING ? tryOrig : Reachability.Origin.IMMUTABLE;
+        List<Reachability.Origin> resultParts = new ArrayList<>(List.of(resultOrig));
 
         boolean catchesAllNonError = false;
         boolean catchesAllErrors = false;
@@ -207,6 +209,7 @@ final class TryEffectAnalyzer {
             if (catchBlockType != Type.NOTHING) {
                 normalExitEnv =
                         normalExitEnv == null ? afterCatch : w.mergeEnvs(normalExitEnv, afterCatch);
+                resultParts.add(catchOrig);
                 resultOrig =
                         resultOrig == Reachability.Origin.IMMUTABLE
                                 ? catchOrig
@@ -254,7 +257,7 @@ final class TryEffectAnalyzer {
                         || finallyThrowsJavaError;
         w.deepestThrowEscapeLevel = Math.min(outerEscape, propagatedEscape);
 
-        return resultOrig;
+        return BranchValueJoins.settle(w, resultParts, resultOrig);
     }
 
     private static boolean catchesJavaThrowable(Type catchType) {

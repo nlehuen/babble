@@ -1,6 +1,6 @@
 # Soundness regressions : `ownership` (`O2`, `O3`, `O4`) unique capture, projection, fresh containers & exclusivity
 
-Promoted from `BIP032` quarantine (`ownership_o3_closure_capture_unique_fbip.batest.md`, `ownership_o4_collection_get_mut_exclusivity.batest.md`, `ownership_o4_mut_exclusivity_field_alias.batest.md`, `ownership_o4_mut_exclusivity_closure_capture.batest.md`, `ownership_o4_mut_exclusivity_match_rest_slice.batest.md`, `ownership_o3_fresh_container_view_aliases_shared_arg.batest.md`, `ownership_o4_mut_exclusivity_container_and_recurse.batest.md`, `ownership_o4_mut_exclusivity_loop_match_closure_alias.batest.md`, `effects_e2_operator_method_launders_calling_and_borrow.batest.md`) and sister vectors covering `InitEffectAnalyzer`, `MatchEffectAnalyzer`, `Reachability`, `EffectBodyWalker`, `OperatorAndLoopEffectAnalyzer`, and `CallEffectAnalyzer`.
+Promoted from `BIP032` quarantine (`ownership_o3_closure_capture_unique_fbip.batest.md`, `ownership_o4_collection_get_mut_exclusivity.batest.md`, `ownership_o4_mut_exclusivity_field_alias.batest.md`, `ownership_o4_mut_exclusivity_closure_capture.batest.md`, `ownership_o4_mut_exclusivity_match_rest_slice.batest.md`, `ownership_o3_fresh_container_view_aliases_shared_arg.batest.md`, `ownership_o4_mut_exclusivity_container_and_recurse.batest.md`, `ownership_o4_mut_exclusivity_loop_match_closure_alias.batest.md`, `effects_e2_operator_method_launders_calling_and_borrow.batest.md`, `ownership_o3_branch_join_unique_alias.batest.md`) and sister vectors covering `InitEffectAnalyzer`, `MatchEffectAnalyzer`, `Reachability`, `EffectBodyWalker`, `OperatorAndLoopEffectAnalyzer`, `TryEffectAnalyzer`, `BranchValueJoins`, and `CallEffectAnalyzer`.
 
 ```babble
 ;; babble preamble
@@ -598,4 +598,111 @@ def t = fn io (): int -> (
     b.x
 )
 assert(t() == 3)
+```
+
+## If else expression yielding a unique local aliases it
+
+```babble
+def t = fn (c: bool): string -> (
+    def a = list(1)
+    def alias = if c then (a) else (list(2))
+    def b = consume(a)
+    string(alias) + string(b)
+)
+```
+
+```error
+Argument for unique parameter xs must be unique
+```
+
+## Match arm yielding a unique local aliases it
+
+```babble
+def t = fn (n: int): string -> (
+    def a = list(1)
+    def alias = match n case 0 then (a) else (list(2))
+    def b = consume(a)
+    string(alias) + string(b)
+)
+```
+
+```error
+Argument for unique parameter xs must be unique
+```
+
+## Try body yielding a unique local aliases it
+
+```babble
+def t = fn (c: bool): string -> (
+    def a = list(1)
+    def alias = try (if c then (throw java.lang.RuntimeException("x")) ; a)
+    catch e: java.lang.RuntimeException then (list(2))
+    def b = consume(a)
+    string(alias) + string(b)
+)
+```
+
+```error
+Argument for unique parameter xs must be unique
+```
+
+## Loop break value yielding a unique local aliases it
+
+```babble
+def t = fn (): string -> (
+    def a = list(1)
+    def alias = for i in 0..<3 then (if i == 1 then (break a))
+    def b = consume(a)
+    string(alias) + string(b)
+)
+```
+
+```error
+Argument for unique parameter xs must be unique
+```
+
+## Branch argument yielding a unique local aliases a later unique argument
+
+```babble
+def show = fn (x: list of int, y: list of int): string -> (string(x) + string(y))
+def t = fn (c: bool): string -> (
+    def a = list(1)
+    show(if c then (a) else (list(2)), consume(a))
+)
+```
+
+```error
+Argument for unique parameter xs must be unique
+```
+
+## Joining two unique locals or a unique local and a parameter aliases both
+
+```babble
+def t = fn (c: bool, p: list of int): string -> (
+    def a = list(1)
+    def o = list(2)
+    def x = if c then (a) else (o)
+    def y = if c then (o) else (p)
+    string(x) + string(y) + string(consume(o))
+)
+```
+
+```error
+Argument for unique parameter xs must be unique
+```
+
+## Fresh branch values and a branch moving the local stay unique
+
+```babble
+def t = fn (c: bool, n: int): string -> (
+    def a = list(1)
+    def v = if c then (move(a)) else (list(2))
+    def w = match n case 0 then (list(3)) else (list(4))
+    string(consume(v)) + string(consume(w))
+)
+println(t(true, 0) + t(false, 1))
+```
+
+```stdout
+[1, 99][3, 99][2, 99][4, 99]
 ```

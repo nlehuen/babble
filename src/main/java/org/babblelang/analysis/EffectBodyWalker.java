@@ -735,7 +735,7 @@ final class EffectBodyWalker {
                             : Reachability.Origin.IMMUTABLE;
             Reachability.Origin[] acc = loopBreakOrigins.peek();
             if (acc != null) {
-                acc[0] = acc[0] == null ? val : acc[0].join(val);
+                acc[0] = acc[0] == null ? val : BranchValueJoins.join(this, acc[0], val);
             }
             return Reachability.Origin.IMMUTABLE;
         }
@@ -1594,7 +1594,7 @@ final class EffectBodyWalker {
         Map<ParserRuleContext, Reachability.Origin> afterElse = env;
 
         env = mergeEnvs(afterThen, afterElse);
-        return thenOrig.join(elseOrig);
+        return BranchValueJoins.join(this, thenOrig, elseOrig);
     }
 
     Reachability.Origin evalWhile(BabbleParser.WhileExpressionContext ctx) {
@@ -1625,7 +1625,7 @@ final class EffectBodyWalker {
             ec.loopNothrow.put(ctx, nothrow);
             nothrow = outerNothrow && nothrow;
         }
-        return breakAcc[0] != null ? bodyOrig.join(breakAcc[0]) : bodyOrig;
+        return breakAcc[0] != null ? BranchValueJoins.join(this, bodyOrig, breakAcc[0]) : bodyOrig;
     }
 
     private static boolean mayOverlapIteratedCollection(
