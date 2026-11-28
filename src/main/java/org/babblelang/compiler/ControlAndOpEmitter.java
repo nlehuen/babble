@@ -156,14 +156,16 @@ final class ControlAndOpEmitter {
             c.stackKind = PrimitiveKind.NONE;
             return;
         }
-        int left = c.newLocal();
-        int right = c.newLocal();
+        int left = c.acquireTemp();
+        int right = c.acquireTemp();
         emitter.emitBoxed(b.left());
         mv.visitVarInsn(ASTORE, left);
         emitter.emitBoxed(b.right());
         mv.visitVarInsn(ASTORE, right);
         emitDynamicArithmetic(
                 b.meta().line(), b.op().symbol(), b.leftText(), b.rightText(), left, right);
+        c.releaseTemp(right);
+        c.releaseTemp(left);
         c.stackKind = PrimitiveKind.NONE;
     }
 

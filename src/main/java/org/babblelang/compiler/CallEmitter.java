@@ -671,20 +671,7 @@ final class CallEmitter {
         emitter.ensureFunctionScheduled(fn);
         if (c.receiverText() != null) {
             emitter.emitBoxed(c.receiver());
-            Label ok = new Label();
-            mv.visitInsn(DUP);
-            mv.visitJumpInsn(IFNONNULL, ok);
-            mv.visitInsn(POP);
-            mc.line(ln);
-            ConstantPool.pushString(mv, c.receiverText());
-            mv.visitMethodInsn(
-                    INVOKESTATIC,
-                    RUNTIME + "Members",
-                    "notAScope",
-                    "(Ljava/lang/String;)L" + RUNTIME + "BabbleException;",
-                    false);
-            mv.visitInsn(ATHROW);
-            mv.visitLabel(ok);
+            emitter.emitRequireNonNullOnStack(c.receiver(), c.receiverText(), ln, "notAScope");
             mv.visitTypeInsn(CHECKCAST, gen.name);
         } else {
             emitter.assigns.loadThisAs(c.receiver(), gen);
@@ -786,20 +773,11 @@ final class CallEmitter {
                         ? "m$" + c.memberName() + "$" + c.overloadAltIndex()
                         : "m$" + c.memberName();
         emitter.emitBoxed(c.receiver());
-        Label ok = new Label();
-        mv.visitInsn(DUP);
-        mv.visitJumpInsn(IFNONNULL, ok);
-        mv.visitInsn(POP);
-        mc.line(ln);
-        ConstantPool.pushString(mv, c.receiverText() != null ? c.receiverText() : "this");
-        mv.visitMethodInsn(
-                INVOKESTATIC,
-                RUNTIME + "Members",
-                "notAScope",
-                "(Ljava/lang/String;)L" + RUNTIME + "BabbleException;",
-                false);
-        mv.visitInsn(ATHROW);
-        mv.visitLabel(ok);
+        emitter.emitRequireNonNullOnStack(
+                c.receiver(),
+                c.receiverText() != null ? c.receiverText() : "this",
+                ln,
+                "notAScope");
         mv.visitTypeInsn(CHECKCAST, ownerJvm);
         mv.visitInsn(DUP);
         // Through the accessor : whether the class keeps the method in a field is its own business.
@@ -887,7 +865,7 @@ final class CallEmitter {
         if (cls == null) {
             throw new IllegalStateException("RecordReuse requires local HirClass #" + r.classId());
         }
-        int targetLocal = mc.newLocal();
+        int targetLocal = mc.acquireTemp();
         emitter.emitBoxed(r.target());
         mv.visitTypeInsn(CHECKCAST, r.classJvmName());
         mv.visitVarInsn(ASTORE, targetLocal);
@@ -895,7 +873,7 @@ final class CallEmitter {
         int[] argLocals = new int[r.args().size()];
         for (int i = 0; i < r.args().size(); i++) {
             emitter.emitAs(r.args().get(i), kinds[i]);
-            argLocals[i] = mc.newLocal(kinds[i]);
+            argLocals[i] = mc.acquireTemp(kinds[i]);
             storeKindOn(mv, kinds[i], argLocals[i]);
         }
         for (int i = 0; i < r.args().size(); i++) {
@@ -903,6 +881,7 @@ final class CallEmitter {
             PrimitiveKind mk = cls.memberKinds()[memberIdx];
             mv.visitVarInsn(ALOAD, targetLocal);
             loadKindOn(mv, kinds[i], argLocals[i]);
+            mc.releaseTemp(argLocals[i], kinds[i]);
             if (kinds[i] != mk) {
                 if (kinds[i].isPrimitive() && !mk.isPrimitive()) {
                     boxOn(mv, kinds[i]);
@@ -914,6 +893,7 @@ final class CallEmitter {
                     PUTFIELD, r.classJvmName(), cls.shape().member(memberIdx), jvmDescriptor(mk));
         }
         mv.visitVarInsn(ALOAD, targetLocal);
+        mc.releaseTemp(targetLocal);
         mc.stackKind = PrimitiveKind.NONE;
         finishCallCheck(r.meta());
     }
@@ -925,20 +905,8 @@ final class CallEmitter {
         LoweringTargets.FunctionSignature sig = c.signature();
         LoweringTargets.ArgumentBinding binding = c.binding();
         emitter.emitBoxed(c.receiver());
-        Label ok = new Label();
-        mv.visitInsn(DUP);
-        mv.visitJumpInsn(IFNONNULL, ok);
-        mv.visitInsn(POP);
-        mc.line(c.selectorLine());
-        ConstantPool.pushString(mv, c.receiverText());
-        mv.visitMethodInsn(
-                INVOKESTATIC,
-                RUNTIME + "Members",
-                "notAScope",
-                "(Ljava/lang/String;)L" + RUNTIME + "BabbleException;",
-                false);
-        mv.visitInsn(ATHROW);
-        mv.visitLabel(ok);
+        emitter.emitRequireNonNullOnStack(
+                c.receiver(), c.receiverText(), c.selectorLine(), "notAScope");
         mv.visitTypeInsn(CHECKCAST, ifaceJvm);
         mv.visitVarInsn(ALOAD, mc.rtLocal);
         emitBoundTypedArgs(c.args(), binding, sig.parameterKinds());
@@ -2023,7 +1991,7 @@ final class CallEmitter {
         mv.visitInsn(ATHROW);
 
         mv.visitLabel(endLabel);
-        mc.nextLocal = savedNextLocal;
+        mc.restoreNextLocal(savedNextLocal);
         mc.stackKind = joinKind;
         finishCallCheck(d.meta());
     }

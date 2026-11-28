@@ -927,28 +927,16 @@ final class AssignAndMemberEmitter {
             if (targetJvm != null
                     && (g.externalClassJvmName() != null || (gen != null && idx >= 0))) {
                 emitter.emitBoxed(g.receiver());
-                Label ok = new Label();
-                mv.visitInsn(DUP);
-                mv.visitJumpInsn(IFNONNULL, ok);
-                mv.visitInsn(POP);
-                c.line(ln);
-                ConstantPool.pushString(mv, g.receiverText());
-                mv.visitMethodInsn(
-                        INVOKESTATIC,
-                        RUNTIME + "Members",
-                        "notAScope",
-                        "(Ljava/lang/String;)L" + RUNTIME + "BabbleException;",
-                        false);
-                mv.visitInsn(ATHROW);
-                mv.visitLabel(ok);
+                emitter.emitRequireNonNullOnStack(g.receiver(), g.receiverText(), ln, "notAScope");
                 mv.visitTypeInsn(CHECKCAST, targetJvm);
                 PrimitiveKind mk = gen != null ? gen.memberKinds[idx] : g.fieldKind();
                 if (mk.isPrimitive()) {
                     if (gen != null && !g.definitelyDefined() && gen.primDefBits[idx] >= 0) {
-                        int recv = c.newLocal();
+                        int recv = c.acquireTemp();
                         mv.visitVarInsn(ASTORE, recv);
                         gen.emitCheckDefined(mv, recv, idx, g.memberName(), ln);
                         mv.visitVarInsn(ALOAD, recv);
+                        c.releaseTemp(recv);
                     }
                     mv.visitFieldInsn(GETFIELD, targetJvm, g.memberName(), jvmDescriptor(mk));
                     c.stackKind = mk;

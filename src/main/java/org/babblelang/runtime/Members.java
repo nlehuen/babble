@@ -142,6 +142,22 @@ public final class Members {
         return new BabbleException("Not an assignable scope : " + targetText);
     }
 
+    /** Branchless receiver non-null check for compiled member reads and calls. */
+    public static Object requireScope(Object target, String targetText) {
+        if (target == null) {
+            throw notAScope(targetText);
+        }
+        return target;
+    }
+
+    /** Branchless receiver non-null check for compiled member assignments. */
+    public static Object requireAssignable(Object target, String targetText) {
+        if (target == null) {
+            throw notAssignable(targetText);
+        }
+        return target;
+    }
+
     static BabbleException noSuchMember(String name) {
         return new BabbleException("No such member : " + name);
     }
