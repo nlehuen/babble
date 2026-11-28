@@ -8,6 +8,7 @@ def Ray = import("ray.ba").Ray
 def HitRecord = import("interfaces.ba").HitRecord
 def Hittable = import("interfaces.ba").Hittable
 def Scatter = import("interfaces.ba").Scatter
+def AreaLight = import("interfaces.ba").AreaLight
 def Background = import("background.ba").Background
 def SkyBackground = import("background.ba").SkyBackground
 def color = import("color.ba")
@@ -23,7 +24,8 @@ export def Camera = class (
     def vup: Vec3 = Vec3(0.0, 1.0, 0.0),
     def defocusAngle: double = 0.6,
     def focusDist: double = 10.0,
-    def background: Background = SkyBackground()
+    def background: Background = SkyBackground(),
+    def lights: (list of AreaLight)? = null
 ) (
     def imageHeight: int
     private def pixelSamplesScale: double
@@ -98,24 +100,63 @@ export def Camera = class (
         Ray(rayOrigin, pixelSample - rayOrigin)
     )
 
-    ;; Recursive path tracer supporting scattering, emission, and pluggable backgrounds
-    def rayColor = fn (r: Ray, depth: int, world: Hittable, mut rng: Rng): Vec3 -> (
+    ;; Recursive path tracer supporting scattering, emission, optional direct area-light
+    ;; sampling (Next Event Estimation), and pluggable backgrounds.
+    private def traceRay = fn (
+        r: Ray,
+        depth: int,
+        world: Hittable,
+        mut rng: Rng,
+        includeEmission: bool
+    ): Vec3 -> (
         if depth <= 0 then (
             return Vec3.zero
         )
         def rec: HitRecord? = world.hit(r, 0.001, math.infinity)
-        if rec != null then (
-            def scatter: Scatter? = rec.mat.scatter(r, rec, rng)
-            if scatter == null then (
-                return Vec3.zero
-            )
-            def nextRay: Ray? = scatter.scattered
-            if nextRay == null then (
-                return scatter.emission
-            )
-            return scatter.emission + scatter.attenuation * recurse(nextRay, depth - 1, world, rng)
+        if rec == null then (
+            return this.background.sample(r)
         )
-        this.background.sample(r)
+        def scatter: Scatter? = rec.mat.scatter(r, rec, rng)
+        if scatter == null then (
+            return Vec3.zero
+        )
+        def emitted: Vec3 = if includeEmission then (scatter.emission) else (Vec3.zero)
+        def nextRay: Ray? = scatter.scattered
+        if nextRay == null then (
+            return emitted
+        )
+        def lights = this.lights
+        if lights == null or not scatter.isDiffuse then (
+            return emitted + scatter.attenuation * recurse(nextRay, depth - 1, world, rng, true)
+        )
+        if depth <= 1 then (
+            return emitted
+        )
+        var direct: Vec3 = Vec3.zero
+        for light in lights then (
+            def lightPoint: Vec3 = light.samplePoint(rng)
+            def toLight: Vec3 = lightPoint - rec.p
+            def distSq: double = toLight.lengthSquared()
+            if distSq > 0.000001 then (
+                def dist: double = math.sqrt(distSq)
+                def lightDir: Vec3 = toLight / dist
+                def cosSurf: double = rec.normal.dot(lightDir)
+                def cosLight: double = (-lightDir).dot(light.normal)
+                if cosSurf > 0.0 and cosLight > 0.0 then (
+                    def shadowRay: Ray = Ray(rec.p, lightDir)
+                    def blocker: HitRecord? = world.hit(shadowRay, 0.001, dist - 0.001)
+                    if blocker == null then (
+                        def weight: double = (cosSurf * cosLight * light.area) / (math.pi * distSq)
+                        direct += scatter.attenuation * light.emission * weight
+                    )
+                )
+            )
+        )
+        emitted + direct + scatter.attenuation * recurse(nextRay, depth - 1, world, rng, false)
+    )
+
+    def rayColor = fn (r: Ray, depth: int, world: Hittable, mut rng: Rng): Vec3 -> (
+        this.traceRay(r, depth, world, rng, true)
     )
 
     def renderPixel = fn (i: int, j: int, world: Hittable, mut rng: Rng): Vec3 -> (

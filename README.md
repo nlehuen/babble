@@ -712,10 +712,11 @@ Ray tracing demo
 [examples/raytracer](examples/raytracer/README.md) is a unified ray tracer written maximally in
 **pure Babble** — math (`core/math.ba`), deterministic per-scanline RNG (`core/rng.ba`), vectors,
 rays, flat AABBs, BVH, five immutable `record` materials (`Lambertian`, `Metal`, `Dielectric`,
-`Emissive`, `Toon`), four analytic/implicit 3D geometries (`Sphere`, oriented `Ellipsoid`, tapered
-`RoundCone` + Bezier tubes, Fourier-contoured `SculptedLobe`), and three pure scenes
-(*Weekend Cover*, *Three Spheres*, and *Baby Triceratops*) — with only a thin target-specific IO
-layer bridging to the JVM (`io/jvm/png.ba`) or WebAssembly (`io/wasm/canvas.ba`).
+`Emissive`, `Toon`), analytic/implicit 3D geometries (`Sphere`, `Quad` & `Box` with `Translate` /
+`RotateY` transforms, oriented `Ellipsoid`, tapered `RoundCone` + Bezier tubes, Fourier-contoured
+`SculptedLobe`), optional direct area-light sampling (`AreaLight`), and four pure scenes
+(*Weekend Cover*, *Three Spheres*, *Baby Triceratops*, and *Cornell Box*) — with only a thin
+target-specific IO layer bridging to the JVM (`io/jvm/png.ba`) or WebAssembly (`io/wasm/canvas.ba`).
 
 ![The final scene of Ray Tracing in One Weekend, rendered by Babble](examples/raytracer/assets/scene.png)
 
@@ -727,13 +728,14 @@ To render a multi-threaded PNG on the JVM, build the jar and run `raytracer_jvm.
 mvn package
 java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer/raytracer_jvm.ba cover scene.png 800 20 16
 java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer/raytracer_jvm.ba triceratops triceratops.png
+java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer/raytracer_jvm.ba cornell-box cornell_box.png 400 256 16
 ```
 
 For portable PPM output (`raytracer_ppm.ba`), the exact same script runs on the JVM, compiles
 ahead of time into a standalone jar (`babblec`), or compiles directly to **WebAssembly 3.0**
 (`WasmGC`) for Node.js — producing the exact same `examples/raytracer/assets/scene.ppm` byte for
 byte (and [examples/raytracer/wasm_canvas.html](examples/raytracer/wasm_canvas.html) renders any of
-the three scenes live to an HTML `<canvas>`) :
+the four scenes live to an HTML `<canvas>`) :
 
 ```
 java -jar target/babble-1.0-SNAPSHOT.jar -compile examples/raytracer/raytracer_ppm.ba -o raytracer.jar

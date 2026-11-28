@@ -69,6 +69,16 @@ def runTests = fn () -> (
     def lobeHit: core.HitRecord? = lobe.hit(r, 0.001, math.infinity)
     assert(lobeHit != null and lobeHit.t > 1.4 and lobeHit.t < 1.7, "SculptedLobe hit failed")
 
+    def quad: core.Quad = core.Quad(Vec3(-1.0, -1.0, -2.0), Vec3(2.0, 0.0, 0.0), Vec3(0.0, 2.0, 0.0), lamMat)
+    def quadHit: core.HitRecord? = quad.hit(r, 0.001, math.infinity)
+    assert(quadHit != null and math.abs(quadHit.t - 2.0) < 0.00000001 and quadHit.normal == Vec3(0.0, 0.0, 1.0), "Quad hit failed")
+    assert(quad.hit(Ray(Vec3(2.0, 0.0, 0.0), Vec3(0.0, 0.0, -1.0)), 0.001, math.infinity) == null, "Quad miss failed")
+
+    def box: core.Box = core.Box(Vec3(-0.5, -0.5, -0.5), Vec3(0.5, 0.5, 0.5), lamMat)
+    def movedBox: core.Hittable = core.Translate(core.RotateY(box, 45.0), Vec3(0.0, 0.0, -3.0))
+    def boxHit: core.HitRecord? = movedBox.hit(r, 0.001, math.infinity)
+    assert(boxHit != null and math.abs(boxHit.t - (3.0 - math.sqrt(0.5))) < 0.000001, "Translate/RotateY box hit failed")
+
     ;; 4. All 5 core materials: Lambertian, Metal, Dielectric, Emissive, Toon
     def rng: Rng = Rng(99)
     def sLam: core.Scatter? = lamMat.scatter(r, hit, rng)
@@ -131,6 +141,17 @@ def runTests = fn () -> (
         triPixels += 1
     ))
     assert(triPixels == 16, "triceratops renderRow pixel count failed")
+
+    def cornellScene: core.Scene = registry.buildScene("cornell-box", imageWidth: 16, samplesPerPixel: 2, maxDepth: 6)
+    assert(cornellScene.camera.imageHeight == 16, "cornell-box aspect ratio failed")
+    var cornellPixels: int = 0
+    var cornellLit: int = 0
+    cornellScene.camera.renderRow(8, cornellScene.world, cornellScene.defaultSeed, fn (x: int, y: int, cr: int, cg: int, cb: int) -> (
+        assert(cr >= 0 and cr <= 255 and cg >= 0 and cg <= 255 and cb >= 0 and cb <= 255, "cornell-box RGB out of range")
+        if cr > 0 or cg > 0 or cb > 0 then (cornellLit += 1)
+        cornellPixels += 1
+    ))
+    assert(cornellPixels == 16 and cornellLit > 0, "cornell-box renderRow failed")
 
     "selftest-ok"
 )

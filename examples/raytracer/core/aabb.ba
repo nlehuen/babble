@@ -40,6 +40,27 @@ export def AABB = record (
         if sx >= sy and sx >= sz then (0) else if sy >= sz then (1) else (2)
     )
 
+    def offset = fn (v: Vec3): AABB -> (
+        AABB(
+            this.minX + v.x, this.maxX + v.x,
+            this.minY + v.y, this.maxY + v.y,
+            this.minZ + v.z, this.maxZ + v.z
+        )
+    )
+
+    ;; Pads any degenerate (zero-thickness) axis so planar primitives have safe BVH slabs.
+    def padToMinimums = fn (): AABB -> (
+        def delta: double = 0.0001
+        def halfDelta: double = 0.00005
+        def nx0: double = if this.maxX - this.minX < delta then (this.minX - halfDelta) else (this.minX)
+        def nx1: double = if this.maxX - this.minX < delta then (this.maxX + halfDelta) else (this.maxX)
+        def ny0: double = if this.maxY - this.minY < delta then (this.minY - halfDelta) else (this.minY)
+        def ny1: double = if this.maxY - this.minY < delta then (this.maxY + halfDelta) else (this.maxY)
+        def nz0: double = if this.maxZ - this.minZ < delta then (this.minZ - halfDelta) else (this.minZ)
+        def nz1: double = if this.maxZ - this.minZ < delta then (this.maxZ + halfDelta) else (this.maxZ)
+        AABB(nx0, nx1, ny0, ny1, nz0, nz1)
+    )
+
     def hit = fn (r: Ray, tmin: double, tmax: double): bool -> (
         def orig: Vec3 = r.origin
         def dir: Vec3 = r.dir
