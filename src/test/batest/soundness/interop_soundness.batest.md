@@ -1,6 +1,6 @@
 # Soundness regressions : `interop` (`J2`, `J3`) curated determinism, iterator views, Java varargs parity & array element nullness
 
-Promoted from `BIP032` quarantine (`interop_j2_container_element_tostring_hashcode.batest.md`, `interop_j2_string_format_volatile_tostring.batest.md`, `interop_j3_varargs_array_double_wrap_parity.batest.md`, `interop_j2_string_case_mapping_default_locale.batest.md`, `interop_j3_java_array_return_null_elements.batest.md`, `interop_j2_curated_nullability_and_map_entry_immutability.batest.md`, `interop_j2_java_iterable_next_io.batest.md`, `interop_j3_sam_adapter_missing_inbound_check.batest.md`, `interop_j2_iterator_view_unique_alias.batest.md`, `interop_j2_escaped_iterator_fresh_return.batest.md`) and sister vectors covering `java/lang/curated.ba`, `java/util/curated.ba`, `AxiomData`, `JavaNullability`, `JavaTypeBridge`, `JavaCallResultOrigins`, `StoredValueEscapes`, `ControlAndOpEmitter`, and `Faces`.
+Promoted from `BIP032` quarantine (`interop_j2_container_element_tostring_hashcode.batest.md`, `interop_j2_string_format_volatile_tostring.batest.md`, `interop_j3_varargs_array_double_wrap_parity.batest.md`, `interop_j2_string_case_mapping_default_locale.batest.md`, `interop_j3_java_array_return_null_elements.batest.md`, `interop_j2_curated_nullability_and_map_entry_immutability.batest.md`, `interop_j2_java_iterable_next_io.batest.md`, `interop_j3_sam_adapter_missing_inbound_check.batest.md`, `interop_j2_iterator_view_unique_alias.batest.md`, `interop_j2_escaped_iterator_fresh_return.batest.md`, `interop_j3_java_interface_unique_parameter.batest.md`) and sister vectors covering `java/lang/curated.ba`, `java/util/curated.ba`, `AxiomData`, `JavaNullability`, `JavaTypeBridge`, `JavaCallResultOrigins`, `StoredValueEscapes`, `MemberTypes`, `ControlAndOpEmitter`, and `Faces`.
 
 ## String.format with volatile toString must not be accepted in deterministic function
 
@@ -377,4 +377,43 @@ println(sumIt(list(4, 5)) + local())
 
 ```stdout
 15
+```
+
+## A Java Consumer implementation cannot take a unique parameter
+
+```babble
+def C = class () implements java.util.function.Consumer of (list of int) (
+    def accept = fn (unique xs: list of int) -> (def r = list(from: move(xs)) ; r.add(9) ; discard(r))
+)
+```
+
+```error
+Type error : expected (p0 : list(int)) : null, got (unique xs : list(int)) : null
+```
+
+## A Java Predicate or BiConsumer implementation cannot take a unique parameter
+
+```babble
+def o = object implements java.util.function.BiConsumer of (int, list of int) (
+    def accept = fn (k: int, unique xs: list of int) -> (def r = list(from: move(xs)) ; r.add(k) ; discard(r))
+)
+```
+
+```error
+Type error : expected (p0 : int, p1 : list(int)) : null, got (k : int, unique xs : list(int)) : null
+```
+
+## Java interface implementations with plain parameters still run through Java
+
+```babble
+def C = class () implements java.util.function.Consumer of (list of int) (
+    def accept = fn io (xs: list of int) -> (println(string(xs.size())))
+)
+def t = fn io (): string -> (def inner = list(1) ; list(inner).forEach(C()) ; string(inner))
+println(t())
+```
+
+```stdout
+1
+[1]
 ```
