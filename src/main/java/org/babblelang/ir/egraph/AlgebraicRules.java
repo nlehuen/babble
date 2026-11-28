@@ -468,7 +468,7 @@ public final class AlgebraicRules {
 
     /**
      * Sound unary {@code injective} and {@code monotone + injective} comparison cancellation
-     * ({@code BIP042-P1}):
+     * ({@code BIP042-I1}):
      *
      * <ul>
      *   <li>{@code f(a) == f(b) -> a == b} and {@code f(a) != f(b) -> a != b} when {@code f} is

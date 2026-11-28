@@ -1,6 +1,6 @@
 # Injective and Monotone Comparison Cancellation
 
-References : BIP042-P1, BIP014-P5, org.babblelang.ir.egraph.AlgebraicRules, org.babblelang.opt.hir.HirAeGraphPass
+References : BIP042-I1, BIP014-I5, org.babblelang.ir.egraph.AlgebraicRules, org.babblelang.opt.hir.HirAeGraphPass
 
 ```babble
 ;; babble preamble

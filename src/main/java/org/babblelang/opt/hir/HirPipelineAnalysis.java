@@ -17,7 +17,7 @@ import org.babblelang.opt.HirPurity;
 import org.babblelang.opt.HirRewriter;
 
 /**
- * Soundness-analysis and AST-inspection helpers for {@link HirPipelineLifter} ({@code BIP042-P3},
+ * Soundness-analysis and AST-inspection helpers for {@link HirPipelineLifter} ({@code BIP042-I3},
  * {@code BIP042-D5}).
  */
 final class HirPipelineAnalysis {

@@ -26,7 +26,7 @@ import org.babblelang.opt.HirRewriter;
 
 /**
  * Soundness-checked HIR-to-{@link EGraph} pipeline lifter for {@link PipelineRewritePass} ({@code
- * BIP042-P3}, {@code BIP042-D5}).
+ * BIP042-I3}, {@code BIP042-D5}).
  *
  * <p>Lifts qualifying single {@link HirExpr.For} loops and multi-stage {@code def tmp = list();
  * for1; ...; consumerFor} chains into the 11-op {@code ENODE.Op.PIPE_*} dialect only after

@@ -6,7 +6,7 @@ import org.babblelang.analysis.PrimitiveKind;
 
 /**
  * Immutable pure-expression E-node in the shared equality saturation engine ({@code BIP027-D1},
- * anticipating Half A of {@code BIP014-P5}).
+ * anticipating Half A of {@code BIP014-I5}).
  *
  * <p>Zero ANTLR dependencies; shared by the HIR optimizer ({@code HirEGraphSimplifyPass}) and the
  * effect checker's algebraic law verifier ({@code AlgebraicVerifier}).

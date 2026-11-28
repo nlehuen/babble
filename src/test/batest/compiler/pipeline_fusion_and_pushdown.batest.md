@@ -1,6 +1,6 @@
 # E-Graph Pipeline Fusion, Filter Reordering, Map Push-Down & Distinct Push-Down
 
-References : BIP042-P3, BIP014-P5, org.babblelang.opt.hir.PipelineRewritePass, org.babblelang.ir.egraph.PipelineRules
+References : BIP042-I3, BIP014-I5, org.babblelang.opt.hir.PipelineRewritePass, org.babblelang.ir.egraph.PipelineRules
 
 ```babble
 ;; babble preamble

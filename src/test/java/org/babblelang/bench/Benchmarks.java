@@ -362,6 +362,39 @@ public final class Benchmarks {
                         + "run(1500) + run(1500)");
 
         scripts.forEach((name, script) -> benches.put(name, new Bench(script)));
+        // BIP042 E-graph pipeline fusion, monotone range clamping & associative pairwise fold
+        benches.put(
+                "pipeline : fused map+filter+reduce & associative fold",
+                new Bench(
+                        "def encode = fn axiom pure nothrow monotone injective (x: int): double -> (\n"
+                                + "    def r = x * 10.0 + 5.0\n"
+                                + "    return r\n"
+                                + "    r\n"
+                                + ")\n"
+                                + "def combineMax = fn axiom pure nothrow associative (a: int, b: int): int -> (\n"
+                                + "    def r = if a > b then ( a ) else ( b )\n"
+                                + "    return r\n"
+                                + "    r\n"
+                                + ")\n"
+                                + "def run = fn (n: int): double -> (\n"
+                                + "    def evens = list of int ()\n"
+                                + "    for x in 0..<n then ( if x mod 2 == 0 then ( evens.add(x) ) )\n"
+                                + "    def mapped = list of int ()\n"
+                                + "    for y in evens then ( mapped.add(y * 3 + 1) )\n"
+                                + "    var s1 = 0\n"
+                                + "    for z in mapped then ( s1 += z )\n"
+                                + "    def scores = list of double ()\n"
+                                + "    for x in 0..n then ( scores.add(encode(x)) )\n"
+                                + "    var s2 = 0.0\n"
+                                + "    for sc in scores then ( if sc <= encode(50) then ( s2 += sc ) )\n"
+                                + "    var best = -1\n"
+                                + "    for i in 0..<n then ( best = combineMax(best, i) )\n"
+                                + "    double(s1) + s2 + double(best)\n"
+                                + ")\n"
+                                + "run(50000)",
+                        null,
+                        false,
+                        false));
         // Too slow to interpret 70 times : compiled modes only.
         benches.put(
                 "argon ray tracer : 64x36, 4 samples per pixel",
