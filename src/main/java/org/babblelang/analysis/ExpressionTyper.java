@@ -505,23 +505,40 @@ final class ExpressionTyper {
         String name = ScopeAnalysis.selectorName(ctx);
         BabbleParser.ExpressionContext receiver = ctx.expression();
         if (receiver == null) {
-            Object resolved = checker.resolveName(ctx, name, checker.occurrenceScopes.get(ctx));
+            ScopeNode scope = checker.occurrenceScopes.get(ctx);
+            Object resolved = checker.resolveName(ctx, name, scope);
             if (resolved instanceof ParserRuleContext declaration) {
                 Type narrowed = checker.narrowing.narrowedType(declaration);
                 return narrowed != null ? narrowed : checker.typeOfDeclaration(declaration);
             }
-            Type.Function babbleAx =
-                    checker.resolveBabbleAxiom(name, checker.occurrenceScopes.get(ctx));
-            if (babbleAx != null) {
-                return babbleAx;
+            BabbleParser.AxiomExpressionContext axNode =
+                    checker.resolveBabbleAxiomNode(name, scope);
+            if (axNode != null) {
+                Type babbleAx = checker.resolveBabbleAxiom(name, scope);
+                if (babbleAx != null && babbleAx != Type.ERROR) {
+                    String desc = LoweringAnalyzer.descriptor(babbleAx);
+                    if (desc != null) {
+                        checker.callChecks.put(ctx, desc);
+                    }
+                    return babbleAx;
+                }
+                return Type.ERROR;
             }
             if ("wasm".equals(name)) {
-                Type wasmNs = checker.resolveWasmNamespace(checker.occurrenceScopes.get(ctx));
+                Type wasmNs = checker.resolveWasmNamespace(scope);
                 if (wasmNs != null) {
                     return wasmNs;
                 }
             }
-            return checker.operators.implicitType(name);
+            Type implicit = checker.operators.implicitType(name);
+            if (implicit != null) {
+                return implicit;
+            }
+            if (checker.isHostBinding(name)) {
+                return Type.ANY;
+            }
+            checker.warn("No such name : " + name, ctx);
+            return Type.ERROR;
         }
         if (receiver instanceof BabbleParser.SuperExpressionContext superExpr) {
             TypeChecks.Provider provider = checker.pass.superProviders.get(superExpr);
@@ -923,8 +940,21 @@ final class ExpressionTyper {
     private Type visitCoreScalarRef(
             BabbleParser.CoreScalarRefContext ctx, Type expected, TypeChecker.Role role) {
         String name = ctx.coreScalarKeyword().getText();
-        Type.Function babbleAx = checker.resolveBabbleAxiom(name, checker.scopeOf(ctx));
-        return babbleAx != null ? babbleAx : checker.operators.implicitType(name);
+        ScopeNode scope = checker.scopeOf(ctx);
+        BabbleParser.AxiomExpressionContext axNode = checker.resolveBabbleAxiomNode(name, scope);
+        if (axNode != null) {
+            Type babbleAx = checker.resolveBabbleAxiom(name, scope);
+            return babbleAx != null ? babbleAx : Type.ERROR;
+        }
+        Type implicit = checker.operators.implicitType(name);
+        if (implicit != null) {
+            return implicit;
+        }
+        if (checker.isHostBinding(name)) {
+            return Type.ANY;
+        }
+        checker.warn("No such name : " + name, ctx);
+        return Type.ERROR;
     }
 
     private Type visitAsExpression(
@@ -1096,7 +1126,8 @@ final class ExpressionTyper {
         String name = ScopeAnalysis.assignName(ctx);
         BabbleParser.ExpressionContext receiverExpr = ScopeAnalysis.assignReceiver(ctx);
         if (receiverExpr == null) {
-            Object resolved = checker.resolveName(ctx, name, checker.occurrenceScopes.get(ctx));
+            ScopeNode scope = checker.occurrenceScopes.get(ctx);
+            Object resolved = checker.resolveName(ctx, name, scope);
             if (resolved instanceof ParserRuleContext declaration) {
                 Type current = Type.ERROR;
                 if (readCurrent) {
@@ -1109,8 +1140,21 @@ final class ExpressionTyper {
                                 : checker.annotator.declaredType(declaration);
                 return new LValue.Local(declaration, declared, current, declared == null);
             }
-            return new LValue.Implicit(
-                    readCurrent ? checker.operators.implicitType(name) : Type.ERROR);
+            if (checker.resolveBabbleAxiomNode(name, scope) != null) {
+                checker.warn("Cannot assign to axiom : " + name, ctx.lhs);
+                return new LValue.Implicit(Type.ERROR);
+            }
+            if (("wasm".equals(name) && checker.resolveWasmNamespace(scope) != null)
+                    || checker.operators.implicitType(name) != null) {
+                checker.warn("Cannot assign to def : " + name, ctx.lhs);
+                return new LValue.Implicit(Type.ERROR);
+            }
+            if (checker.isHostBinding(name)) {
+                checker.warn("Cannot assign to host binding : " + name, ctx.lhs);
+                return new LValue.Implicit(Type.ERROR);
+            }
+            checker.warn("No such name : " + name, ctx.lhs);
+            return new LValue.Implicit(Type.ERROR);
         }
         Type receiver = checker.synth(receiverExpr, TypeChecker.Role.SELECTOR_RECEIVER);
         Object field = JavaTypeBridge.assignedField(receiver, name);

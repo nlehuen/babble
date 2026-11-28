@@ -681,6 +681,7 @@ final class TypeChecker {
         declarationTypes.clear();
         if (clearAnnotations) {
             annotator.clear();
+            babbleAxiomTypes.clear();
         }
         inProgress.clear();
         functions.clear();
@@ -804,14 +805,36 @@ final class TypeChecker {
         throw new IllegalStateException("No scope for " + ctx.getText());
     }
 
-    private final Map<BabbleParser.AxiomExpressionContext, Type.Function> babbleAxiomTypes =
+    private final Map<BabbleParser.AxiomExpressionContext, Type> babbleAxiomTypes =
             new IdentityHashMap<>();
 
+    /** Whether {@code name} is a host binding currently seeded in {@code ENGINE_SCOPE}. */
+    boolean isHostBinding(String name) {
+        return pass.hostEffects.hostBindings().contains(name);
+    }
+
     /**
-     * Resolves a scoped Babble-name axiom ({@code axiom foo: fn ...}) in {@code scope} or an
-     * enclosing scope.
+     * Finds the scoped Babble-name axiom ({@code axiom foo: fn ...} or {@code axiom foo: T}) in
+     * {@code scope} or an enclosing scope, stopping if a closer lexical declaration shadows it.
      */
-    Type.Function resolveBabbleAxiom(String name, ScopeNode scope) {
+    BabbleParser.AxiomExpressionContext resolveBabbleAxiomNode(String name, ScopeNode scope) {
+        for (ScopeNode s = scope; s != null; s = s.parent) {
+            BabbleParser.AxiomExpressionContext ax = s.babbleAxioms.get(name);
+            if (ax != null) {
+                return ax;
+            }
+            if (s.names.containsKey(name)) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Resolves a scoped Babble-name axiom ({@code axiom foo: fn ...} or {@code axiom foo: T}) in
+     * {@code scope} or an enclosing scope.
+     */
+    Type resolveBabbleAxiom(String name, ScopeNode scope) {
         for (ScopeNode s = scope; s != null; s = s.parent) {
             BabbleParser.AxiomExpressionContext ax = s.babbleAxioms.get(name);
             if (ax != null) {
@@ -824,7 +847,7 @@ final class TypeChecker {
         return null;
     }
 
-    Type.Function parseBabbleAxiom(
+    Type parseBabbleAxiom(
             BabbleParser.AxiomExpressionContext ctx, ScopeNode scope, boolean reportErrors) {
         boolean isWasm = AxiomData.isWasmImportAxiom(ctx);
         if (!AxiomData.isBabbleNameAxiom(ctx) && !isWasm) {
@@ -832,6 +855,18 @@ final class TypeChecker {
         }
         if (!reportErrors && babbleAxiomTypes.containsKey(ctx)) {
             return babbleAxiomTypes.get(ctx);
+        }
+        if (AxiomData.isBabbleValueAxiom(ctx)) {
+            if (ctx.EXPORT() != null || ctx.typeParameters() != null) {
+                babbleAxiomTypes.put(ctx, Type.ERROR);
+                return Type.ERROR;
+            }
+            Type valType = annotator.axiomValueAnnotation(ctx.axiomType().axiomValueType(), scope);
+            if (valType == null) {
+                valType = Type.ERROR;
+            }
+            babbleAxiomTypes.put(ctx, valType);
+            return valType;
         }
         AxiomData.ErrorSink sink = reportErrors ? this::warn : (msg, at) -> {};
         Type.Function fn =
@@ -885,8 +920,8 @@ final class TypeChecker {
                                 modEntry.getKey(), k -> new java.util.LinkedHashMap<>());
                 for (var fnEntry : modEntry.getValue().entrySet()) {
                     if (!fnMap.containsKey(fnEntry.getKey())) {
-                        Type.Function fn = parseBabbleAxiom(fnEntry.getValue(), s, false);
-                        if (fn != null) {
+                        if (parseBabbleAxiom(fnEntry.getValue(), s, false)
+                                instanceof Type.Function fn) {
                             fnMap.put(fnEntry.getKey(), fn);
                         }
                     }

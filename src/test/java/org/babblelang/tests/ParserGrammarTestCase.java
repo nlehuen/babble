@@ -291,9 +291,11 @@ public class ParserGrammarTestCase extends BabbleTestBase {
         BabbleParser.NonParenTypeContext asBangRight =
                 Assertions.assertInstanceOf(
                         BabbleParser.NonParenTypeContext.class, asBangExpr.right.nullableType(0));
-        BabbleParser.SimpleTypeContext asBangSimple =
+        BabbleParser.NonParenSimpleContext asBangNonParen =
                 Assertions.assertInstanceOf(
-                        BabbleParser.SimpleTypeContext.class, asBangRight.nonParenNullableType());
+                        BabbleParser.NonParenSimpleContext.class,
+                        asBangRight.nonParenNullableType());
+        BabbleParser.SimpleTypeContext asBangSimple = asBangNonParen.simpleType();
         Assertions.assertNotNull(asBangSimple.nullMod);
         Assertions.assertEquals(BabbleLexer.BANG, asBangSimple.nullMod.getType());
 
@@ -311,9 +313,10 @@ public class ParserGrammarTestCase extends BabbleTestBase {
                         BabbleParser.AsExpressionContext.class, innerBlock.block().expression(0));
         BabbleParser.SimpleTypeContext innerSimple =
                 Assertions.assertInstanceOf(
-                        BabbleParser.SimpleTypeContext.class,
-                        ((BabbleParser.NonParenTypeContext) innerAs.right.nullableType(0))
-                                .nonParenNullableType());
+                                BabbleParser.NonParenSimpleContext.class,
+                                ((BabbleParser.NonParenTypeContext) innerAs.right.nullableType(0))
+                                        .nonParenNullableType())
+                        .simpleType();
         Assertions.assertEquals(BabbleLexer.QUESTION, innerSimple.nullMod.getType());
 
         // AST shape: `x as string?!` lexes `?` + `!`; `?` attaches to type, `!` is outer
@@ -327,9 +330,10 @@ public class ParserGrammarTestCase extends BabbleTestBase {
                         BabbleParser.AsExpressionContext.class, qBangAssert.expression());
         BabbleParser.SimpleTypeContext qBangSimple =
                 Assertions.assertInstanceOf(
-                        BabbleParser.SimpleTypeContext.class,
-                        ((BabbleParser.NonParenTypeContext) qBangAs.right.nullableType(0))
-                                .nonParenNullableType());
+                                BabbleParser.NonParenSimpleContext.class,
+                                ((BabbleParser.NonParenTypeContext) qBangAs.right.nullableType(0))
+                                        .nonParenNullableType())
+                        .simpleType();
         Assertions.assertEquals(BabbleLexer.QUESTION, qBangSimple.nullMod.getType());
 
         // AST shape: `x is string!` binds `!` to `SimpleType`.
@@ -339,9 +343,11 @@ public class ParserGrammarTestCase extends BabbleTestBase {
                         BabbleParser.IsExpressionContext.class, isBang.expression(0));
         BabbleParser.SimpleTypeContext isBangSimple =
                 Assertions.assertInstanceOf(
-                        BabbleParser.SimpleTypeContext.class,
-                        ((BabbleParser.NonParenTypeContext) isBangExpr.right.nullableType(0))
-                                .nonParenNullableType());
+                                BabbleParser.NonParenSimpleContext.class,
+                                ((BabbleParser.NonParenTypeContext)
+                                                isBangExpr.right.nullableType(0))
+                                        .nonParenNullableType())
+                        .simpleType();
         Assertions.assertEquals(BabbleLexer.BANG, isBangSimple.nullMod.getType());
 
         // AST shape: `fn ... : T!` has `ELLIPSIS` effect word, null `fnTypeParameters`, non-null
@@ -643,6 +649,43 @@ public class ParserGrammarTestCase extends BabbleTestBase {
         // `def init = 1` is rejected as a syntax error (reserved keyword).
         Assertions.assertThrows(
                 ParseCancellationException.class, () -> parsePureSll("def init = 1"));
+    }
+
+    @Test
+    public void testValueAxiomPureSllGrammar() {
+        BabbleParser.FileContext file =
+                parsePureSll(
+                        """
+                        axiom a: int
+                        axiom b: string?
+                        axiom c: list of int
+                        axiom d: map of (string, any)
+                        axiom e: frozen list of int
+                        axiom f: int | string
+                        axiom g: A & B
+                        axiom h: (fn (int): int)?
+                        axiom i: overload (fn (int): int, fn (string): string)
+                        axiom j: null
+                        axiom k: fn nothrow (x: int): int
+                        axiom java.lang.String: class notnull (
+                            def length: fn nothrow (): int
+                        )
+                        """);
+        Assertions.assertEquals(12, file.expression().size());
+        for (int idx = 0; idx < 10; idx++) {
+            BabbleParser.AxiomExpressionContext ax =
+                    Assertions.assertInstanceOf(
+                            BabbleParser.AxiomExpressionContext.class, file.expression(idx));
+            Assertions.assertNotNull(ax.axiomType().axiomValueType(), "index " + idx);
+        }
+        BabbleParser.AxiomExpressionContext fnAx =
+                Assertions.assertInstanceOf(
+                        BabbleParser.AxiomExpressionContext.class, file.expression(10));
+        Assertions.assertNotNull(fnAx.axiomType().FN());
+        BabbleParser.AxiomExpressionContext clsAx =
+                Assertions.assertInstanceOf(
+                        BabbleParser.AxiomExpressionContext.class, file.expression(11));
+        Assertions.assertNotNull(clsAx.axiomType().CLASS());
     }
 
     private void assertTypeCheckFails(String source, String expectedMessage) {

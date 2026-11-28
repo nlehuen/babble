@@ -936,7 +936,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         String name = ScopeAnalysis.selectorName(ctx);
         BabbleParser.ExpressionContext expression = ctx.expression();
         if (expression == null) {
-            return namespace.lookup(name);
+            return Types.check(namespace.lookup(name), scopes.lowering().checkedType(ctx));
         }
         if (ctx.safe != null) {
             Object value = visit(expression);

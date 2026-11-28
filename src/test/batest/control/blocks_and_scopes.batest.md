@@ -43,7 +43,6 @@ Name already defined : x
 ## Variable read before definition in same block (hoisted slot)
 
 ```babble
-def f = fn volatile () -> ( a )
 def g = fn () -> (
     def x = a
     def a = 5

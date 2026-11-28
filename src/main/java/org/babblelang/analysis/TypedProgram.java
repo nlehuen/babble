@@ -60,6 +60,14 @@ final class TypedProgram {
         return TypeChecker.resolveName(null, name, scope);
     }
 
+    /**
+     * Whether {@code name} resolves in {@code scope} to a Babble value axiom ({@code axiom name:
+     * T}).
+     */
+    boolean isBabbleValueAxiomForEffects(String name, ScopeNode scope) {
+        return AxiomData.isBabbleValueAxiom(checker.resolveBabbleAxiomNode(name, scope));
+    }
+
     // ---------------------------------------------------------------- types
 
     /** The type of an expression where it occurs. */

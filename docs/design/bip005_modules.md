@@ -175,8 +175,10 @@ bindings, then the file's own definitions.
 
 So a module sees what the host gave every script, and nothing of the scripts that import it.
 Sharing the bindings is deliberate : they are how a host injects its services, and a module
-that could not reach them would be useless in an embedded setting. They are copied into each
-root, as they are for a script, so a module rebinding one does not affect the others (`BIP005-D4`).
+that could not reach them would be useless in an embedded setting. They are copied as read-only
+bindings into each root (`BIP005-D4`), and because a compiled module is cached independently of
+any caller's `ScriptContext`, a module declares each host binding it reads statically via
+`axiom name: T` (`BIP019`).
 
 Output goes to the same context writer, errors and warnings to the same error writer.
 

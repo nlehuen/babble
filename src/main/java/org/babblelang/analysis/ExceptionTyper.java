@@ -351,13 +351,15 @@ final class ExceptionTyper {
             return validateCatchTypeAst(pt.type(), scope);
         }
         if (nt instanceof BabbleParser.NonParenTypeContext npt
-                && npt.nonParenNullableType() instanceof BabbleParser.SimpleTypeContext simple) {
+                && npt.nonParenNullableType()
+                        instanceof BabbleParser.NonParenSimpleContext nonParenSimple) {
+            BabbleParser.SimpleTypeContext simple = nonParenSimple.simpleType();
             if ("void".equals(simple.typeName().getText())) {
                 checker.warn("Cannot catch non-exception type : void", simple);
                 return false;
             }
             if (simple.frozen != null) {
-                Type resolved = checker.annotator.nonParenAnnotation(simple, scope, false);
+                Type resolved = checker.annotator.simpleAnnotation(simple, scope, false);
                 String label =
                         resolved != Type.ERROR
                                 ? resolved.toString()

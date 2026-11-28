@@ -743,6 +743,27 @@ final class AxiomData {
                     null);
         }
 
+        if (typeCtx.axiomValueType() != null) {
+            if (targetPath.size() != 1) {
+                errors.report(
+                        "Value axiom must target a Babble name : " + String.join(".", targetPath),
+                        ctx.target);
+                return null;
+            }
+            if (ctx.EXPORT() != null) {
+                errors.report(
+                        "Axiom about a Babble name cannot be exported : " + targetPath.get(0), ctx);
+                return null;
+            }
+            if (ctx.typeParameters() != null) {
+                errors.report(
+                        "Value axiom cannot declare type parameters : " + targetPath.get(0),
+                        ctx.typeParameters());
+                return null;
+            }
+            return new ParsedAxiom(null, null, targetPath.get(0), null);
+        }
+
         // Function axiom: either `axiom java.pkg.Class.member: fn ...` or `axiom babbleName: fn
         // ...`
         if (targetPath.size() == 1) {
@@ -809,7 +830,7 @@ final class AxiomData {
             ErrorSink errors) {
         for (BabbleParser.AxiomMemberContext mCtx : section.axiomMember()) {
             String memberName = mCtx.memberName() != null ? mCtx.memberName().getText() : "*";
-            if (mCtx.axiomType().CLASS() != null) {
+            if (mCtx.axiomType().FN() == null) {
                 errors.report("Axiom member must be a function type : " + memberName, mCtx);
                 continue;
             }
@@ -1364,7 +1385,8 @@ final class AxiomData {
             return new TypeErasure(
                     "Lorg/babblelang/runtime/Callable;", JavaNullability.Nullness.NON_NULL, false);
         }
-        BabbleParser.SimpleTypeContext simple = (BabbleParser.SimpleTypeContext) primary;
+        BabbleParser.SimpleTypeContext simple =
+                ((BabbleParser.NonParenSimpleContext) primary).simpleType();
         boolean nullable =
                 simple.nullMod != null && simple.nullMod.getType() == BabbleLexer.QUESTION;
         boolean nonNull = simple.nullMod != null && simple.nullMod.getType() == BabbleLexer.BANG;
@@ -1515,11 +1537,31 @@ final class AxiomData {
     // ================================================================ Babble-Name Axioms (§2.3,
     // BIP019-I7)
 
-    /** Whether {@code ctx} is an axiom about a single Babble name ({@code axiom foo: fn ...}). */
+    /**
+     * Whether {@code ctx} is an axiom about a single Babble name ({@code axiom foo: fn ...} or
+     * {@code axiom foo: T}).
+     */
     static boolean isBabbleNameAxiom(BabbleParser.AxiomExpressionContext ctx) {
+        return isBabbleFunctionAxiom(ctx) || isBabbleValueAxiom(ctx);
+    }
+
+    /**
+     * Whether {@code ctx} is a function axiom about a single Babble name ({@code axiom foo: fn
+     * ...}).
+     */
+    static boolean isBabbleFunctionAxiom(BabbleParser.AxiomExpressionContext ctx) {
         return ctx != null
                 && ctx.axiomType() != null
                 && ctx.axiomType().FN() != null
+                && ctx.target != null
+                && ctx.target.memberName().isEmpty();
+    }
+
+    /** Whether {@code ctx} is a value axiom about a single Babble name ({@code axiom foo: T}). */
+    static boolean isBabbleValueAxiom(BabbleParser.AxiomExpressionContext ctx) {
+        return ctx != null
+                && ctx.axiomType() != null
+                && ctx.axiomType().axiomValueType() != null
                 && ctx.target != null
                 && ctx.target.memberName().isEmpty();
     }
@@ -1789,7 +1831,8 @@ final class AxiomData {
         if (ctx instanceof BabbleParser.NullTypeContext) {
             return Type.NULL;
         }
-        if (ctx instanceof BabbleParser.SimpleTypeContext simple) {
+        if (ctx instanceof BabbleParser.NonParenSimpleContext nonParenSimple) {
+            BabbleParser.SimpleTypeContext simple = nonParenSimple.simpleType();
             List<String> path = ScopeAnalysis.simpleTypePath(simple);
             Type base = null;
             if (path.size() == 1) {

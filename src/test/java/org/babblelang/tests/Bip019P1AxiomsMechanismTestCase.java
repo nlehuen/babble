@@ -300,4 +300,130 @@ public class Bip019P1AxiomsMechanismTestCase extends BabbleTestBase {
         Assertions.assertTrue(
                 exported.getMessage().contains("cannot be exported"), exported.getMessage());
     }
+
+    @Test
+    public void testHostBindingSeedingAndValueAxiomsAcrossModes() throws Exception {
+        for (String[] cfg :
+                new String[][] {
+                    {"interpret", null},
+                    {"compile", "0"},
+                    {"compile", "1"},
+                    {"compile", "2"}
+                }) {
+            BabbleScriptEngine engine =
+                    (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+            engine.put(BabbleScriptEngine.MODE, cfg[0]);
+            if (cfg[1] != null) {
+                engine.put(
+                        org.babblelang.compiler.BabbleCompiler.OPT_LEVEL, Integer.parseInt(cfg[1]));
+            }
+
+            // 1. eval() seeds ENGINE_SCOPE keys as read-only `any`, while undeclared names fail
+            // statically.
+            javax.script.Bindings evalBindings = engine.createBindings();
+            evalBindings.put("name", "world");
+            Assertions.assertEquals(
+                    "hello world", engine.eval("\"hello \" + (name as string)", evalBindings));
+            TypeCheckException assignHost =
+                    Assertions.assertThrows(
+                            TypeCheckException.class,
+                            () -> engine.eval("name = \"other\"", evalBindings));
+            Assertions.assertTrue(
+                    assignHost.getMessage().contains("Cannot assign to host binding : name"),
+                    assignHost.getMessage());
+            TypeCheckException unknownInEval =
+                    Assertions.assertThrows(
+                            TypeCheckException.class, () -> engine.eval("typo", evalBindings));
+            Assertions.assertTrue(
+                    unknownInEval.getMessage().contains("No such name : typo"),
+                    unknownInEval.getMessage());
+
+            // 2. compile() does NOT seed ENGINE_SCOPE keys; external bindings must be declared
+            // with `axiom`.
+            engine.put("ambient", "ignoredByCompile");
+            TypeCheckException unseededCompile =
+                    Assertions.assertThrows(
+                            TypeCheckException.class, () -> engine.compile("ambient"));
+            Assertions.assertTrue(
+                    unseededCompile.getMessage().contains("No such name : ambient"),
+                    unseededCompile.getMessage());
+
+            // 3. Value axioms give CompiledScript typed host bindings with runtime boundary checks.
+            javax.script.CompiledScript compiled =
+                    engine.compile(
+                            "axiom start: int ; axiom tag: string? ; axiom scale: double ; axiom raw: any?\n"
+                                    + "def t = tag ; def s = if t != null then ( t ) else ( \"none\" )\n"
+                                    + "s + \":\" + (start + 1) + \":\" + (scale + 0.5) + \":\" + (raw == null)");
+            javax.script.Bindings ok = new javax.script.SimpleBindings();
+            ok.put("start", 41);
+            ok.put("tag", "hi");
+            ok.put("scale", 2); // int widens to double at boundary
+            ok.put("raw", null);
+            Assertions.assertEquals("hi:42:2.5:true", compiled.eval(ok));
+
+            javax.script.Bindings withNullTag = new javax.script.SimpleBindings();
+            withNullTag.put("start", 9);
+            withNullTag.put("tag", null);
+            withNullTag.put("scale", 1.5);
+            withNullTag.put("raw", "present");
+            Assertions.assertEquals("none:10:2.0:false", compiled.eval(withNullTag));
+
+            // Wrong runtime type on value axiom fails with Type error (not ClassCastException).
+            javax.script.Bindings badType = new javax.script.SimpleBindings();
+            badType.put("start", "oops");
+            badType.put("tag", "hi");
+            badType.put("scale", 1.0);
+            badType.put("raw", null);
+            javax.script.ScriptException typeErr =
+                    Assertions.assertThrows(
+                            javax.script.ScriptException.class, () -> compiled.eval(badType));
+            Assertions.assertTrue(
+                    typeErr.getMessage().contains("Type error : expected int, got string"),
+                    typeErr.getMessage());
+
+            // Null for non-nullable primitive value axiom fails with Type error.
+            javax.script.Bindings nullInt = new javax.script.SimpleBindings();
+            nullInt.put("start", null);
+            nullInt.put("tag", "hi");
+            nullInt.put("scale", 1.0);
+            nullInt.put("raw", null);
+            javax.script.ScriptException nullErr =
+                    Assertions.assertThrows(
+                            javax.script.ScriptException.class, () -> compiled.eval(nullInt));
+            Assertions.assertTrue(
+                    nullErr.getMessage().contains("Type error : expected int, got null"),
+                    nullErr.getMessage());
+
+            // Missing binding fails at runtime with No such name.
+            javax.script.ScriptException missingErr =
+                    Assertions.assertThrows(
+                            javax.script.ScriptException.class,
+                            () -> compiled.eval(new javax.script.SimpleBindings()));
+            Assertions.assertTrue(
+                    missingErr.getMessage().contains("No such name : tag"),
+                    missingErr.getMessage());
+
+            // 4. Modules do not inherit caller ENGINE_SCOPE implicitly, but see host bindings
+            // declared via `axiom`.
+            org.babblelang.engine.MapModuleSource source =
+                    new org.babblelang.engine.MapModuleSource();
+            source.put("implicit_mod.ba", "export def read = fn volatile () -> ( hostVal )");
+            source.put(
+                    "axiom_mod.ba",
+                    "axiom hostVal: int\nexport def read = fn (): int -> ( hostVal + 1 )");
+            engine.put(BabbleScriptEngine.MODULE_SOURCE, source);
+
+            javax.script.Bindings modBindings = engine.createBindings();
+            modBindings.put("hostVal", 10);
+            modBindings.put(javax.script.ScriptEngine.FILENAME, "main.ba");
+            javax.script.ScriptException modErr =
+                    Assertions.assertThrows(
+                            javax.script.ScriptException.class,
+                            () -> engine.eval("import(\"implicit_mod.ba\").read()", modBindings));
+            Assertions.assertTrue(
+                    modErr.getMessage().contains("No such name : hostVal"), modErr.getMessage());
+            Assertions.assertEquals(
+                    11, engine.eval("import(\"axiom_mod.ba\").read()", modBindings));
+        }
+    }
 }

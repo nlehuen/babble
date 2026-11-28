@@ -354,8 +354,8 @@ final class OperatorTypes {
 
     /**
      * A name the analysis doesn't declare : a root Java package, special forms ({@code move},
-     * {@code freeze}, {@code discard}, {@code import}, {@code STDOUT}, {@code args}), ordinary
-     * built-ins from {@code builtins.ba}, and {@code any} host bindings.
+     * {@code freeze}, {@code discard}, {@code import}, {@code STDOUT}, {@code args}), or ordinary
+     * built-ins from {@code builtins.ba}. Returns {@code null} when unknown.
      */
     Type implicitType(String name) {
         return switch (name) {
@@ -366,10 +366,7 @@ final class OperatorTypes {
             case "import", "importe" -> IMPORT_FUNCTION;
             case "STDOUT" -> STDOUT_TYPE;
             case "args" -> ARGS_TYPE;
-            default -> {
-                Type.Function builtin = BuiltinAxioms.current().builtins().get(name);
-                yield builtin != null ? builtin : Type.ANY;
-            }
+            default -> BuiltinAxioms.current().builtins().get(name);
         };
     }
 

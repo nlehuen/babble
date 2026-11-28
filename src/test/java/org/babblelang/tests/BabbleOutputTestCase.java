@@ -81,7 +81,7 @@ public class BabbleOutputTestCase extends BabbleTestBase {
         context.setWriter(new BufferedWriter(out));
         Assertions.assertThrows(
                 ScriptException.class,
-                () -> engine.eval("print(\"before\") ; nosuchname", context));
+                () -> engine.eval("print(\"before\") ; throw exception(\"boom\")", context));
         Assertions.assertEquals("before", out.toString());
     }
 }

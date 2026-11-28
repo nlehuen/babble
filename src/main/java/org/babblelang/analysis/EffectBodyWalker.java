@@ -1080,7 +1080,16 @@ final class EffectBodyWalker {
                 if (selType == Type.ANY || selType == Type.NULLABLE_ANY || selType == Type.ERROR) {
                     deterministic = false;
                     nothrow = false;
+                    return Reachability.Origin.ofExternal(null, false);
                 }
+                if (ec.checker.hasCallCheck(sel)) {
+                    nothrow = false;
+                }
+                if (ec.checker.isBabbleValueAxiomForEffects(sel.ID().getText(), occScope)) {
+                    boolean imm = ec.javaResolver.isDeeplyImmutable(selType);
+                    return Reachability.Origin.ofExternal(null, imm);
+                }
+                return Reachability.Origin.IMMUTABLE;
             }
             return Reachability.Origin.IMMUTABLE;
         }

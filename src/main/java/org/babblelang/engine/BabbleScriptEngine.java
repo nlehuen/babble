@@ -332,7 +332,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         // TODO : handle ScriptContext.GLOBAL_SCOPE
         for (Map.Entry<String, Object> binding :
                 context.getBindings(ScriptContext.ENGINE_SCOPE).entrySet()) {
-            root.define(binding.getKey(), false).set(binding.getValue());
+            root.define(binding.getKey(), true).set(binding.getValue());
         }
         return new ScriptRuntime(root, context.getWriter(), modules);
     }
@@ -477,7 +477,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
             Loader loader = new Loader(sourceName, context, source, id, text.version());
             ScopeAnalysis scopes;
             try {
-                scopes = analyze(file, sourceName, context, null, loader);
+                scopes = analyze(file, sourceName, context, null, loader, false);
             } finally {
                 inProgress.remove(id.key());
             }
@@ -690,7 +690,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
                         };
                 ScopeAnalysis scopes;
                 try {
-                    scopes = analyze(file, srcName, ctx, null, loader);
+                    scopes = analyze(file, srcName, ctx, null, loader, false);
                 } finally {
                     inProg.remove(id.key());
                 }
@@ -917,7 +917,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
 
     public Object eval(Reader reader, ScriptContext context) throws ScriptException {
         if (!isCheckAxiomsEnabled(context)) {
-            return compile(reader, sourceName(context), context).eval(context);
+            return compile(reader, sourceName(context), context, true).eval(context);
         }
         String sourceName = sourceName(context);
         BabbleParser.FileContext file;
@@ -943,7 +943,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     }
 
     public CompiledScript compile(Reader script) throws ScriptException {
-        return compile(script, sourceName(getContext()), getContext());
+        return compile(script, sourceName(getContext()), getContext(), false);
     }
 
     static String sourceName(ScriptContext context) {
@@ -1059,7 +1059,8 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         }
     }
 
-    private CompiledScript compile(Reader script, String sourceName, ScriptContext context)
+    private CompiledScript compile(
+            Reader script, String sourceName, ScriptContext context, boolean seedHostBindings)
             throws ScriptException {
         BabbleParser.FileContext file;
         try {
@@ -1069,7 +1070,8 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         } catch (Exception e) {
             throw new ScriptException(e);
         }
-        return script(file, analyze(file, sourceName, context, null, null), sourceName);
+        return script(
+                file, analyze(file, sourceName, context, null, null, seedHostBindings), sourceName);
     }
 
     /**
@@ -1083,7 +1085,24 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
             ScriptContext context,
             AnalysisSession session)
             throws ScriptException {
-        return analyze(file, sourceName, context, session, null);
+        return analyze(file, sourceName, context, session, null, true);
+    }
+
+    private static Set<String> engineBindingNames(ScriptContext context) {
+        if (context == null) {
+            return Set.of();
+        }
+        Bindings bindings = context.getBindings(ScriptContext.ENGINE_SCOPE);
+        if (bindings == null || bindings.isEmpty()) {
+            return Set.of();
+        }
+        Set<String> names = new java.util.HashSet<>();
+        for (String key : bindings.keySet()) {
+            if (key != null && !key.isEmpty() && key.indexOf('.') < 0) {
+                names.add(key);
+            }
+        }
+        return names;
     }
 
     /**
@@ -1095,7 +1114,8 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
             String sourceName,
             ScriptContext context,
             AnalysisSession session,
-            ModuleLoader loader)
+            ModuleLoader loader,
+            boolean seedHostBindings)
             throws ScriptException {
         ScopeAnalysis scopes;
         ModuleSource source;
@@ -1104,6 +1124,10 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         } catch (BabbleException e) {
             throw new ScriptException(e);
         }
+        HostEffects effectiveHostEffects =
+                seedHostBindings
+                        ? hostEffects().withHostBindings(engineBindingNames(context))
+                        : hostEffects();
         try {
             scopes =
                     BlockScopes.analyze(
@@ -1112,7 +1136,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
                             loader != null
                                     ? loader
                                     : new Loader(sourceName, context, source, null, null),
-                            hostEffects());
+                            effectiveHostEffects);
         } catch (AnalysisException e) {
             // Reported exactly like the same error found at runtime.
             throw new ScriptException(
