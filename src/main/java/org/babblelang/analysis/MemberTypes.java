@@ -806,6 +806,15 @@ final class MemberTypes {
                         }
                     }
                 }
+                if (implType instanceof Type.Function implFn
+                        && implFn.parameters().size() == jm.getParameterCount()
+                        && implFn.parameters().stream().anyMatch(Type.Parameter::unique)) {
+                    // A Java caller passes ordinary shared references : an implementation cannot
+                    // consume its argument, as for a Babble interface method or a SAM adaptation.
+                    checker.reportTypeMismatch(
+                            implFn, JavaTypeBridge.javaMethodFunctionType(jm, javaEnv), errorSite);
+                    continue;
+                }
                 if (!(implType instanceof Type.Overloaded ov)) {
                     continue;
                 }

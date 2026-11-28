@@ -1223,24 +1223,33 @@ final class JavaTypeBridge {
             return null;
         }
         Map<TypeVariable<?>, Type> env = javaTypeEnv(java.type(), java.typeArguments());
-        java.lang.reflect.Type[] genericParams = sam.getGenericParameterTypes();
-        List<Type.Parameter> params = new ArrayList<>(genericParams.length);
-        for (int i = 0; i < genericParams.length; i++) {
-            params.add(new Type.Parameter("p" + i, javaExecutableParamType(sam, i, env), false));
-        }
-        Type returnType =
-                fromJavaType(
-                        sam.getGenericReturnType(),
-                        sam.getAnnotatedReturnType(),
-                        env,
-                        false,
-                        false,
-                        JavaNullability.returnNullness(sam),
-                        JavaNullability.isNullMarked(sam));
-        Type.Function raw = new Type.Function(params, returnType);
+        Type.Function raw = javaMethodFunctionType(sam, env);
         return effectChecker != null
                 ? effectChecker.javaResolver().applySamJavaEffects(sam, raw)
                 : raw;
+    }
+
+    /**
+     * The Babble function type of a Java method under a type-variable environment : plain
+     * parameters (a Java caller passes ordinary references, never {@code unique} or {@code mut}
+     * ones) and the Java return type.
+     */
+    static Type.Function javaMethodFunctionType(Method method, Map<TypeVariable<?>, Type> env) {
+        java.lang.reflect.Type[] genericParams = method.getGenericParameterTypes();
+        List<Type.Parameter> params = new ArrayList<>(genericParams.length);
+        for (int i = 0; i < genericParams.length; i++) {
+            params.add(new Type.Parameter("p" + i, javaExecutableParamType(method, i, env), false));
+        }
+        Type returnType =
+                fromJavaType(
+                        method.getGenericReturnType(),
+                        method.getAnnotatedReturnType(),
+                        env,
+                        false,
+                        false,
+                        JavaNullability.returnNullness(method),
+                        JavaNullability.isNullMarked(method));
+        return new Type.Function(params, returnType);
     }
 
     static boolean hasJavaMethod(Class<?> iface, String name) {
