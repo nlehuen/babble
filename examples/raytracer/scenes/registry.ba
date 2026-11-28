@@ -36,8 +36,8 @@ export def buildScene = fn (
         )
         case "triceratops" then (
             triceratops.build(
-                imageWidth: orDefault(imageWidth, 160),
-                samplesPerPixel: orDefault(samplesPerPixel, 64),
+                imageWidth: orDefault(imageWidth, 400),
+                samplesPerPixel: orDefault(samplesPerPixel, 16),
                 maxDepth: orDefault(maxDepth, 5)
             )
         )
