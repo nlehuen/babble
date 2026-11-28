@@ -680,8 +680,18 @@ final class MethodEntryEmitter {
             if (emitter.cacheNameReadsInBodies) {
                 HirSlotAllocator.allocate(fn, ctx);
             }
+            for (HirVar variable : fn.declaredVars()) {
+                if (variable.kind() == Resolution.Variable.Kind.THIS
+                        && !variable.cell()
+                        && !variable.isCaptured()
+                        && ctx.thizLocal >= 0) {
+                    ctx.slots.put(variable.id(), ctx.thizLocal);
+                }
+            }
             for (HirVar variable : emitter.declareVariables(fn.declaredVars())) {
-                if (variable.kind() == Resolution.Variable.Kind.THIS && variable.used()) {
+                if (variable.kind() == Resolution.Variable.Kind.THIS
+                        && variable.used()
+                        && (variable.cell() || variable.isCaptured() || ctx.thizLocal < 0)) {
                     mv.visitVarInsn(ALOAD, ctx.thizLocal);
                     emitter.initVariable(variable, PrimitiveKind.NONE);
                 } else if (variable.kind() == Resolution.Variable.Kind.RECURSE && variable.used()) {
@@ -709,9 +719,26 @@ final class MethodEntryEmitter {
         MethodEmitContext ctx = emitter.ctx;
         ctx.cacheNameReads = emitter.cacheNameReadsInBodies && !fn.namespaceScope();
         MethodVisitor mv = ctx.mv;
+        List<HirParam> params = fn.params();
+        // Bind non-cell, non-captured parameters directly to their incoming JVM parameter slots
+        // before declaring frame locals (avoids redundant prologue copy slots).
+        boolean[] directParamSlot = new boolean[params.size()];
+        if (!fn.namespaceScope()) {
+            for (int i = 0; i < params.size(); i++) {
+                HirParam param = params.get(i);
+                HirVar variable = param.var();
+                if (variable != null
+                        && !variable.cell()
+                        && !variable.isCaptured()
+                        && !(variable.mayBeUndefined() && !variable.definitelyDefined())
+                        && variable.primitiveKind() == param.kind()) {
+                    ctx.slots.put(variable.id(), paramSlots[i]);
+                    directParamSlot[i] = true;
+                }
+            }
+        }
         ctx.beginTailLoop(paramSlots, maskSlot);
         initFrameLocals(fn, selfType);
-        List<HirParam> params = fn.params();
         int optBit = 0;
         for (int i = 0; i < params.size(); i++) {
             HirParam param = params.get(i);
@@ -737,6 +764,9 @@ final class MethodEntryEmitter {
             }
             HirVar variable = param.var();
             if (variable != null) {
+                if (directParamSlot[i]) {
+                    continue;
+                }
                 loadKindOn(mv, pk, paramSlots[i]);
                 if (variable.cell()) {
                     emitter.storeVariable(variable, true, pk, param.line());
@@ -888,8 +918,29 @@ final class MethodEntryEmitter {
                 allDeclared.add(v);
             }
         }
+        if (emitter.cacheNameReadsInBodies) {
+            List<HirVar> ctorParamVars = new ArrayList<>(ctor.params().size());
+            for (HirParam p : ctor.params()) {
+                if (p.var() != null) {
+                    ctorParamVars.add(p.var());
+                }
+            }
+            List<HirExpr> allBody = new ArrayList<>(cls.body().size() + ctor.body().size());
+            allBody.addAll(cls.body());
+            allBody.addAll(ctor.body());
+            HirSlotAllocator.allocateStatements(ctorParamVars, allDeclared, allBody, ctx);
+        }
+        for (HirVar variable : allDeclared) {
+            if (variable.kind() == Resolution.Variable.Kind.THIS
+                    && !variable.cell()
+                    && !variable.isCaptured()) {
+                ctx.slots.put(variable.id(), 0);
+            }
+        }
         for (HirVar variable : emitter.declareVariables(allDeclared)) {
-            if (variable.kind() == Resolution.Variable.Kind.THIS && variable.used()) {
+            if (variable.kind() == Resolution.Variable.Kind.THIS
+                    && variable.used()
+                    && (variable.cell() || variable.isCaptured())) {
                 mv.visitVarInsn(ALOAD, 0);
                 emitter.initVariable(variable, PrimitiveKind.NONE);
             }

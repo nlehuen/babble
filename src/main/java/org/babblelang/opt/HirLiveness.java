@@ -48,6 +48,32 @@ public final class HirLiveness {
     }
 
     /**
+     * Computes exact backward liveness for a statement sequence (such as a class/record constructor
+     * body) given its parameter and declared variables.
+     */
+    public static HirLiveness analyzeStatements(
+            List<HirVar> params, List<HirVar> declaredVars, List<HirExpr> stmts) {
+        Map<Integer, Integer> idToIdx = new HashMap<>();
+        List<HirVar> idxToVar = new ArrayList<>();
+        for (HirVar p : params) {
+            registerVar(p, idToIdx, idxToVar);
+        }
+        for (HirVar v : declaredVars) {
+            registerVar(v, idToIdx, idxToVar);
+        }
+        for (HirExpr s : stmts) {
+            collectVars(s, idToIdx, idxToVar);
+        }
+        IdentityHashMap<HirExpr, BitSet> liveIn = new IdentityHashMap<>();
+        IdentityHashMap<HirExpr, BitSet> liveOut = new IdentityHashMap<>();
+        BitSet tryEdge = new BitSet(idxToVar.size());
+        Analyzer analyzer = new Analyzer(idToIdx, idxToVar.size(), liveIn, liveOut, tryEdge, null);
+        BitSet empty = new BitSet(idxToVar.size());
+        analyzer.transferList(stmts, empty, empty, empty, empty, empty);
+        return new HirLiveness(idToIdx, idxToVar, liveIn, liveOut, tryEdge);
+    }
+
+    /**
      * Computes dead-store-aware backward liveness for DCE: when {@code isDeadStoreRemovable} is
      * non-null and returns true for a non-final {@code Def}/{@code VarAssign} whose target variable
      * is dead after the statement, its RHS reads are not marked live, enabling dead loop-carried

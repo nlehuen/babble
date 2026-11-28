@@ -48,6 +48,9 @@ final class FrameVarEmitter {
         MethodEmitContext ctx = emitter.ctx;
         MethodVisitor mv = ctx.mv;
         for (HirVar variable : variables) {
+            if (ctx.slots.containsKey(variable.id())) {
+                continue;
+            }
             PrimitiveKind vk = variable.primitiveKind();
             Integer pre =
                     ctx.preallocatedSlots != null ? ctx.preallocatedSlots.get(variable.id()) : null;
@@ -108,6 +111,7 @@ final class FrameVarEmitter {
     void initVariable(HirVar variable, PrimitiveKind vk) {
         MethodEmitContext ctx = emitter.ctx;
         MethodVisitor mv = ctx.mv;
+        ctx.checkedNonNullVars.remove(variable.id());
         if (variable.cell()) {
             String cc = cellClass(vk);
             mv.visitMethodInsn(
@@ -229,13 +233,15 @@ final class FrameVarEmitter {
             boolean valueNeeded) {
         MethodEmitContext ctx = emitter.ctx;
         MethodVisitor mv = ctx.mv;
+        ctx.checkedNonNullVars.remove(variable.id());
         if (variable.cell()) {
             String cc = cellClass(vk);
             String desc = jvmDescriptor(vk);
-            int tmp = ctx.newLocal(vk);
+            int tmp = ctx.acquireTemp(vk);
             storeKindOn(mv, vk, tmp);
             loadCell(variable);
             loadKindOn(mv, vk, tmp);
+            ctx.releaseTemp(tmp, vk);
             if (definition) {
                 mv.visitMethodInsn(INVOKEVIRTUAL, cc, "define", "(" + desc + ")" + desc, false);
             } else {
@@ -422,7 +428,7 @@ final class FrameVarEmitter {
         Map<Integer, Integer> savedSlots = new HashMap<>(ctx.slots);
         Map<Integer, Integer> savedDefinedSlots = new HashMap<>(ctx.definedSlots);
         body.run();
-        ctx.nextLocal = savedNextLocal;
+        ctx.restoreNextLocal(savedNextLocal);
         ctx.slots = savedSlots;
         ctx.definedSlots = savedDefinedSlots;
     }
@@ -436,7 +442,7 @@ final class FrameVarEmitter {
             body.run();
         } finally {
             ctx.nsLocal = outer;
-            ctx.nextLocal = savedNextLocal;
+            ctx.restoreNextLocal(savedNextLocal);
         }
     }
 }

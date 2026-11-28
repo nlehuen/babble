@@ -23,7 +23,6 @@ import org.babblelang.ir.hir.HirVar;
 import org.babblelang.runtime.ClassShape;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Handle;
-import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Type;
 
@@ -1146,6 +1145,75 @@ final class HirEmitter {
 
     // ---------------------------------------------------------------- Java interop helpers
 
+    /**
+     * Emits a branchless non-null receiver check ({@code Members.requireScope} or {@code
+     * Members.requireAssignable}), eliding the check when {@code recvExpr} is trivially non-null
+     * ({@code this} in a compiled class, fresh allocation, or a local already checked in the
+     * current basic block).
+     */
+    void emitRequireNonNullOnStack(
+            HirExpr recvExpr, String recvText, int lineAt, String nullErrorFactory) {
+        if (isTriviallyNonNull(recvExpr)) {
+            return;
+        }
+        Integer trackableVarId = trackableLocalVarId(recvExpr);
+        if (trackableVarId != null && ctx.checkedNonNullVars.contains(trackableVarId)) {
+            return;
+        }
+        String helper =
+                "notAssignable".equals(nullErrorFactory) ? "requireAssignable" : "requireScope";
+        ctx.line(lineAt);
+        ConstantPool.pushString(ctx.mv, recvText);
+        ctx.mv.visitMethodInsn(
+                INVOKESTATIC,
+                RUNTIME + "Members",
+                helper,
+                "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
+                false);
+        if (trackableVarId != null) {
+            ctx.checkedNonNullVars.add(trackableVarId);
+        }
+    }
+
+    private boolean isTriviallyNonNull(HirExpr expr) {
+        if (expr == null) {
+            return false;
+        }
+        if (expr instanceof HirExpr.Narrow n) {
+            return isTriviallyNonNull(n.operand());
+        }
+        if (expr instanceof HirExpr.ThisRef) {
+            return ctx.methodClass != null || ctx.constructorClass != null;
+        }
+        if (expr instanceof HirExpr.Const c) {
+            return c.value() != null;
+        }
+        return expr instanceof HirExpr.RecordNew
+                || expr instanceof HirExpr.RecordReuse
+                || expr instanceof HirExpr.ArrayCreate
+                || expr instanceof HirExpr.Range
+                || expr instanceof HirExpr.FunctionRef
+                || expr instanceof HirExpr.ClassExpr
+                || expr instanceof HirExpr.InterfaceExpr;
+    }
+
+    private Integer trackableLocalVarId(HirExpr expr) {
+        while (expr instanceof HirExpr.Narrow n) {
+            expr = n.operand();
+        }
+        if (expr instanceof HirExpr.VarRead vr) {
+            HirVar v = vr.var();
+            if (v != null
+                    && !v.cell()
+                    && !v.isCaptured()
+                    && v.ownerMethodId() == ctx.methodOwnerId
+                    && ctx.slots.containsKey(v.id())) {
+                return v.id();
+            }
+        }
+        return null;
+    }
+
     void emitCheckedJavaReceiver(
             HirExpr recvExpr,
             String recvText,
@@ -1178,20 +1246,7 @@ final class HirEmitter {
                         false);
             }
         }
-        Label ok = new Label();
-        mv.visitInsn(DUP);
-        mv.visitJumpInsn(IFNONNULL, ok);
-        mv.visitInsn(POP);
-        ctx.line(lineAt);
-        ConstantPool.pushString(mv, recvText);
-        mv.visitMethodInsn(
-                INVOKESTATIC,
-                RUNTIME + "Members",
-                nullErrorFactory,
-                "(Ljava/lang/String;)L" + RUNTIME + "BabbleException;",
-                false);
-        mv.visitInsn(ATHROW);
-        mv.visitLabel(ok);
+        emitRequireNonNullOnStack(unwrap ? null : recvExpr, recvText, lineAt, nullErrorFactory);
         if (!OBJECT.equals(internalTargetClass)) {
             mv.visitTypeInsn(CHECKCAST, internalTargetClass);
         }

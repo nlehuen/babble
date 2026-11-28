@@ -39,7 +39,29 @@ final class HirSlotAllocator {
         if (fn == null || fn.namespaceScope()) {
             return;
         }
-        HirLiveness liveness = HirLiveness.analyze(fn);
+        List<HirVar> paramVars = new ArrayList<>(fn.params().size());
+        for (HirParam p : fn.params()) {
+            if (p.var() != null) {
+                paramVars.add(p.var());
+            }
+        }
+        allocateCore(paramVars, fn.body(), HirLiveness.analyze(fn), ctx);
+    }
+
+    static void allocateStatements(
+            List<HirVar> params,
+            List<HirVar> declaredVars,
+            List<HirExpr> stmts,
+            MethodEmitContext ctx) {
+        if (stmts == null || stmts.isEmpty()) {
+            return;
+        }
+        allocateCore(
+                params, stmts, HirLiveness.analyzeStatements(params, declaredVars, stmts), ctx);
+    }
+
+    private static void allocateCore(
+            List<HirVar> params, List<HirExpr> stmts, HirLiveness liveness, MethodEmitContext ctx) {
         int nVars = liveness.varCount();
         if (nVars == 0) {
             return;
@@ -47,9 +69,9 @@ final class HirSlotAllocator {
 
         // 1. Identify pinned variable IDs (never share slots).
         Set<Integer> pinnedIds = new HashSet<>();
-        for (HirParam p : fn.params()) {
-            if (p.var() != null) {
-                pinnedIds.add(p.var().id());
+        for (HirVar p : params) {
+            if (p != null) {
+                pinnedIds.add(p.id());
             }
         }
         BitSet tryLive = liveness.tryEdgeLive();
@@ -69,8 +91,8 @@ final class HirSlotAllocator {
         for (int i = 0; i < nVars; i++) {
             conflicts[i] = new BitSet(nVars);
         }
-        for (HirExpr s : fn.body()) {
-            collectConflicts(s, liveness, conflicts);
+        for (HirExpr s : stmts) {
+            collectConflicts(s, liveness, conflicts, pinnedIds);
         }
 
         // 3. Greedy category-segregated coloring for non-pinned frame variables.
@@ -116,7 +138,8 @@ final class HirSlotAllocator {
         }
     }
 
-    private static void collectConflicts(HirExpr expr, HirLiveness liveness, BitSet[] conflicts) {
+    private static void collectConflicts(
+            HirExpr expr, HirLiveness liveness, BitSet[] conflicts, Set<Integer> pinnedIds) {
         if (expr == null) {
             return;
         }
@@ -126,20 +149,24 @@ final class HirSlotAllocator {
         addClique(out, conflicts);
 
         switch (expr) {
-            case HirExpr.Def d -> addDefConflicts(d.var(), out, liveness, conflicts);
-            case HirExpr.VarAssign a -> addDefConflicts(a.var(), out, liveness, conflicts);
-            case HirExpr.Block b -> {
-                for (HirVar v : b.declaredVars()) {
-                    addDefConflicts(v, in, liveness, conflicts);
+            case HirExpr.Def d -> {
+                if (out == null && d.var() != null) {
+                    pinnedIds.add(d.var().id());
                 }
-                addVarListClique(b.declaredVars(), liveness, conflicts);
+                addDefConflicts(d.var(), out, liveness, conflicts);
+            }
+            case HirExpr.VarAssign a -> {
+                if (out == null && a.var() != null) {
+                    pinnedIds.add(a.var().id());
+                }
+                addDefConflicts(a.var(), out, liveness, conflicts);
             }
             case HirExpr.For f -> {
                 addDefConflicts(f.loopVar(), in, liveness, conflicts);
-                for (HirVar v : f.bodyDeclaredVars()) {
-                    addDefConflicts(v, in, liveness, conflicts);
+                if (!f.body().isEmpty()) {
+                    addDefConflicts(
+                            f.loopVar(), liveness.liveIn(f.body().get(0)), liveness, conflicts);
                 }
-                addVarListClique(f.bodyDeclaredVars(), liveness, conflicts);
             }
             case HirExpr.Match m -> {
                 addDefConflicts(m.scrutineeVar(), in, liveness, conflicts);
@@ -154,17 +181,8 @@ final class HirSlotAllocator {
                 }
             }
             case HirExpr.Try t -> {
-                for (HirVar v : t.tryDeclaredVars()) {
-                    addDefConflicts(v, in, liveness, conflicts);
-                }
                 for (HirExpr.HirCatch cc : t.catches()) {
                     addDefConflicts(cc.var(), in, liveness, conflicts);
-                    for (HirVar v : cc.declaredVars()) {
-                        addDefConflicts(v, in, liveness, conflicts);
-                    }
-                }
-                for (HirVar v : t.finallyDeclaredVars()) {
-                    addDefConflicts(v, in, liveness, conflicts);
                 }
             }
             default -> {}
@@ -173,7 +191,7 @@ final class HirSlotAllocator {
         HirRewriter.rewriteChildren(
                 expr,
                 child -> {
-                    collectConflicts(child, liveness, conflicts);
+                    collectConflicts(child, liveness, conflicts, pinnedIds);
                     return child;
                 });
     }
