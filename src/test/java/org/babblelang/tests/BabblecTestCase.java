@@ -380,4 +380,142 @@ public class BabblecTestCase {
         Assertions.assertEquals(1, fail.status());
         Assertions.assertTrue(fail.err().contains("AppErr(code: 500, msg: uncaught)"), fail.err());
     }
+
+    @Test
+    public void staticProgramIsTreeShakenAndGeneratesMinimalImplicits() throws Exception {
+        program();
+        ProgramIndex index = compile("main.ba", "trimmed.jar");
+        Assertions.assertEquals("babble.$Implicits", index.implicitsClass());
+        try (JarFile jar = new JarFile(directory.resolve("trimmed.jar").toFile())) {
+            List<String> names = jar.stream().map(e -> e.getName()).collect(Collectors.toList());
+            Assertions.assertTrue(names.contains("babble/$Implicits.class"), names.toString());
+            Assertions.assertFalse(
+                    names.contains("org/babblelang/runtime/Implicits.class"), names.toString());
+            Assertions.assertFalse(
+                    names.contains("org/babblelang/runtime/InterpretedInstance.class"),
+                    names.toString());
+            Assertions.assertFalse(
+                    names.contains("org/babblelang/runtime/IntRange.class"), names.toString());
+            Assertions.assertFalse(
+                    names.contains("org/babblelang/runtime/MatchSupport.class"), names.toString());
+            Assertions.assertFalse(
+                    names.contains("org/babblelang/engine/impl/natives/AssertFunction.class"),
+                    names.toString());
+            Assertions.assertFalse(
+                    names.contains("org/babblelang/engine/impl/natives/ClassofFunction.class"),
+                    names.toString());
+        }
+        Run ok = run("trimmed.jar", "ok");
+        Assertions.assertEquals(0, ok.status(), ok.err());
+        Assertions.assertEquals(
+                "area 9.0 ok 1" + System.lineSeparator() + "made 2" + System.lineSeparator(),
+                ok.out());
+    }
+
+    @Test
+    public void debugFlagControlsRuntimeLocalVariableTable() throws Exception {
+        program();
+        compile("main.ba", "stripped.jar");
+        Path dbgJar = directory.resolve("debug.jar");
+        StringWriter cliOut = new StringWriter();
+        StringWriter cliErr = new StringWriter();
+        int status =
+                org.babblelang.Main.run(
+                        new String[] {
+                            "-compile",
+                            "-dbg",
+                            directory.resolve("main.ba").toString(),
+                            "-root",
+                            directory.toString(),
+                            "-o",
+                            dbgJar.toString()
+                        },
+                        new java.io.BufferedReader(new java.io.StringReader("")),
+                        new java.io.PrintWriter(cliOut),
+                        new java.io.PrintWriter(cliErr),
+                        false);
+        Assertions.assertEquals(0, status, cliErr.toString());
+        Assertions.assertTrue(
+                Files.size(dbgJar) > Files.size(directory.resolve("stripped.jar")),
+                "-dbg jar should keep LocalVariableTable attributes and be larger");
+        Assertions.assertFalse(
+                hasLocalVariableTable(
+                        directory.resolve("stripped.jar"), "org/babblelang/runtime/Launcher.class"),
+                "default jar should strip LocalVariableTable from runtime classes");
+        Assertions.assertTrue(
+                hasLineNumberTable(
+                        directory.resolve("stripped.jar"), "org/babblelang/runtime/Launcher.class"),
+                "default jar must preserve LineNumberTable on runtime classes");
+        Assertions.assertTrue(
+                hasLocalVariableTable(dbgJar, "org/babblelang/runtime/Launcher.class"),
+                "-dbg jar should preserve LocalVariableTable on runtime classes");
+    }
+
+    @Test
+    public void dynamicImportSkipsRuntimeTrimming() throws Exception {
+        dynamicProgram();
+        ProgramIndex index = compile("main.ba", "dyn.jar");
+        Assertions.assertNull(index.implicitsClass());
+        try (JarFile jar = new JarFile(directory.resolve("dyn.jar").toFile())) {
+            List<String> names = jar.stream().map(e -> e.getName()).collect(Collectors.toList());
+            Assertions.assertFalse(names.contains("babble/$Implicits.class"), names.toString());
+            Assertions.assertTrue(
+                    names.contains("org/babblelang/runtime/Implicits.class"), names.toString());
+        }
+    }
+
+    private static boolean hasLocalVariableTable(Path jarPath, String entryName) throws Exception {
+        boolean[] found = {false};
+        try (JarFile jar = new JarFile(jarPath.toFile())) {
+            byte[] bytes = jar.getInputStream(jar.getEntry(entryName)).readAllBytes();
+            new org.objectweb.asm.ClassReader(bytes)
+                    .accept(
+                            new org.objectweb.asm.ClassVisitor(org.objectweb.asm.Opcodes.ASM9) {
+                                @Override
+                                public org.objectweb.asm.MethodVisitor visitMethod(
+                                        int a, String n, String d, String s, String[] e) {
+                                    return new org.objectweb.asm.MethodVisitor(
+                                            org.objectweb.asm.Opcodes.ASM9) {
+                                        @Override
+                                        public void visitLocalVariable(
+                                                String vn,
+                                                String vd,
+                                                String vs,
+                                                org.objectweb.asm.Label start,
+                                                org.objectweb.asm.Label end,
+                                                int idx) {
+                                            found[0] = true;
+                                        }
+                                    };
+                                }
+                            },
+                            0);
+        }
+        return found[0];
+    }
+
+    private static boolean hasLineNumberTable(Path jarPath, String entryName) throws Exception {
+        boolean[] found = {false};
+        try (JarFile jar = new JarFile(jarPath.toFile())) {
+            byte[] bytes = jar.getInputStream(jar.getEntry(entryName)).readAllBytes();
+            new org.objectweb.asm.ClassReader(bytes)
+                    .accept(
+                            new org.objectweb.asm.ClassVisitor(org.objectweb.asm.Opcodes.ASM9) {
+                                @Override
+                                public org.objectweb.asm.MethodVisitor visitMethod(
+                                        int a, String n, String d, String s, String[] e) {
+                                    return new org.objectweb.asm.MethodVisitor(
+                                            org.objectweb.asm.Opcodes.ASM9) {
+                                        @Override
+                                        public void visitLineNumber(
+                                                int line, org.objectweb.asm.Label start) {
+                                            found[0] = true;
+                                        }
+                                    };
+                                }
+                            },
+                            0);
+        }
+        return found[0];
+    }
 }

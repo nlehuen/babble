@@ -455,4 +455,127 @@ public class JvmClassAndInterfaceBytecodeTestCase {
         Assertions.assertEquals(7, it.next());
         Assertions.assertFalse(it.hasNext());
     }
+
+    @Test
+    public void testCompactBytecodeSpecForwardingCondyAndBranchlessReceivers() throws Exception {
+        CompiledBabbleScript script =
+                compile(
+                        """
+                        def Box = class (def scale : double) (
+                            def compute = fn (n : int, x : double) : double -> (
+                                var acc = 0.0
+                                var i = 0
+                                while i < n then (
+                                    acc = acc + x * this.scale
+                                    i = i + 1
+                                )
+                                acc
+                            )
+                        )
+                        def read = fn (b : Box?) : double -> (
+                            def box : Box = b as Box
+                            box.compute(4, 2.5)
+                        )
+                        read(Box(3.0))
+                        """);
+        assertVerifies(script);
+        Assertions.assertEquals(30.0, (Double) script.eval(new SimpleBindings()), 1e-9);
+
+        // 1. Boxed m$compute forwards to m$compute$spec instead of duplicating the loop body.
+        String boxInternal = script.classJvmNames().values().iterator().next();
+        byte[] boxBytes = script.getClasses().get(boxInternal);
+        boolean[] boxedForwardsToSpec = {false};
+        boolean[] boxedHasBodyArith = {false};
+        boolean[] specHasBodyArith = {false};
+        new ClassReader(boxBytes)
+                .accept(
+                        new ClassVisitor(Opcodes.ASM9) {
+                            @Override
+                            public MethodVisitor visitMethod(
+                                    int access, String name, String desc, String sig, String[] ex) {
+                                if ("m$compute".equals(name)) {
+                                    return new MethodVisitor(Opcodes.ASM9) {
+                                        @Override
+                                        public void visitInsn(int op) {
+                                            if (op == Opcodes.DMUL || op == Opcodes.DADD) {
+                                                boxedHasBodyArith[0] = true;
+                                            }
+                                        }
+
+                                        @Override
+                                        public void visitMethodInsn(
+                                                int op, String o, String n, String d, boolean itf) {
+                                            if (op == Opcodes.INVOKEVIRTUAL
+                                                    && boxInternal.equals(o)
+                                                    && "m$compute$spec".equals(n)) {
+                                                boxedForwardsToSpec[0] = true;
+                                            }
+                                        }
+                                    };
+                                }
+                                if ("m$compute$spec".equals(name)) {
+                                    return new MethodVisitor(Opcodes.ASM9) {
+                                        @Override
+                                        public void visitInsn(int op) {
+                                            if (op == Opcodes.DMUL || op == Opcodes.DADD) {
+                                                specHasBodyArith[0] = true;
+                                            }
+                                        }
+                                    };
+                                }
+                                return null;
+                            }
+                        },
+                        0);
+        Assertions.assertTrue(
+                boxedForwardsToSpec[0], "m$compute should delegate directly to m$compute$spec");
+        Assertions.assertFalse(
+                boxedHasBodyArith[0], "boxed shim should not duplicate body arithmetic");
+        Assertions.assertTrue(specHasBodyArith[0], "$spec should contain the compiled loop body");
+
+        // 2. Script class uses CONSTANT_Dynamic for ClassShape/Types/CallSite data constants
+        //    with zero CS* / SH* / TY* static constant fields.
+        String scriptInternal = script.getScriptClass().getName().replace('.', '/');
+        byte[] scriptBytes = script.getClasses().get(scriptInternal);
+        boolean[] sawCondy = {false};
+        List<String> legacyFields = new ArrayList<>();
+        new ClassReader(scriptBytes)
+                .accept(
+                        new ClassVisitor(Opcodes.ASM9) {
+                            @Override
+                            public org.objectweb.asm.FieldVisitor visitField(
+                                    int access, String name, String desc, String sig, Object val) {
+                                if (name.startsWith("CS")
+                                        || name.startsWith("SH")
+                                        || name.startsWith("TY")) {
+                                    legacyFields.add(name);
+                                }
+                                return null;
+                            }
+
+                            @Override
+                            public MethodVisitor visitMethod(
+                                    int a, String n, String d, String s, String[] e) {
+                                return new MethodVisitor(Opcodes.ASM9) {
+                                    @Override
+                                    public void visitLdcInsn(Object value) {
+                                        if (value instanceof org.objectweb.asm.ConstantDynamic) {
+                                            sawCondy[0] = true;
+                                        }
+                                    }
+                                };
+                            }
+                        },
+                        0);
+        Assertions.assertTrue(sawCondy[0], "expected CONSTANT_Dynamic data constants");
+        Assertions.assertTrue(
+                legacyFields.isEmpty(), "expected zero CS*/SH*/TY* static fields: " + legacyFields);
+
+        // 3. Receiver null check on nullable parameter uses branchless Receivers.requireScope
+        //    rather than inline Members.notAScope throw branch.
+        InsnSummary scriptInsns = inspect(scriptBytes);
+        Assertions.assertFalse(
+                scriptInsns.staticCalls().contains("org/babblelang/runtime/Members.notAScope"),
+                scriptInsns.staticCalls().toString());
+    }
 }
