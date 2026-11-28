@@ -546,3 +546,157 @@ fn foldBailout (n:int) -> int {nothrow unique}
           var(r#2)))))
   (+:int var(a) var(b#1))
 ```
+
+## Long range clamping with reversed bounds and dynamic upper hoist (R6)
+
+```babble
+def clampLong = fn (n: long): long -> (
+    var s = 0L
+    for x in 0L..(n + 2L) then (
+        if 2L <= x and x <= 10L and x <= 5L then ( s += x )
+    )
+    s
+)
+assert(clampLong(20L) == 14L and clampLong(1L) == 5L and clampLong(-5L) == 0L)
+```
+
+```hir
+;; hir -O0 fn=clampLong
+fn clampLong (n:long) -> long {nothrow unique}
+  (def s 0:long)
+  (for-range x .. 0:long (block (+:long var(n) 2:long))
+    (block
+      (if (and (and (<=:bool 2:long var(x)) (<=:bool var(x) 10:long)) (<=:bool var(x) 5:long)) (box (block (set s += var(x)))))))
+  var(s)
+```
+
+```hir
+;; hir -O1 fn=clampLong
+fn clampLong (n:long) -> long {nothrow unique}
+  (def s 0:long)
+  (for-range x .. 0:long (+:long var(n) 2:long)
+    (block
+      (if (and (and (<=:bool 2:long var(x)) (<=:bool var(x) 10:long)) (<=:bool var(x) 5:long)) (box (set s += var(x))))))
+  var(s)
+```
+
+```hir
+;; hir -O2 fn=clampLong
+fn clampLong (n:long) -> long {nothrow unique}
+  (def s 0:long)
+  (block
+    (def $a#0 (+:long var(n) 2:long))
+    (def $min#1 (if (<:bool var($a#0) 5:long) var($a#0) 5:long))
+    (for-range x .. 2:long var($min#1)
+      (block
+        (set s += var(x)))))
+  var(s)
+```
+
+## Exclusive <= and inclusive < range bound clamping (R6)
+
+```babble
+def clampStrict = fn (n: int): int -> (
+    var a = 0
+    for x in 0..<n then ( if x <= 5 then ( a += x ) )
+    var b = 0
+    for y in 0..n then ( if y < 5 then ( b += y ) )
+    a + b
+)
+assert(clampStrict(20) == 25 and clampStrict(3) == 9 and clampStrict(0) == 0)
+```
+
+```hir
+;; hir -O0 fn=clampStrict
+fn clampStrict (n:int) -> int {nothrow unique}
+  (def a 0:int)
+  (for-range x ..< 0:int var(n)
+    (block
+      (if (<=:bool var(x) 5:int) (box (block (set a += var(x)))))))
+  (def b 0:int)
+  (for-range y .. 0:int var(n)
+    (block
+      (if (<:bool var(y) 5:int) (box (block (set b += var(y)))))))
+  (+:int var(a) var(b))
+```
+
+```hir
+;; hir -O1 fn=clampStrict
+fn clampStrict (n:int) -> int {nothrow unique}
+  (def a 0:int)
+  (for-range x ..< 0:int var(n)
+    (block
+      (if (<=:bool var(x) 5:int) (box (set a += var(x))))))
+  (def b 0:int)
+  (for-range y .. 0:int var(n)
+    (block
+      (if (<:bool var(y) 5:int) (box (set b += var(y))))))
+  (+:int var(a) var(b))
+```
+
+```hir
+;; hir -O2 fn=clampStrict
+fn clampStrict (n:int) -> int {nothrow unique}
+  (def a 0:int)
+  (block
+    (def $min#0#1 (if (<:bool var(n) 6:int) var(n) 6:int))
+    (for-range x ..< 0:int var($min#0#1)
+      (block
+        (set a += var(x)))))
+  (def b 0:int)
+  (block
+    (def $min#0#2 (if (<:bool var(n) 4:int) var(n) 4:int))
+    (for-range y .. 0:int var($min#0#2)
+      (block
+        (set b += var(y)))))
+  (+:int var(a) var(b))
+```
+
+## Java static associative fold over counted range (R8)
+
+```babble
+axiom java.lang.Math.max: fn pure nothrow associative commutative (int, int): int
+def javaFold = fn (n: int): int -> (
+    var m = -1
+    for i in 0..<n then ( m = java.lang.Math.max(m, i) )
+    m
+)
+assert(javaFold(0) == -1 and javaFold(1) == 0 and javaFold(10) == 9)
+```
+
+```hir
+;; hir -O0 fn=javaFold
+fn javaFold (n:int) -> int {nothrow unique}
+  (def m -1:int)
+  (for-range i ..< 0:int var(n)
+    (block
+      (set m (jcall Math.max var(m) var(i)))))
+  var(m)
+```
+
+```hir
+;; hir -O1 fn=javaFold
+fn javaFold (n:int) -> int {nothrow unique}
+  (def m -1:int)
+  (for-range i ..< 0:int var(n)
+    (block
+      (set m (jcall Math.max var(m) var(i)))))
+  var(m)
+```
+
+```hir
+;; hir -O2 fn=javaFold
+fn javaFold (n:int) -> int {nothrow unique}
+  (def m -1:int)
+  (block
+    (def $i#2 0:int)
+    (block
+      (def $licm0 (-:int var(n) 1:int))
+      (while (and (<:bool var($i#2) var(n)) (<:bool var($i#2) var($licm0)))
+        (block
+          (set m (jcall Math.max var(m) (jcall Math.max var($i#2) (+:int var($i#2) 1:int))))
+          (box (set $i#2 (+:int var($i#2) 2:int))))))
+    (if (<:bool var($i#2) var(n)) (box (set m (jcall Math.max var(m) var($i#2))))))
+  var(m)
+```
+

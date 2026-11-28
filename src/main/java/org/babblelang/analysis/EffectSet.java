@@ -19,7 +19,7 @@ import org.babblelang.effects.Effect;
 public final class EffectSet {
 
     /** Canonical algebraic modifier display order. */
-    private static final Effect[] ALGEBRAIC_ORDER = {
+    static final Effect[] ALGEBRAIC_ORDER = {
         Effect.IDEMPOTENT, Effect.COMMUTATIVE, Effect.ASSOCIATIVE, Effect.MONOTONE, Effect.INJECTIVE
     };
 
