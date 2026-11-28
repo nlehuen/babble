@@ -38,7 +38,13 @@ final class JavaCallResultOrigins {
                 // An iterator is a fresh local cursor shell whose elements and backing collection
                 // come from the receiver : shallow cursor advances (`next`) stay local to the
                 // iterator, while deep mutations (`remove`) and yielded elements still carry the
-                // receiver's provenance.
+                // receiver's provenance. Over a unique local it aliases the collection while it
+                // lives, so the local stays fresh (mutable in place) but is no longer unique : it
+                // cannot be consumed, moved or reused in place under a live cursor (BIP032 round
+                // 9).
+                if (recvOrig.owned() && recvOrig.uniqueOwner != null) {
+                    w.dropUniqueKeepFresh(recvOrig.uniqueOwner);
+                }
                 Reachability.Origin freshIter = Reachability.Origin.ofUnique(call, null, false);
                 if (recvOrig != Reachability.Origin.IMMUTABLE) {
                     freshIter = freshIter.absorbElement(recvOrig);
