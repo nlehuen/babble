@@ -47,6 +47,7 @@ final class MatchEffectAnalyzer {
         Map<ParserRuleContext, Reachability.Origin> fallthroughEnv = new IdentityHashMap<>(w.env);
         List<Map<ParserRuleContext, Reachability.Origin>> armEnvs = new ArrayList<>();
         Reachability.Origin resultOrig = null;
+        List<Reachability.Origin> armOrigins = new ArrayList<>();
 
         for (BabbleParser.CaseClauseContext cc : ctx.caseClause()) {
             w.env = new IdentityHashMap<>(fallthroughEnv);
@@ -73,6 +74,7 @@ final class MatchEffectAnalyzer {
             }
             Reachability.Origin armOrig = w.eval(cc.armBlock);
             armEnvs.add(w.env);
+            armOrigins.add(armOrig);
             resultOrig = resultOrig == null ? armOrig : resultOrig.join(armOrig);
         }
         if (ctx.elseClause() != null) {
@@ -83,6 +85,7 @@ final class MatchEffectAnalyzer {
             }
             Reachability.Origin elseOrig = w.eval(ecNode.elseBlock);
             armEnvs.add(w.env);
+            armOrigins.add(elseOrig);
             resultOrig = resultOrig == null ? elseOrig : resultOrig.join(elseOrig);
         } else {
             armEnvs.add(fallthroughEnv);
@@ -92,7 +95,9 @@ final class MatchEffectAnalyzer {
             merged = w.mergeEnvs(merged, armEnvs.get(i));
         }
         w.env = merged;
-        return resultOrig != null ? resultOrig : Reachability.Origin.IMMUTABLE;
+        return resultOrig != null
+                ? BranchValueJoins.settle(w, armOrigins, resultOrig)
+                : Reachability.Origin.IMMUTABLE;
     }
 
     private static <T> T runCasePure(

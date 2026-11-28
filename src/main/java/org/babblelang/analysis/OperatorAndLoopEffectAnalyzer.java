@@ -121,7 +121,7 @@ final class OperatorAndLoopEffectAnalyzer {
             }
             w.loopBreakOrigins.pop();
         }
-        return breakAcc[0] != null ? bodyOrig.join(breakAcc[0]) : bodyOrig;
+        return breakAcc[0] != null ? BranchValueJoins.join(w, bodyOrig, breakAcc[0]) : bodyOrig;
     }
 
     static Reachability.Origin evalBinaryOp(EffectBodyWalker w, BabbleParser.BinaryOpContext bin) {
