@@ -1,7 +1,7 @@
 ;;(
     Unified Babble Ray Tracer — WebAssembly 3.0 Browser Canvas Entrypoint (BIP025)
 
-    Compiles the pure-Babble core and all scenes (cover, three-spheres, triceratops, cornell-box)
+    Compiles the pure-Babble core and all scenes (cover, three-spheres, triceratops, cornell-box, sdf-cube)
     to WebAssembly 3.0 (WasmGC) and streams gamma-corrected RGB pixels row-by-row into
     an HTML5 <canvas> via the thin io/wasm/canvas.ba adapter.
 

@@ -1,0 +1,187 @@
+;; Sculpted CSG Cube Hero — 100% pure-Babble Signed Distance Field (SDF) & Sphere-Tracing demo.
+;;
+;; Showcases Inigo Quilez's raymarching distance fields (iquilezles.org/articles/raymarchingdf/)
+;; inside the unified path tracer:
+;;   - Hero carved rounded cube (SdfRoundBox + SdfSmoothSubtraction of 3 orthogonal cylinders
+;;     and central sphere + SdfSmoothUnion with a machined SdfBoxFrame exoskeleton), shaded with
+;;     zero-allocation per-hit `MaterialField` (cobalt ceramic shell, brushed gold cavity inlay,
+;;     and chrome edge ribs)
+;;   - Nested refractive glass crystal SDF (SdfOctahedron smoothly intersected with SdfSphere,
+;;     Dielectric 1.5) exercising signed-aware interior raymarching, surrounding a glowing
+;;     Emissive amber heart core
+;;   - Companion smooth-blended copper torus/metaball sculpture (SdfSmoothUnion) and twisted
+;;     rounded pillar (SdfTwist with Lipschitz stepScale relaxation)
+;;   - Procedural studio checkerboard floor (RaymarchedSdf + MaterialField) and dual studio softboxes
+
+def math = import("../core/math.ba")
+def Vec3 = import("../core/vec3.ba").Vec3
+def Material = import("../core/interfaces.ba").Material
+def Lambertian = import("../core/materials.ba").Lambertian
+def Metal = import("../core/materials.ba").Metal
+def Dielectric = import("../core/materials.ba").Dielectric
+def Emissive = import("../core/materials.ba").Emissive
+def Sphere = import("../core/geometry/sphere.ba").Sphere
+def Sdf = import("../core/geometry/sdf.ba").Sdf
+def SdfSphere = import("../core/geometry/sdf.ba").SdfSphere
+def SdfBox = import("../core/geometry/sdf.ba").SdfBox
+def SdfRoundBox = import("../core/geometry/sdf.ba").SdfRoundBox
+def SdfBoxFrame = import("../core/geometry/sdf.ba").SdfBoxFrame
+def SdfTorus = import("../core/geometry/sdf.ba").SdfTorus
+def SdfCylinder = import("../core/geometry/sdf.ba").SdfCylinder
+def SdfOctahedron = import("../core/geometry/sdf.ba").SdfOctahedron
+def SdfUnion = import("../core/geometry/sdf_ops.ba").SdfUnion
+def SdfSmoothUnion = import("../core/geometry/sdf_ops.ba").SdfSmoothUnion
+def SdfSmoothSubtraction = import("../core/geometry/sdf_ops.ba").SdfSmoothSubtraction
+def SdfSmoothIntersection = import("../core/geometry/sdf_ops.ba").SdfSmoothIntersection
+def SdfRound = import("../core/geometry/sdf_ops.ba").SdfRound
+def SdfTranslate = import("../core/geometry/sdf_ops.ba").SdfTranslate
+def SdfRotateX = import("../core/geometry/sdf_ops.ba").SdfRotateX
+def SdfRotateY = import("../core/geometry/sdf_ops.ba").SdfRotateY
+def SdfRotateZ = import("../core/geometry/sdf_ops.ba").SdfRotateZ
+def SdfTwist = import("../core/geometry/sdf_ops.ba").SdfTwist
+def MaterialField = import("../core/geometry/raymarched_sdf.ba").MaterialField
+def RaymarchedSdf = import("../core/geometry/raymarched_sdf.ba").RaymarchedSdf
+def HittableList = import("../core/geometry/hittable_list.ba").HittableList
+def BVHNode = import("../core/geometry/bvh.ba").BVHNode
+def SkyBackground = import("../core/background.ba").SkyBackground
+def Camera = import("../core/camera.ba").Camera
+def Scene = import("../core/scene.ba").Scene
+
+;; Procedural architectural studio tile floor with dark grout seams.
+def FloorTileField = record (
+    matDark: Metal,
+    matLight: Lambertian,
+    matGrout: Lambertian
+) implements MaterialField (
+    def sample = fn (p: Vec3, normal: Vec3): Material -> (
+        def gx: double = math.floor(p.x)
+        def gz: double = math.floor(p.z)
+        def fx: double = p.x - gx
+        def fz: double = p.z - gz
+        if fx < 0.025 or fx > 0.975 or fz < 0.025 or fz > 0.975 then (
+            return this.matGrout
+        )
+        def parity: int = (int(gx) + int(gz)) mod 2
+        if parity == 0 then (this.matDark) else (this.matLight)
+    )
+)
+
+;; Tri-material CSG selector for the sculpted hero cube:
+;; brushed gold inside carved cavity walls, chrome along the exoskeleton frame, ceramic shell outside.
+def HeroCubeField = record (
+    cavity: frozen Sdf,
+    frame: frozen Sdf,
+    matShell: Lambertian,
+    matGold: Metal,
+    matChrome: Metal
+) implements MaterialField (
+    def sample = fn (p: Vec3, normal: Vec3): Material -> (
+        if this.cavity.distance(p) <= 0.042 then (
+            this.matGold
+        ) else if this.frame.distance(p) <= 0.018 then (
+            this.matChrome
+        ) else (
+            this.matShell
+        )
+    )
+)
+
+export def buildList = fn (): unique HittableList -> (
+    def world: HittableList = HittableList()
+
+    ;; Materials (immutable records)
+    def matShell = Lambertian(Vec3(0.10, 0.27, 0.42))
+    def matGoldInlay = Metal(Vec3(0.96, 0.72, 0.26), 0.10)
+    def matChromeFrame = Metal(Vec3(0.88, 0.91, 0.96), 0.05)
+    def matGlass = Dielectric(1.50)
+    def matCoreGlow = Emissive(Vec3(7.5, 2.7, 0.55))
+    def matCopper = Metal(Vec3(0.92, 0.46, 0.27), 0.11)
+    def matTwist = Metal(Vec3(0.76, 0.85, 0.94), 0.12)
+
+    def matTileDark = Metal(Vec3(0.13, 0.16, 0.21), 0.20)
+    def matTileLight = Lambertian(Vec3(0.25, 0.29, 0.35))
+    def matGrout = Lambertian(Vec3(0.07, 0.08, 0.11))
+
+    ;; ---------------------------------------------------------------- 1. Studio Floor (Raymarched + procedural tiles)
+    def floorSdf = SdfTranslate(SdfBox(Vec3(80.0, 0.25, 80.0)), Vec3(0.0, -0.25, 0.0))
+    def floorField = FloorTileField(matTileDark, matTileLight, matGrout)
+    world.add(RaymarchedSdf(floorSdf, matTileLight, materialField: floorField, maxSteps: 96))
+
+    ;; ---------------------------------------------------------------- 2. Hero Carved CSG Cube (centered at (0, 1.04, 0))
+    def cubeCenter: Vec3 = Vec3(0.0, 1.04, 0.0)
+    def cubeYaw: double = 0.0
+
+    def outerBox = SdfRoundBox.fromOuter(Vec3(1.0, 1.0, 1.0), 0.14)
+    def cylY = SdfCylinder(0.58, 1.35)
+    def cylX = SdfRotateZ(SdfCylinder(0.58, 1.35), 90.0)
+    def cylZ = SdfRotateX(SdfCylinder(0.58, 1.35), 90.0)
+    def tunnels = SdfUnion(cylY, SdfUnion(cylX, cylZ))
+    def cavity = SdfUnion(tunnels, SdfSphere.atOrigin(0.88))
+
+    def carvedLocal = SdfSmoothSubtraction(outerBox, cavity, 0.055)
+    def frameLocal = SdfRound(SdfBoxFrame(Vec3(1.01, 1.01, 1.01), 0.045), 0.025)
+    def heroLocal = SdfSmoothUnion(carvedLocal, frameLocal, 0.04)
+
+    def heroWorld = SdfTranslate(SdfRotateY(heroLocal, cubeYaw), cubeCenter)
+    def cavityWorld = SdfTranslate(SdfRotateY(cavity, cubeYaw), cubeCenter)
+    def frameWorld = SdfTranslate(SdfRotateY(frameLocal, cubeYaw), cubeCenter)
+
+    def heroField = HeroCubeField(cavityWorld, frameWorld, matShell, matGoldInlay, matChromeFrame)
+    world.add(RaymarchedSdf(heroWorld, matShell, materialField: heroField, maxSteps: 160))
+
+    ;; ---------------------------------------------------------------- 3. Nested Glass Gem SDF + Glowing Heart Core
+    def crystalLocal = SdfRound(
+        SdfSmoothIntersection(SdfOctahedron(0.64), SdfSphere.atOrigin(0.46), 0.04),
+        0.02
+    )
+    def crystalWorld = SdfTranslate(SdfRotateY(crystalLocal, 24.0), cubeCenter)
+    world.add(RaymarchedSdf(crystalWorld, matGlass, maxSteps: 128, hitEps: 0.0003))
+
+    def coreWorld = SdfSphere(cubeCenter, 0.15)
+    world.add(RaymarchedSdf(coreWorld, matCoreGlow, maxSteps: 64))
+
+    ;; ---------------------------------------------------------------- 4. Left Companion: Organic Smooth-Blended Copper Sculpture
+    def ringA = SdfRotateY(SdfRotateX(SdfTorus(0.44, 0.13), 68.0), 28.0)
+    def orbA = SdfSphere(Vec3(-0.28, -0.14, 0.18), 0.23)
+    def orbB = SdfSphere(Vec3(0.24, 0.24, -0.08), 0.21)
+    def organicLocal = SdfSmoothUnion(ringA, SdfSmoothUnion(orbA, orbB, 0.18), 0.16)
+    def organicWorld = SdfTranslate(organicLocal, Vec3(-1.95, 0.56, 1.15))
+    world.add(RaymarchedSdf(organicWorld, matCopper, maxSteps: 128))
+
+    ;; ---------------------------------------------------------------- 5. Right Companion: Twisted Sculpted Pillar (SdfTwist)
+    def pillarBase = SdfRoundBox.fromOuter(Vec3(0.32, 0.82, 0.32), 0.08)
+    def pillarWorld = SdfTranslate(SdfTwist(pillarBase, 1.55), Vec3(2.25, 0.82, -0.65))
+    world.add(RaymarchedSdf(pillarWorld, matTwist, maxSteps: 160, stepScale: 0.65))
+
+    ;; ---------------------------------------------------------------- 6. Studio Softbox Area Lights (Analytic Spheres in shared BVH)
+    world.add(Sphere(Vec3(-4.5, 6.2, 4.8), 1.9, Emissive(Vec3(4.2, 3.8, 3.2))))
+    world.add(Sphere(Vec3(5.6, 4.4, -4.6), 1.7, Emissive(Vec3(1.8, 2.8, 4.6))))
+
+    world
+)
+
+export def build = fn (
+    imageWidth: int = 400,
+    samplesPerPixel: int = 24,
+    maxDepth: int = 10,
+    seed: int = 2026
+): Scene -> (
+    def worldList: HittableList = buildList()
+    def camera: Camera = Camera(
+        aspectRatio: 16.0 / 9.0,
+        imageWidth: imageWidth,
+        samplesPerPixel: samplesPerPixel,
+        maxDepth: maxDepth,
+        vfov: 31.0,
+        lookFrom: Vec3(2.85, 2.55, 5.65),
+        lookAt: Vec3(0.05, 0.96, 0.05),
+        vup: Vec3(0.0, 1.0, 0.0),
+        defocusAngle: 0.0,
+        focusDist: 6.8,
+        background: SkyBackground(
+            bottom: Vec3(0.11, 0.15, 0.23),
+            top: Vec3(0.34, 0.50, 0.74)
+        )
+    )
+    Scene("sdf-cube", BVHNode.fromList(worldList), camera, seed)
+)

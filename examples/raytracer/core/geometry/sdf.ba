@@ -1,0 +1,263 @@
+;; Pure-Babble Signed Distance Field (SDF) interface and Inigo Quilez 3D primitives.
+;; Every primitive is a strictly immutable `record` returning exact Euclidean signed distance
+;; (< 0 inside, 0 on surface, > 0 outside) with a tight conservative AABB for BVH acceleration
+;; and raymarch interval clipping.
+
+def math = import("../math.ba")
+def Vec3 = import("../vec3.ba").Vec3
+def AABB = import("../aabb.ba").AABB
+def Describable = import("../interfaces.ba").Describable
+
+export def Sdf = interface extends Describable (
+    ;; Signed distance from point p to the surface (< 0 inside, 0 on boundary, > 0 outside).
+    def distance: fn (p: Vec3): double
+    ;; Conservative world-space AABB enclosing all points where distance(p) <= 0.
+    def boundingBox: fn (): AABB
+    def kind = fn (): string -> ("sdf")
+)
+
+;; Exact sphere SDF centered at `center` with radius `radius`.
+export def SdfSphere = record (center: Vec3, radius: double) implements Sdf (
+    private def bbox: AABB
+
+    init (
+        def r: double = math.abs(this.radius)
+        this.bbox = AABB(
+            this.center.x - r, this.center.x + r,
+            this.center.y - r, this.center.y + r,
+            this.center.z - r, this.center.z + r
+        )
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        (p - this.center).length() - this.radius
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_sphere")
+) static (
+    def atOrigin = fn (radius: double): SdfSphere -> (
+        this(Vec3.zero, radius)
+    )
+)
+
+;; Exact axis-aligned box SDF centered at the origin with half-extents `halfExtents`.
+export def SdfBox = record (halfExtents: Vec3) implements Sdf (
+    private def bbox: AABB
+
+    init (
+        def hx: double = math.abs(this.halfExtents.x)
+        def hy: double = math.abs(this.halfExtents.y)
+        def hz: double = math.abs(this.halfExtents.z)
+        this.bbox = AABB(-hx, hx, -hy, hy, -hz, hz)
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        def q: Vec3 = p.abs() - this.halfExtents
+        q.maxScalar(0.0).length() + math.min(q.maxComp(), 0.0)
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_box")
+)
+
+;; Exact rounded box SDF centered at the origin: core half-extents `halfExtents` expanded by `radius`
+;; (so the outer half-extents are `halfExtents + Vec3(radius, radius, radius)`).
+export def SdfRoundBox = record (halfExtents: Vec3, radius: double) implements Sdf (
+    private def bbox: AABB
+
+    init (
+        def r: double = math.max(0.0, this.radius)
+        def hx: double = math.abs(this.halfExtents.x) + r
+        def hy: double = math.abs(this.halfExtents.y) + r
+        def hz: double = math.abs(this.halfExtents.z) + r
+        this.bbox = AABB(-hx, hx, -hy, hy, -hz, hz)
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        def q: Vec3 = p.abs() - this.halfExtents
+        q.maxScalar(0.0).length() + math.min(q.maxComp(), 0.0) - this.radius
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_round_box")
+) static (
+    ;; Constructs a rounded box whose final outer half-extents match `outerHalfExtents`.
+    def fromOuter = fn (outerHalfExtents: Vec3, radius: double): SdfRoundBox -> (
+        def r: double = math.max(0.0, radius)
+        this(
+            Vec3(
+                math.max(0.0, outerHalfExtents.x - r),
+                math.max(0.0, outerHalfExtents.y - r),
+                math.max(0.0, outerHalfExtents.z - r)
+            ),
+            r
+        )
+    )
+)
+
+;; Exact wireframe box frame SDF (IQ's sdBoxFrame) with outer half-extents `halfExtents`
+;; and beam thickness `thickness`.
+export def SdfBoxFrame = record (halfExtents: Vec3, thickness: double) implements Sdf (
+    private def bbox: AABB
+
+    init (
+        def hx: double = math.abs(this.halfExtents.x)
+        def hy: double = math.abs(this.halfExtents.y)
+        def hz: double = math.abs(this.halfExtents.z)
+        this.bbox = AABB(-hx, hx, -hy, hy, -hz, hz)
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        def ap: Vec3 = p.abs() - this.halfExtents
+        def e: double = this.thickness
+        def q: Vec3 = Vec3(
+            math.abs(ap.x + e) - e,
+            math.abs(ap.y + e) - e,
+            math.abs(ap.z + e) - e
+        )
+
+        def v1: Vec3 = Vec3(ap.x, q.y, q.z)
+        def d1: double = v1.maxScalar(0.0).length() + math.min(v1.maxComp(), 0.0)
+
+        def v2: Vec3 = Vec3(q.x, ap.y, q.z)
+        def d2: double = v2.maxScalar(0.0).length() + math.min(v2.maxComp(), 0.0)
+
+        def v3: Vec3 = Vec3(q.x, q.y, ap.z)
+        def d3: double = v3.maxScalar(0.0).length() + math.min(v3.maxComp(), 0.0)
+
+        math.min(d1, math.min(d2, d3))
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_box_frame")
+)
+
+;; Exact torus SDF lying in the XZ plane (axis along +Y) with major and minor tube radii.
+export def SdfTorus = record (majorRadius: double, minorRadius: double) implements Sdf (
+    private def bbox: AABB
+
+    init (
+        def ext: double = math.abs(this.majorRadius) + math.abs(this.minorRadius)
+        def r: double = math.abs(this.minorRadius)
+        this.bbox = AABB(-ext, ext, -r, r, -ext, ext)
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        def qx: double = math.sqrt(p.x * p.x + p.z * p.z) - this.majorRadius
+        def qy: double = p.y
+        math.sqrt(qx * qx + qy * qy) - this.minorRadius
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_torus")
+)
+
+;; Exact capsule (line segment swept by a sphere) from `a` to `b` with radius `radius`.
+export def SdfCapsule = record (a: Vec3, b: Vec3, radius: double) implements Sdf (
+    private def ba: Vec3
+    private def invBaDot: double
+    private def bbox: AABB
+
+    init (
+        this.ba = this.b - this.a
+        def dotBa: double = this.ba.lengthSquared()
+        this.invBaDot = if dotBa > 0.000000000001 then (1.0 / dotBa) else (0.0)
+        this.bbox = AABB.fromPoints(this.a, this.b).expand(math.abs(this.radius))
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        def pa: Vec3 = p - this.a
+        def h: double = math.clamp(pa.dot(this.ba) * this.invBaDot, 0.0, 1.0)
+        (pa - this.ba * h).length() - this.radius
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_capsule")
+)
+
+;; Exact capped vertical cylinder SDF centered at origin along the Y axis.
+export def SdfCylinder = record (radius: double, halfHeight: double) implements Sdf (
+    private def bbox: AABB
+
+    init (
+        def r: double = math.abs(this.radius)
+        def h: double = math.abs(this.halfHeight)
+        this.bbox = AABB(-r, r, -h, h, -r, r)
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        def dx: double = math.sqrt(p.x * p.x + p.z * p.z) - this.radius
+        def dy: double = math.abs(p.y) - this.halfHeight
+        def ox: double = math.max(dx, 0.0)
+        def oy: double = math.max(dy, 0.0)
+        math.min(math.max(dx, dy), 0.0) + math.sqrt(ox * ox + oy * oy)
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_cylinder")
+)
+
+;; Exact regular octahedron SDF (IQ's sdOctahedron) centered at origin with half-diagonal `size`.
+export def SdfOctahedron = record (size: double) implements Sdf (
+    private def bbox: AABB
+
+    init (
+        def s: double = math.abs(this.size)
+        this.bbox = AABB(-s, s, -s, s, -s, s)
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        def ap: Vec3 = p.abs()
+        def s: double = this.size
+        def m: double = ap.x + ap.y + ap.z - s
+        var qx: double = 0.0
+        var qy: double = 0.0
+        var qz: double = 0.0
+        if 3.0 * ap.x < m then (
+            qx = ap.x
+            qy = ap.y
+            qz = ap.z
+        ) else if 3.0 * ap.y < m then (
+            qx = ap.y
+            qy = ap.z
+            qz = ap.x
+        ) else if 3.0 * ap.z < m then (
+            qx = ap.z
+            qy = ap.x
+            qz = ap.y
+        ) else (
+            return m * 0.5773502691896257
+        )
+        def k: double = math.clamp(0.5 * (qz - qy + s), 0.0, s)
+        def dy: double = qy - s + k
+        def dz: double = qz - k
+        math.sqrt(qx * qx + dy * dy + dz * dz)
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_octahedron")
+)
+
+;; Procedural SDF adapter wrapping an arbitrary pure distance function and conservative AABB.
+export def SdfFn = record (
+    distFn: fn (p: Vec3): double,
+    bbox: AABB,
+    label: string = "sdf_fn"
+) implements Sdf (
+    def distance = fn (p: Vec3): double -> (
+        this.distFn(p)
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> (this.label)
+)

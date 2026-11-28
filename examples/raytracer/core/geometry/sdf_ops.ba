@@ -1,0 +1,335 @@
+;; Pure-Babble SDF CSG combinators, smooth polynomial blends, surface modifiers, and domain transforms.
+;; Every combinator is a strictly immutable `record` implementing `Sdf` and propagating a conservative AABB.
+
+def math = import("../math.ba")
+def Vec3 = import("../vec3.ba").Vec3
+def AABB = import("../aabb.ba").AABB
+def Sdf = import("sdf.ba").Sdf
+
+def intersectBoxes = fn (a: AABB, b: AABB): AABB -> (
+    def minX: double = math.max(a.minX, b.minX)
+    def maxX: double = math.min(a.maxX, b.maxX)
+    def minY: double = math.max(a.minY, b.minY)
+    def maxY: double = math.min(a.maxY, b.maxY)
+    def minZ: double = math.max(a.minZ, b.minZ)
+    def maxZ: double = math.min(a.maxZ, b.maxZ)
+    if minX > maxX or minY > maxY or minZ > maxZ then (
+        AABB.empty
+    ) else (
+        AABB(minX, maxX, minY, maxY, minZ, maxZ)
+    )
+)
+
+;; Transforms all 8 corners of `box` using `transform` to compute a tight conservative AABB.
+def transformBox = fn (box: AABB, transform: fn (v: Vec3): Vec3): AABB -> (
+    var result: AABB = AABB.empty
+    result = result.expandPoint(transform(Vec3(box.minX, box.minY, box.minZ)))
+    result = result.expandPoint(transform(Vec3(box.minX, box.minY, box.maxZ)))
+    result = result.expandPoint(transform(Vec3(box.minX, box.maxY, box.minZ)))
+    result = result.expandPoint(transform(Vec3(box.minX, box.maxY, box.maxZ)))
+    result = result.expandPoint(transform(Vec3(box.maxX, box.minY, box.minZ)))
+    result = result.expandPoint(transform(Vec3(box.maxX, box.minY, box.maxZ)))
+    result = result.expandPoint(transform(Vec3(box.maxX, box.maxY, box.minZ)))
+    result.expandPoint(transform(Vec3(box.maxX, box.maxY, box.maxZ)))
+)
+
+;; ---------------------------------------------------------------- Exact Boolean CSG
+
+export def SdfUnion = record (a: frozen Sdf, b: frozen Sdf) implements Sdf (
+    private def bbox: AABB
+
+    init (
+        this.bbox = AABB.enclose(this.a.boundingBox(), this.b.boundingBox())
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        math.min(this.a.distance(p), this.b.distance(p))
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_union")
+)
+
+export def SdfIntersection = record (a: frozen Sdf, b: frozen Sdf) implements Sdf (
+    private def bbox: AABB
+
+    init (
+        this.bbox = intersectBoxes(this.a.boundingBox(), this.b.boundingBox())
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        math.max(this.a.distance(p), this.b.distance(p))
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_intersection")
+)
+
+;; Carves `cut` out of `base`: max(base(p), -cut(p)).
+export def SdfSubtraction = record (base: frozen Sdf, cut: frozen Sdf) implements Sdf (
+    private def bbox: AABB
+
+    init (
+        this.bbox = AABB.copy(this.base.boundingBox())
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        math.max(this.base.distance(p), -this.cut.distance(p))
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_subtraction")
+)
+
+;; ---------------------------------------------------------------- Smooth Polynomial CSG (IQ C1)
+
+export def SdfSmoothUnion = record (a: frozen Sdf, b: frozen Sdf, k: double) implements Sdf (
+    private def bbox: AABB
+
+    init (
+        def pad: double = if this.k > 0.0 then (this.k * 0.25) else (0.0)
+        this.bbox = AABB.enclose(this.a.boundingBox(), this.b.boundingBox()).expand(pad)
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        def da: double = this.a.distance(p)
+        def db: double = this.b.distance(p)
+        if this.k <= 0.0 then (
+            return math.min(da, db)
+        )
+        def h: double = math.max(this.k - math.abs(da - db), 0.0) / this.k
+        math.min(da, db) - h * h * this.k * 0.25
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_smooth_union")
+)
+
+;; Smoothly carves `cut` out of `base` with fillet radius `k`.
+export def SdfSmoothSubtraction = record (base: frozen Sdf, cut: frozen Sdf, k: double) implements Sdf (
+    private def bbox: AABB
+
+    init (
+        this.bbox = AABB.copy(this.base.boundingBox())
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        def db: double = this.base.distance(p)
+        def dc: double = this.cut.distance(p)
+        if this.k <= 0.0 then (
+            return math.max(db, -dc)
+        )
+        def h: double = math.clamp(0.5 - 0.5 * (db + dc) / this.k, 0.0, 1.0)
+        math.mix(db, -dc, h) + this.k * h * (1.0 - h)
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_smooth_subtraction")
+)
+
+export def SdfSmoothIntersection = record (a: frozen Sdf, b: frozen Sdf, k: double) implements Sdf (
+    private def bbox: AABB
+
+    init (
+        this.bbox = intersectBoxes(this.a.boundingBox(), this.b.boundingBox())
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        def da: double = this.a.distance(p)
+        def db: double = this.b.distance(p)
+        if this.k <= 0.0 then (
+            return math.max(da, db)
+        )
+        def h: double = math.clamp(0.5 - 0.5 * (db - da) / this.k, 0.0, 1.0)
+        math.mix(db, da, h) + this.k * h * (1.0 - h)
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_smooth_intersection")
+)
+
+;; ---------------------------------------------------------------- Surface Modifiers
+
+;; Rounds/expands an SDF outward by `radius`.
+export def SdfRound = record (inner: frozen Sdf, radius: double) implements Sdf (
+    private def bbox: AABB
+
+    init (
+        this.bbox = AABB.copy(this.inner.boundingBox()).expand(math.max(0.0, this.radius))
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        this.inner.distance(p) - this.radius
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_round")
+)
+
+;; Hollows an SDF into a thin shell of half-thickness `thickness`.
+export def SdfOnion = record (inner: frozen Sdf, thickness: double) implements Sdf (
+    private def bbox: AABB
+
+    init (
+        this.bbox = AABB.copy(this.inner.boundingBox()).expand(math.max(0.0, this.thickness))
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        math.abs(this.inner.distance(p)) - this.thickness
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_onion")
+)
+
+;; ---------------------------------------------------------------- Domain Transforms
+
+export def SdfTranslate = record (inner: frozen Sdf, offset: Vec3) implements Sdf (
+    private def bbox: AABB
+
+    init (
+        this.bbox = AABB.copy(this.inner.boundingBox()).translate(this.offset)
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        this.inner.distance(p - this.offset)
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_translate")
+)
+
+export def SdfRotateX = record (inner: frozen Sdf, angleDeg: double) implements Sdf (
+    private def ca: double
+    private def sa: double
+    private def bbox: AABB
+
+    init (
+        def rad: double = math.degreesToRadians(this.angleDeg)
+        this.ca = math.cos(rad)
+        this.sa = math.sin(rad)
+        def c: double = this.ca
+        def s: double = this.sa
+        this.bbox = transformBox(
+            this.inner.boundingBox(),
+            fn (v: Vec3): Vec3 -> (Vec3(v.x, c * v.y - s * v.z, s * v.y + c * v.z))
+        )
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        def q: Vec3 = Vec3(p.x, this.ca * p.y + this.sa * p.z, -this.sa * p.y + this.ca * p.z)
+        this.inner.distance(q)
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_rotate_x")
+)
+
+export def SdfRotateY = record (inner: frozen Sdf, angleDeg: double) implements Sdf (
+    private def ca: double
+    private def sa: double
+    private def bbox: AABB
+
+    init (
+        def rad: double = math.degreesToRadians(this.angleDeg)
+        this.ca = math.cos(rad)
+        this.sa = math.sin(rad)
+        def c: double = this.ca
+        def s: double = this.sa
+        this.bbox = transformBox(
+            this.inner.boundingBox(),
+            fn (v: Vec3): Vec3 -> (Vec3(c * v.x + s * v.z, v.y, -s * v.x + c * v.z))
+        )
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        def q: Vec3 = Vec3(this.ca * p.x - this.sa * p.z, p.y, this.sa * p.x + this.ca * p.z)
+        this.inner.distance(q)
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_rotate_y")
+)
+
+export def SdfRotateZ = record (inner: frozen Sdf, angleDeg: double) implements Sdf (
+    private def ca: double
+    private def sa: double
+    private def bbox: AABB
+
+    init (
+        def rad: double = math.degreesToRadians(this.angleDeg)
+        this.ca = math.cos(rad)
+        this.sa = math.sin(rad)
+        def c: double = this.ca
+        def s: double = this.sa
+        this.bbox = transformBox(
+            this.inner.boundingBox(),
+            fn (v: Vec3): Vec3 -> (Vec3(c * v.x - s * v.y, s * v.x + c * v.y, v.z))
+        )
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        def q: Vec3 = Vec3(this.ca * p.x + this.sa * p.y, -this.sa * p.x + this.ca * p.y, p.z)
+        this.inner.distance(q)
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_rotate_z")
+)
+
+;; Uniform positive scaling: preserves exact Euclidean signed distance.
+export def SdfScale = record (inner: frozen Sdf, factor: double) implements Sdf (
+    private def invFactor: double
+    private def bbox: AABB
+
+    init (
+        this.invFactor = 1.0 / this.factor
+        this.bbox = AABB.copy(this.inner.boundingBox()).scale(this.factor)
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        this.inner.distance(p * this.invFactor) * this.factor
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_scale")
+)
+
+;; Twists `inner` around the Y axis by `rate` radians per unit Y.
+;; Non-Lipschitz-1: pair with `stepScale` < 1.0 (e.g., 0.6) on `RaymarchedSdf` for large twist rates.
+export def SdfTwist = record (inner: frozen Sdf, rate: double) implements Sdf (
+    private def bbox: AABB
+
+    init (
+        def b: AABB = AABB.copy(this.inner.boundingBox())
+        def mx: double = math.max(math.abs(b.minX), math.abs(b.maxX))
+        def mz: double = math.max(math.abs(b.minZ), math.abs(b.maxZ))
+        def rMax: double = math.sqrt(mx * mx + mz * mz)
+        this.bbox = AABB(-rMax, rMax, b.minY, b.maxY, -rMax, rMax)
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        def angle: double = this.rate * p.y
+        def c: double = math.cos(angle)
+        def s: double = math.sin(angle)
+        def q: Vec3 = Vec3(c * p.x - s * p.z, p.y, s * p.x + c * p.z)
+        this.inner.distance(q)
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_twist")
+)
