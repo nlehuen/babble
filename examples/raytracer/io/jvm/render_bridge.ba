@@ -1,0 +1,190 @@
+;; JVM render bridge used by examples/raytracer/server/RenderServer.java.
+;; Dispatches Scene, Hittable, and HittableList targets, applies HTTP camera/render
+;; overrides, and returns java.awt.image.BufferedImage directly to Java.
+
+def core = import("../../core/core.ba")
+def png = import("png.ba")
+def math = core.math
+def Vec3 = core.Vec3
+def Camera = core.Camera
+def Scene = core.Scene
+def Hittable = core.Hittable
+def HittableList = core.HittableList
+def BVHNode = core.BVHNode
+def Background = core.Background
+def SkyBackground = core.SkyBackground
+def SolidBackground = core.SolidBackground
+
+export def isRenderable = fn (shared target: any?): bool -> (
+    target is Scene or target is Hittable or target is HittableList
+)
+
+;; Converts a HittableList into a BVHNode once so multi-angle turntable renders share one BVH.
+export def prepareTarget = fn (shared target: any?): any -> (
+    if target is Scene then (
+        target
+    ) else if target is HittableList then (
+        BVHNode.fromList(target)
+    ) else if target is Hittable then (
+        target
+    ) else (
+        throw exception("Expected scene to be a Scene, Hittable, or HittableList")
+    )
+)
+
+;; Renders a prepared Scene or Hittable with optional camera/render parameter overrides.
+export def renderTarget = fn io (
+    shared target: any?,
+    width: int,
+    aspectRatio: double,
+    spp: int,
+    maxDepth: int,
+    hasSeed: bool,
+    seed: int,
+    threads: int,
+    vfov: double,
+    hasLookFrom: bool,
+    fromX: double,
+    fromY: double,
+    fromZ: double,
+    hasLookAt: bool,
+    atX: double,
+    atY: double,
+    atZ: double,
+    hasOrbit: bool,
+    yawDeg: double,
+    pitchDeg: double,
+    orbitDist: double,
+    bgMode: int,
+    bgR: double,
+    bgG: double,
+    bgB: double
+): java.awt.image.BufferedImage -> (
+    def isSceneTarget: bool = target is Scene
+    def world: Hittable = if target is Scene then (
+        target.world
+    ) else if target is HittableList then (
+        BVHNode.fromList(target)
+    ) else if target is Hittable then (
+        target
+    ) else (
+        throw exception("Expected scene to be a Scene, Hittable, or HittableList")
+    )
+
+    def defaultCam: Camera = Camera(
+        aspectRatio: 1.0,
+        imageWidth: 240,
+        samplesPerPixel: 16,
+        maxDepth: 6,
+        vfov: 35.0,
+        lookFrom: Vec3(0.0, 0.0, 5.0),
+        lookAt: Vec3(0.0, 0.0, 0.0),
+        vup: Vec3(0.0, 1.0, 0.0),
+        defocusAngle: 0.0,
+        focusDist: 5.0,
+        background: SkyBackground()
+    )
+    def baseCam: Camera = if target is Scene then (target.camera) else (defaultCam)
+    def baseName: string = if target is Scene then (target.name) else ("render")
+    def baseSeed: int = if target is Scene then (target.defaultSeed) else (42)
+
+    def effWidth: int = if width > 0 then (width) else (baseCam.imageWidth)
+    def effAspect: double = if aspectRatio > 0.0 then (aspectRatio) else (baseCam.aspectRatio)
+    def effSpp: int = if spp > 0 then (spp) else (baseCam.samplesPerPixel)
+    def effDepth: int = if maxDepth > 0 then (maxDepth) else (baseCam.maxDepth)
+    def effVfov: double = if vfov > 0.0 then (vfov) else (baseCam.vfov)
+    def effSeed: int = if hasSeed then (seed) else (baseSeed)
+    def effThreads: int = if threads > 0 then (threads) else (1)
+
+    def effLookAt: Vec3 = if hasLookAt then (
+        Vec3(atX, atY, atZ)
+    ) else (
+        baseCam.lookAt
+    )
+
+    def effLookFrom: Vec3 = if hasLookFrom then (
+        Vec3(fromX, fromY, fromZ)
+    ) else if hasOrbit then (
+        def baseDist: double = (baseCam.lookFrom - effLookAt).length()
+        def dist: double = if orbitDist > 0.0 then (
+            orbitDist
+        ) else if baseDist > 0.001 then (
+            baseDist
+        ) else (
+            10.0
+        )
+        def yaw: double = math.degreesToRadians(yawDeg)
+        def pitch: double = math.degreesToRadians(pitchDeg)
+        def cosP: double = math.cos(pitch)
+        def sinP: double = math.sin(pitch)
+        effLookAt + Vec3(dist * cosP * math.sin(yaw), dist * sinP, dist * cosP * math.cos(yaw))
+    ) else (
+        baseCam.lookFrom
+    )
+
+    def cameraMoved: bool = hasLookFrom or hasLookAt or hasOrbit
+    def effFocusDist: double = if cameraMoved then (
+        def d: double = (effLookFrom - effLookAt).length()
+        if d > 0.001 then (d) else (10.0)
+    ) else (
+        baseCam.focusDist
+    )
+
+    def effBg: Background = if bgMode == 1 then (
+        SkyBackground()
+    ) else if bgMode == 2 then (
+        SolidBackground(Vec3(bgR, bgG, bgB))
+    ) else (
+        baseCam.background
+    )
+
+    def effCam: Camera = if isSceneTarget and width <= 0 and aspectRatio <= 0.0 and spp <= 0 and
+        maxDepth <= 0 and vfov <= 0.0 and not cameraMoved and bgMode == 0 then (
+        baseCam
+    ) else (
+        Camera(
+            aspectRatio: effAspect,
+            imageWidth: effWidth,
+            samplesPerPixel: effSpp,
+            maxDepth: effDepth,
+            vfov: effVfov,
+            lookFrom: effLookFrom,
+            lookAt: effLookAt,
+            vup: baseCam.vup,
+            defocusAngle: baseCam.defocusAngle,
+            focusDist: effFocusDist,
+            background: effBg,
+            lights: baseCam.lights
+        )
+    )
+
+    def effScene: Scene = Scene(baseName, world, effCam, effSeed)
+    png.renderBufferedImage(effScene, effThreads, effSeed)
+)
+
+;; Small 16x16 warmup render exercising BVH, SDF sphere tracing, and Toon/Lambertian shading
+;; so HotSpot C2 JIT is warm before the first HTTP request arrives.
+export def warmupBridge = fn io (threads: int = 4): java.awt.image.BufferedImage -> (
+    def mat = core.Toon(Vec3(0.8, 0.4, 0.7), Vec3(0.4, 0.2, 0.35), Vec3(0.3, 0.6, 0.8), 0.05)
+    def sdf = core.SdfSmoothUnion(
+        core.SdfSphere(Vec3(-0.3, 0.0, 0.0), 0.5),
+        core.SdfRoundBox.fromOuter(Vec3(0.4, 0.4, 0.4), 0.1),
+        0.15
+    )
+    def world: HittableList = HittableList()
+    world.add(core.RaymarchedSdf(sdf, mat, maxSteps: 64))
+    world.add(core.Sphere(Vec3(0.6, 0.0, -0.5), 0.35, core.Lambertian(Vec3(0.3, 0.6, 0.8))))
+    def cam: Camera = Camera(
+        aspectRatio: 1.0,
+        imageWidth: 16,
+        samplesPerPixel: 4,
+        maxDepth: 4,
+        vfov: 25.0,
+        lookFrom: Vec3(0.0, 0.0, 5.0),
+        lookAt: Vec3.zero,
+        defocusAngle: 0.0,
+        focusDist: 5.0,
+        background: SolidBackground(Vec3.one)
+    )
+    png.renderBufferedImage(Scene("warmup", BVHNode.fromList(world), cam, 1), threads, 1)
+)

@@ -102,7 +102,34 @@ java -jar target/babble-1.0-SNAPSHOT.jar -dev-server -d examples/raytracer -p 80
 # Open http://127.0.0.1:8080/wasm_canvas.html and pick Cover, Three Spheres, Baby Triceratops, Cornell Box, or Sculpted SDF Cube
 ```
 
-### 4. Pure-Babble Self-Test Suite (`selftest.ba`)
+### 4. Fast-Iteration HTTP Render Server (`render_server.sh` + `server/RenderServer.java`)
+
+For rapid scene-graph iteration without JVM startup or core-module recompilation overhead, compile and launch the dedicated warm-JVM render server once:
+
+```bash
+./examples/raytracer/render_server.sh --port 7332
+```
+
+Then POST Babble scene code defining `scene` (`Scene`, `Hittable`, or `HittableList`), a final expression, `world`, or an existing scene file exporting `build()` to `POST /render?<options>`:
+
+```bash
+# Minimal Hittable snippet -> PNG
+curl -sS -X POST "http://127.0.0.1:7332/render?width=240&spp=16&yaw=25&pitch=15&dist=4&bg=white" \
+  --data-binary 'def core = import("core/core.ba"); def scene = core.Sphere(core.Vec3.zero, 1.0, core.Lambertian(core.Vec3(0.8, 0.25, 0.35)))' \
+  -o sphere.png
+
+# Full scene file + perceptual reference score headers & 4-panel diff strip
+curl -sS -D - -X POST "http://127.0.0.1:7332/render?width=160&spp=64&ref=assets/triceratops.jpg&diff=true" \
+  --data-binary @examples/raytracer/scenes/triceratops.ba \
+  -o diff_strip.png
+
+# Multi-angle 6-view turntable contact sheet (reuses one BVH build)
+curl -sS -X POST "http://127.0.0.1:7332/render?width=200&spp=16&turntable=front,right30,left30,top35,side75,back" \
+  --data-binary @examples/raytracer/scenes/triceratops.ba \
+  -o turntable.png
+```
+
+### 5. Pure-Babble Self-Test Suite (`selftest.ba`)
 
 ```bash
 java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer/selftest.ba
