@@ -161,6 +161,19 @@ final class MethodEntryEmitter {
                     fn.keywordOnlyStart(),
                     fn.restIndex(),
                     m -> m.visitMethodInsn(INVOKESTATIC, emitter.className, method, direct, false));
+            if (fn.hasSpec()) {
+                generateBoxedToSpecForwarder(
+                        emitter.classWriter,
+                        ACC_PUBLIC | ACC_STATIC | ACC_SYNTHETIC,
+                        emitter.className,
+                        method,
+                        direct,
+                        functionSpecDescriptor(fn),
+                        INVOKESTATIC,
+                        fn);
+                generateFunctionSpec(fn, method);
+                return;
+            }
             emitter.beginMethod(
                     emitter.classWriter,
                     fn.id(),
@@ -186,10 +199,109 @@ final class MethodEntryEmitter {
         }
         emitter.frameVars.loadCapturedCells(COMPILED_FUNCTION);
         functionBody(fn, paramsField, COMPILED_FUNCTION);
+    }
 
-        if (fn.hasSpec()) {
-            generateFunctionSpec(fn, method);
+    private void generateBoxedToSpecForwarder(
+            ClassWriter writer,
+            int access,
+            String owner,
+            String method,
+            String directDesc,
+            String specDesc,
+            int invokeOp,
+            HirFunction fn) {
+        MethodVisitor mv = writer.visitMethod(access, method, directDesc, null, null);
+        mv.visitCode();
+        List<HirParam> params = fn.params();
+        int count = params.size();
+        int nextSlot = FIRST_PARAMETER + count;
+        int maskSlot = fn.hasOptionalMask() ? nextSlot++ : -1;
+        if (maskSlot >= 0) {
+            mv.visitInsn(ICONST_0);
+            mv.visitVarInsn(ISTORE, maskSlot);
         }
+        int[] argSlots = new int[count];
+        int optBit = 0;
+        for (int i = 0; i < count; i++) {
+            HirParam param = params.get(i);
+            PrimitiveKind pk = param.kind();
+            int rawSlot = FIRST_PARAMETER + i;
+            int argSlot = pk.isPrimitive() ? nextSlot : rawSlot;
+            if (pk.isPrimitive()) {
+                nextSlot += pk.slots();
+            }
+            argSlots[i] = argSlot;
+            if (param.defaultValue() != null) {
+                Label present = new Label();
+                Label done = new Label();
+                mv.visitVarInsn(ALOAD, rawSlot);
+                mv.visitFieldInsn(GETSTATIC, ARGUMENTS, "MISSING", "Ljava/lang/Object;");
+                mv.visitJumpInsn(IF_ACMPNE, present);
+                mv.visitVarInsn(ILOAD, maskSlot);
+                ConstantPool.pushInt(mv, 1 << optBit);
+                mv.visitInsn(IOR);
+                mv.visitVarInsn(ISTORE, maskSlot);
+                emitDefaultValueOn(mv, pk);
+                storeKindOn(mv, pk, argSlot);
+                mv.visitJumpInsn(GOTO, done);
+                mv.visitLabel(present);
+                mv.visitVarInsn(ALOAD, rawSlot);
+                if (param.wideningRank() >= 0) {
+                    emitWidenBoxed(mv, param.wideningRank());
+                }
+                if (pk.isPrimitive()) {
+                    unboxOn(mv, pk);
+                }
+                storeKindOn(mv, pk, argSlot);
+                mv.visitLabel(done);
+                optBit++;
+            } else {
+                Label present = new Label();
+                mv.visitVarInsn(ALOAD, rawSlot);
+                mv.visitFieldInsn(GETSTATIC, ARGUMENTS, "MISSING", "Ljava/lang/Object;");
+                mv.visitJumpInsn(IF_ACMPNE, present);
+                mv.visitLdcInsn(param.name());
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        ARGUMENTS,
+                        "missing",
+                        "(Ljava/lang/String;)Lorg/babblelang/runtime/BabbleException;",
+                        false);
+                mv.visitInsn(ATHROW);
+                mv.visitLabel(present);
+                if (pk.isPrimitive() || param.wideningRank() >= 0) {
+                    mv.visitVarInsn(ALOAD, rawSlot);
+                    if (param.wideningRank() >= 0) {
+                        emitWidenBoxed(mv, param.wideningRank());
+                    }
+                    if (pk.isPrimitive()) {
+                        unboxOn(mv, pk);
+                    }
+                    storeKindOn(mv, pk, argSlot);
+                }
+            }
+        }
+        Label bound = new Label();
+        mv.visitVarInsn(ALOAD, BINDER_LOCAL);
+        mv.visitJumpInsn(IFNULL, bound);
+        mv.visitVarInsn(ALOAD, BINDER_LOCAL);
+        mv.visitMethodInsn(INVOKEVIRTUAL, BINDER, "rejectLeftovers", "()V", false);
+        mv.visitLabel(bound);
+
+        mv.visitVarInsn(ALOAD, 0);
+        mv.visitVarInsn(ALOAD, 1);
+        mv.visitVarInsn(ALOAD, FN_RT);
+        for (int i = 0; i < count; i++) {
+            loadKindOn(mv, params.get(i).kind(), argSlots[i]);
+        }
+        if (maskSlot >= 0) {
+            mv.visitVarInsn(ILOAD, maskSlot);
+        }
+        mv.visitMethodInsn(invokeOp, owner, method + "$spec", specDesc, false);
+        boxOn(mv, fn.returnKind());
+        mv.visitInsn(ARETURN);
+        mv.visitMaxs(0, 0);
+        mv.visitEnd();
     }
 
     private void generateFunctionSpec(HirFunction fn, String method) {
@@ -442,6 +554,19 @@ final class MethodEntryEmitter {
                     fn.keywordOnlyStart(),
                     fn.restIndex(),
                     m -> m.visitMethodInsn(INVOKEVIRTUAL, gen.name, method, direct, false));
+            if (fn.hasSpec()) {
+                generateBoxedToSpecForwarder(
+                        gen.writer,
+                        ACC_PUBLIC | ACC_SYNTHETIC,
+                        gen.name,
+                        method,
+                        direct,
+                        methodSpecDescriptor(fn),
+                        INVOKEVIRTUAL,
+                        fn);
+                generateMethodSpec(fn, gen, method);
+                return;
+            }
             emitter.beginMethod(
                     gen.writer,
                     fn.id(),
@@ -470,10 +595,6 @@ final class MethodEntryEmitter {
         emitter.ctx.methodClass = gen;
         emitter.frameVars.loadCapturedCells(BABBLE_CLASS);
         functionBody(fn, paramsField, COMPILED_METHOD);
-
-        if (fn.hasSpec()) {
-            generateMethodSpec(fn, gen, method);
-        }
     }
 
     private void generateMethodSpec(HirFunction fn, ClassGen gen, String method) {

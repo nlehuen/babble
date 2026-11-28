@@ -297,8 +297,8 @@ public class JvmClassAndInterfaceBytecodeTestCase {
                     ifaceCls.isAssignableFrom(rectCls), rectCls + " should implement " + ifaceCls);
         }
 
-        // Inspect Script class: INVOKEINTERFACE on bm$area / bm$scaled (including this.area()
-        // inside Shape.scaled),
+        // Inspect Script class: INVOKEINTERFACE on bm$area / bm$scaled (one s.area() at top level
+        // and one this.area() inside Shape.scaled$spec — the boxed wrapper forwards to $spec),
         // INSTANCEOF on Shape & Rect, and zero Bootstrap.select on area/scaled/tag, Values.is, or
         // Supers.call.
         InsnSummary scriptInsns =
@@ -306,7 +306,7 @@ public class JvmClassAndInterfaceBytecodeTestCase {
                         script.getClasses()
                                 .get(script.getScriptClass().getName().replace('.', '/')));
         Assertions.assertEquals(
-                3,
+                2,
                 scriptInsns.invokeInterfaceTargets().stream()
                         .filter(t -> t.contains(".bm$area("))
                         .count(),
