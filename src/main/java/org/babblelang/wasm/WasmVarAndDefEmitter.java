@@ -678,7 +678,7 @@ final class WasmVarAndDefEmitter {
             ctx.stackKind = PrimitiveKind.NONE;
             return;
         }
-        rt.emitStringLit(c, "Undefined variable : " + a.name());
+        rt.emitStringLit(c, "No such name : " + a.name());
         c.i32Const(a.meta().line()).call(rt.fnThrowMsg).unreachable();
         ctx.stackKind = PrimitiveKind.NONE;
     }
