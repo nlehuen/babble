@@ -774,3 +774,5 @@ export def build = fn (
     )
     Scene("triceratops", BVHNode.fromList(worldList), camera, seed)
 )
+
+export def scene = fn (): Scene -> (build())

@@ -110,21 +110,21 @@ For rapid scene-graph iteration without JVM startup or core-module recompilation
 ./examples/raytracer/render_server.sh --port 7332
 ```
 
-Then POST Babble scene code defining `scene` (`Scene`, `Hittable`, or `HittableList`), a final expression, `world`, or an existing scene file exporting `build()` to `POST /render?<options>`:
+Then POST a **hermetic** Babble module exporting `export def scene = fn (): Scene | Hittable | HittableList -> (...)` to `POST /render?<options>`. The server configures Babble's compiler with `allowAxioms(false)` and `allowTopLevelIO(false)`, blocks imports under `io/`, and binds `client.scene` through a typed non-`io` harness — so Babble's effect checker statically rejects any `io` (top-level, `static` block, inside `scene()`, inside returned geometry/material callbacks, dynamic `import(...)`, or `axiom` smuggling) **before a single instruction of client code executes**:
 
 ```bash
-# Minimal Hittable snippet -> PNG
+# Minimal hermetic Hittable module -> PNG
 curl -sS -X POST "http://127.0.0.1:7332/render?width=240&spp=16&yaw=25&pitch=15&dist=4&bg=white" \
-  --data-binary 'def core = import("core/core.ba"); def scene = core.Sphere(core.Vec3.zero, 1.0, core.Lambertian(core.Vec3(0.8, 0.25, 0.35)))' \
+  --data-binary 'def core = import("core/core.ba"); export def scene = fn (): core.Hittable -> (core.Sphere(core.Vec3.zero, 1.0, core.Lambertian(core.Vec3(0.8, 0.25, 0.35))))' \
   -o sphere.png
 
-# Full scene file + perceptual reference score headers & 4-panel diff strip
-curl -sS -D - -X POST "http://127.0.0.1:7332/render?width=160&spp=64&ref=assets/triceratops.jpg&diff=true" \
+# Full scene file (each built-in scene exports hermetic `scene`) + perceptual reference score & diff strip
+curl -sS -D - -X POST "http://127.0.0.1:7332/render?width=160&spp=32&ref=assets/triceratops.jpg&diff=true" \
   --data-binary @examples/raytracer/scenes/triceratops.ba \
   -o diff_strip.png
 
 # Multi-angle 6-view turntable contact sheet (reuses one BVH build)
-curl -sS -X POST "http://127.0.0.1:7332/render?width=200&spp=16&turntable=front,right30,left30,top35,side75,back" \
+curl -sS -X POST "http://127.0.0.1:7332/render?width=200&spp=16&turntable=front,right30,left30,top35,side90,back" \
   --data-binary @examples/raytracer/scenes/triceratops.ba \
   -o turntable.png
 ```

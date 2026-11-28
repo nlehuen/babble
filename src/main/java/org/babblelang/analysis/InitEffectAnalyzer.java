@@ -5,6 +5,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 import org.antlr.v4.runtime.ParserRuleContext;
+import org.antlr.v4.runtime.tree.ParseTree;
 import org.babblelang.effects.Effect;
 import org.babblelang.parser.BabbleParser;
 import org.babblelang.runtime.ClassShape;
@@ -806,5 +807,139 @@ final class InitEffectAnalyzer {
                         List.of(), cParams, Type.ANY, EffectSet.EMPTY, forwarded, Set.of());
         calls.applyForwardedCallbackEffects(
                 call, synthetic, null, Reachability.Origin.IMMUTABLE, args, argExprs, argOrigins);
+    }
+
+    static void verifyTopLevelAndStatics(EffectChecker ec, BabbleParser.FileContext file) {
+        boolean requireHermeticInit = !ec.pass.hostEffects.allowTopLevelIO();
+        EffectBodyWalker top =
+                new EffectBodyWalker(
+                        ec,
+                        file,
+                        ec.pass.fileScope,
+                        List.of(),
+                        false,
+                        new boolean[0],
+                        new boolean[0],
+                        new boolean[0],
+                        false,
+                        false,
+                        EffectChecker.ParsedPrefix.EMPTY,
+                        Set.of(),
+                        true);
+        boolean allTopHermetic = true;
+        for (BabbleParser.ExpressionContext expr : file.expression()) {
+            top.hermetic = true;
+            top.eval(expr);
+            if (!top.hermetic) {
+                allTopHermetic = false;
+                if (requireHermeticInit) {
+                    ec.checker.effectDiagnostic("Top-level io is disabled on this engine", expr);
+                }
+            }
+        }
+        boolean allStaticsHermetic = verifyStaticBlocks(ec, file, Set.of(), requireHermeticInit);
+        if (ec.pass.analysis.moduleInterface() != null) {
+            ec.pass
+                    .analysis
+                    .moduleInterface()
+                    .setInitHermetic(allTopHermetic && allStaticsHermetic);
+        }
+    }
+
+    private static boolean verifyStaticBlocks(
+            EffectChecker ec,
+            ParseTree tree,
+            Set<Effect> activeEnclosingConstraints,
+            boolean requireHermeticTop) {
+        Set<Effect> nextConstraints = activeEnclosingConstraints;
+        boolean inFunction = false;
+        if (tree instanceof BabbleParser.FunctionLiteralContext fn) {
+            EffectChecker.ParsedPrefix p = ec.parseFunctionPrefix(fn, false);
+            if (p.axiom()) {
+                return true;
+            }
+            nextConstraints = p.effects();
+            inFunction = true;
+        }
+        boolean ok = true;
+        if (tree instanceof BabbleParser.ClassExpressionContext cls && cls.staticBlock != null) {
+            if (!checkConstrainedBlock(
+                    ec,
+                    cls.staticBlock,
+                    ec.pass.scopeNodes.get(cls.staticBlock),
+                    nextConstraints,
+                    requireHermeticTop)) {
+                ok = false;
+            }
+        } else if (tree instanceof BabbleParser.InterfaceExpressionContext iface
+                && iface.staticBlock != null) {
+            if (!checkConstrainedBlock(
+                    ec,
+                    iface.staticBlock,
+                    ec.pass.scopeNodes.get(iface.staticBlock),
+                    nextConstraints,
+                    requireHermeticTop)) {
+                ok = false;
+            }
+        }
+        boolean childRequireTop = requireHermeticTop && !inFunction;
+        for (int i = 0; i < tree.getChildCount(); i++) {
+            if (!verifyStaticBlocks(ec, tree.getChild(i), nextConstraints, childRequireTop)) {
+                ok = false;
+            }
+        }
+        return ok;
+    }
+
+    private static boolean checkConstrainedBlock(
+            EffectChecker ec,
+            BabbleParser.BlockContext block,
+            ScopeNode scope,
+            Set<Effect> constraints,
+            boolean requireHermeticTop) {
+        EffectChecker.ParsedPrefix req =
+                new EffectChecker.ParsedPrefix(
+                        constraints.isEmpty()
+                                ? EnumSet.noneOf(Effect.class)
+                                : EnumSet.copyOf(constraints),
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        !constraints.isEmpty());
+        EffectBodyWalker ba =
+                new EffectBodyWalker(
+                        ec,
+                        block,
+                        scope,
+                        List.of(),
+                        false,
+                        new boolean[0],
+                        new boolean[0],
+                        new boolean[0],
+                        false,
+                        false,
+                        req,
+                        Set.of(),
+                        true);
+        ba.evalBlock(block, false, true);
+        if (constraints.contains(Effect.PURE) && !ba.hermetic) {
+            ec.checker.effectDiagnostic(
+                    "static block inside pure function violates pure guarantee", block);
+        } else if (constraints.contains(Effect.HERMETIC) && !ba.hermetic) {
+            ec.checker.effectDiagnostic(
+                    "static block inside hermetic function violates hermetic guarantee", block);
+        } else if (constraints.contains(Effect.DETERMINISTIC) && !ba.deterministic) {
+            ec.checker.effectDiagnostic(
+                    "static block inside deterministic function violates deterministic guarantee",
+                    block);
+        } else if (requireHermeticTop && !ba.hermetic) {
+            ec.checker.effectDiagnostic(
+                    "Top-level static block io is disabled on this engine", block);
+        }
+        return ba.hermetic;
     }
 }

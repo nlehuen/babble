@@ -1099,6 +1099,108 @@ public class EffectsTestCase {
     }
 
     @Test
+    public void testDisallowTopLevelIOEnforcesHermeticModuleInit(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) throws Exception {
+        java.nio.file.Files.writeString(
+                tempDir.resolve("pure_lib.ba"),
+                """
+                export def answer = fn (): int -> (42)
+                """);
+        java.nio.file.Files.writeString(
+                tempDir.resolve("io_export.ba"),
+                """
+                export def noisy = fn io (): int -> (
+                    println("boom")
+                    42
+                )
+                """);
+        java.nio.file.Files.writeString(
+                tempDir.resolve("bad_init.ba"),
+                """
+                println("pwned at init")
+                export def answer = fn (): int -> (42)
+                """);
+
+        BabbleScriptEngine sandbox = newEngine();
+        sandbox.put(
+                BabbleScriptEngine.MODULE_SOURCE,
+                org.babblelang.engine.FileModuleSource.rooted(tempDir));
+        sandbox.allowAxioms(false);
+        sandbox.allowTopLevelIO(false);
+        Assertions.assertFalse(sandbox.allowsTopLevelIO());
+
+        // Pure computation + static import of a hermetic module succeeds.
+        Assertions.assertEquals(
+                42,
+                eval(
+                        sandbox,
+                        """
+                        def lib = import("/pure_lib.ba")
+                        def f: fn volatile (): int = lib.answer
+                        f()
+                        """));
+
+        // Importing a module whose top-level init is hermetic succeeds even if it exports an `io`
+        // function, while trying to bind that `io` export to a hermetic function type fails.
+        assertEngineFails(
+                sandbox,
+                """
+                def lib = import("/io_export.ba")
+                def f: fn volatile (): int = lib.noisy
+                f()
+                """,
+                "");
+
+        // Top-level println, Java I/O, object-literal I/O, static-block I/O, dynamic import,
+        // and importing a module with top-level I/O are all rejected at compile time.
+        assertEngineFails(
+                sandbox,
+                """
+                println("nope")
+                1
+                """,
+                "Top-level io is disabled on this engine");
+        assertEngineFails(
+                sandbox,
+                """
+                java.lang.System.getProperty("user.home")
+                """,
+                "Top-level io is disabled on this engine");
+        assertEngineFails(
+                sandbox,
+                """
+                def o = object (
+                    def x = (println("nope"); 1)
+                )
+                o.x
+                """,
+                "Top-level io is disabled on this engine");
+        assertEngineFails(
+                sandbox,
+                """
+                def C = class () () static (
+                    def x = (println("nope"); 1)
+                )
+                1
+                """,
+                "Top-level static block io is disabled on this engine");
+        assertEngineFails(
+                sandbox,
+                """
+                def name = "/pure_lib.ba"
+                import(name)
+                """,
+                "Top-level io is disabled on this engine");
+        assertEngineFails(
+                sandbox,
+                """
+                def bad = import("/bad_init.ba")
+                bad.answer()
+                """,
+                "Top-level io is disabled on this engine");
+    }
+
+    @Test
     public void testCrossModuleHigherOrderWithEffects(
             @org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) throws Exception {
         java.nio.file.Files.writeString(

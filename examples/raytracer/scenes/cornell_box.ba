@@ -80,3 +80,5 @@ export def build = fn (
     )
     Scene("cornell-box", BVHNode.fromList(worldList), camera, seed)
 )
+
+export def scene = fn (): Scene -> (build())

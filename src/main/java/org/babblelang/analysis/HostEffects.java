@@ -23,9 +23,15 @@ public final class HostEffects {
 
     public static final HostEffects DEFAULT =
             new HostEffects(
-                    true, true, AxiomData.AxiomTable.EMPTY, BuiltinAxioms.standard(), Set.of());
+                    true,
+                    true,
+                    true,
+                    AxiomData.AxiomTable.EMPTY,
+                    BuiltinAxioms.standard(),
+                    Set.of());
 
     private final boolean allowAxioms;
+    private final boolean allowTopLevelIO;
     private final boolean bytecodeEffectAnalysis;
     private final AxiomData.AxiomTable hostAxioms;
     private final BuiltinAxioms builtinAxioms;
@@ -33,19 +39,28 @@ public final class HostEffects {
 
     HostEffects(
             boolean allowAxioms,
+            boolean allowTopLevelIO,
             boolean bytecodeEffectAnalysis,
             AxiomData.AxiomTable hostAxioms,
             BuiltinAxioms builtinAxioms) {
-        this(allowAxioms, bytecodeEffectAnalysis, hostAxioms, builtinAxioms, Set.of());
+        this(
+                allowAxioms,
+                allowTopLevelIO,
+                bytecodeEffectAnalysis,
+                hostAxioms,
+                builtinAxioms,
+                Set.of());
     }
 
     HostEffects(
             boolean allowAxioms,
+            boolean allowTopLevelIO,
             boolean bytecodeEffectAnalysis,
             AxiomData.AxiomTable hostAxioms,
             BuiltinAxioms builtinAxioms,
             Set<String> hostBindings) {
         this.allowAxioms = allowAxioms;
+        this.allowTopLevelIO = allowTopLevelIO;
         this.bytecodeEffectAnalysis = bytecodeEffectAnalysis;
         this.hostAxioms = hostAxioms != null ? hostAxioms : AxiomData.AxiomTable.EMPTY;
         this.builtinAxioms = builtinAxioms != null ? builtinAxioms : BuiltinAxioms.standard();
@@ -57,6 +72,10 @@ public final class HostEffects {
 
     public boolean allowAxioms() {
         return allowAxioms;
+    }
+
+    public boolean allowTopLevelIO() {
+        return allowTopLevelIO;
     }
 
     public boolean bytecodeEffectAnalysis() {
@@ -82,13 +101,19 @@ public final class HostEffects {
                     ? this
                     : new HostEffects(
                             allowAxioms,
+                            allowTopLevelIO,
                             bytecodeEffectAnalysis,
                             hostAxioms,
                             builtinAxioms,
                             Set.of());
         }
         return new HostEffects(
-                allowAxioms, bytecodeEffectAnalysis, hostAxioms, builtinAxioms, bindings);
+                allowAxioms,
+                allowTopLevelIO,
+                bytecodeEffectAnalysis,
+                hostAxioms,
+                builtinAxioms,
+                bindings);
     }
 
     /** The host's assumptions, as axioms. */
@@ -175,7 +200,17 @@ public final class HostEffects {
         /** The engine's policy with these registrations. */
         public HostEffects toHostEffects(
                 boolean allowAxioms, boolean bytecodeEffectAnalysis, BuiltinAxioms builtinAxioms) {
+            return toHostEffects(allowAxioms, true, bytecodeEffectAnalysis, builtinAxioms);
+        }
+
+        /** The engine's policy with these registrations and top-level I/O setting. */
+        public HostEffects toHostEffects(
+                boolean allowAxioms,
+                boolean allowTopLevelIO,
+                boolean bytecodeEffectAnalysis,
+                BuiltinAxioms builtinAxioms) {
             if (allowAxioms
+                    && allowTopLevelIO
                     && bytecodeEffectAnalysis
                     && entries.isEmpty()
                     && builtinAxioms == BuiltinAxioms.standard()) {
@@ -188,7 +223,11 @@ public final class HostEffects {
                 }
             }
             return new HostEffects(
-                    allowAxioms, bytecodeEffectAnalysis, builder.build(), builtinAxioms);
+                    allowAxioms,
+                    allowTopLevelIO,
+                    bytecodeEffectAnalysis,
+                    builder.build(),
+                    builtinAxioms);
         }
 
         private void putClass(Class<?> target, Lowered lowered) {
