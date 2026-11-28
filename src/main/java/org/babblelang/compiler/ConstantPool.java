@@ -112,8 +112,6 @@ final class ConstantPool {
     private final String sourceName;
     private final List<Entry> entries = new ArrayList<>();
     private final Map<List<String>, String> stringArrays = new HashMap<>();
-    private final Map<String, String> booleanArrays = new HashMap<>();
-    private final Map<List<Class<?>>, String> classArrays = new HashMap<>();
 
     ConstantPool(String className, String sourceName) {
         this.className = className;
@@ -171,13 +169,7 @@ final class ConstantPool {
         for (boolean b : values) {
             bits.append(b ? '1' : '0');
         }
-        String encoded = bits.toString();
-        if (encoded.length() <= MAX_STRING_CONSTANT) {
-            mv.visitLdcInsn(new ConstantDynamic("_", "[Z", BOOLEAN_ARRAY_BSM, encoded));
-            return;
-        }
-        String field = booleanArrayField(values);
-        mv.visitFieldInsn(GETSTATIC, className, field, "[Z");
+        mv.visitLdcInsn(new ConstantDynamic("_", "[Z", BOOLEAN_ARRAY_BSM, bits.toString()));
     }
 
     void emitClassArray(MethodVisitor mv, Class<?>[] classes) {
@@ -185,24 +177,11 @@ final class ConstantPool {
             mv.visitFieldInsn(GETSTATIC, BABBLE_CONSTANTS, "EMPTY_CLASSES", "[Ljava/lang/Class;");
             return;
         }
-        boolean canCondy = classes.length <= 240;
-        if (canCondy) {
-            Object[] bsmArgs = new Object[classes.length];
-            for (int i = 0; i < classes.length; i++) {
-                if (classes[i] == null) {
-                    canCondy = false;
-                    break;
-                }
-                bsmArgs[i] = Type.getType(classes[i]);
-            }
-            if (canCondy) {
-                mv.visitLdcInsn(
-                        new ConstantDynamic("_", "[Ljava/lang/Class;", CLASS_ARRAY_BSM, bsmArgs));
-                return;
-            }
+        Object[] bsmArgs = new Object[classes.length];
+        for (int i = 0; i < classes.length; i++) {
+            bsmArgs[i] = Type.getType(classes[i]);
         }
-        String field = classArrayField(classes);
-        mv.visitFieldInsn(GETSTATIC, className, field, "[Ljava/lang/Class;");
+        mv.visitLdcInsn(new ConstantDynamic("_", "[Ljava/lang/Class;", CLASS_ARRAY_BSM, bsmArgs));
     }
 
     void emitOpSite(MethodVisitor mv, String left, String right) {
@@ -326,29 +305,13 @@ final class ConstantPool {
     }
 
     void emitEnumSwitchMap(MethodVisitor mv, Class<?> enumClass, String[] constantNames) {
-        String packed = packStrings(constantNames);
-        if (packed.length() <= MAX_STRING_CONSTANT) {
-            mv.visitLdcInsn(
-                    new ConstantDynamic(
-                            "_", "[I", ENUM_SWITCH_MAP_BSM, Type.getType(enumClass), packed));
-            return;
-        }
-        String field =
-                add(
-                        "ENUM_MAP",
+        mv.visitLdcInsn(
+                new ConstantDynamic(
+                        "_",
                         "[I",
-                        24 + estimateSize(constantNames),
-                        m -> {
-                            m.visitLdcInsn(Type.getType(enumClass));
-                            pushStringArray(m, constantNames);
-                            m.visitMethodInsn(
-                                    INVOKESTATIC,
-                                    MATCH_SUPPORT,
-                                    "buildEnumSwitchMap",
-                                    "(Ljava/lang/Class;[Ljava/lang/String;)[I",
-                                    false);
-                        });
-        mv.visitFieldInsn(GETSTATIC, className, field, "[I");
+                        ENUM_SWITCH_MAP_BSM,
+                        Type.getType(enumClass),
+                        packStrings(constantNames)));
     }
 
     private String stringArrayField(String[] values) {
@@ -360,53 +323,6 @@ final class ConstantPool {
                                 "[Ljava/lang/String;",
                                 estimateSize(values),
                                 m -> pushStringArray(m, values)));
-    }
-
-    private String booleanArrayField(boolean[] values) {
-        StringBuilder key = new StringBuilder(values.length);
-        for (boolean b : values) {
-            key.append(b ? '1' : '0');
-        }
-        return booleanArrays.computeIfAbsent(
-                key.toString(),
-                k -> add("FINALS", "[Z", 8 + values.length * 6, m -> pushBooleanArray(m, values)));
-    }
-
-    private static void pushBooleanArray(MethodVisitor mv, boolean[] values) {
-        pushInt(mv, values.length);
-        mv.visitIntInsn(NEWARRAY, T_BOOLEAN);
-        for (int i = 0; i < values.length; i++) {
-            if (values[i]) {
-                mv.visitInsn(DUP);
-                pushInt(mv, i);
-                mv.visitInsn(ICONST_1);
-                mv.visitInsn(BASTORE);
-            }
-        }
-    }
-
-    private String classArrayField(Class<?>[] classes) {
-        return classArrays.computeIfAbsent(
-                Arrays.asList(classes),
-                key ->
-                        add(
-                                "CLASSES",
-                                "[Ljava/lang/Class;",
-                                8 + classes.length * 8,
-                                m -> pushClassArray(m, classes)));
-    }
-
-    private static void pushClassArray(MethodVisitor mv, Class<?>[] classes) {
-        pushInt(mv, classes.length);
-        mv.visitTypeInsn(ANEWARRAY, "java/lang/Class");
-        for (int i = 0; i < classes.length; i++) {
-            if (classes[i] != null) {
-                mv.visitInsn(DUP);
-                pushInt(mv, i);
-                mv.visitLdcInsn(Type.getType(classes[i]));
-                mv.visitInsn(AASTORE);
-            }
-        }
     }
 
     /**

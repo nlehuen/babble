@@ -112,6 +112,11 @@ axiom org.babblelang.runtime.Range of T: class notnull immutable (
     def lastCharElement: fn nothrow (start: char, end: char, inclusive: bool, step: int): char
     def lastIntElement: fn nothrow (start: int, end: int, inclusive: bool, step: int): int
     def lastLongElement: fn nothrow (start: long, end: long, inclusive: bool, step: long): long
+    def validateStep: fn (step: int): int
+    def validateStep: fn (step: long): long
+)
+
+axiom org.babblelang.runtime.Ranges: class notnull immutable () static (
     def ofByte: fn nothrow fresh (start: byte, end: byte, inclusive: bool): (org.babblelang.runtime.IntRange of java.lang.Byte!)!
     def ofByte: fn fresh (start: byte, end: byte, inclusive: bool, step: int): (org.babblelang.runtime.IntRange of java.lang.Byte!)!
     def ofChar: fn nothrow fresh (start: char, end: char, inclusive: bool): org.babblelang.runtime.CharRange!
@@ -125,6 +130,4 @@ axiom org.babblelang.runtime.Range of T: class notnull immutable (
     def ofLong: fn fresh (start: long, end: long, inclusive: bool, step: long): org.babblelang.runtime.LongRange!
     def ofShort: fn nothrow fresh (start: short, end: short, inclusive: bool): (org.babblelang.runtime.IntRange of java.lang.Short!)!
     def ofShort: fn fresh (start: short, end: short, inclusive: bool, step: int): (org.babblelang.runtime.IntRange of java.lang.Short!)!
-    def validateStep: fn (step: int): int
-    def validateStep: fn (step: long): long
 )
