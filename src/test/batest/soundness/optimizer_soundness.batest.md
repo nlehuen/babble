@@ -1,6 +1,6 @@
-# Soundness regressions : `opt` (`R3`, `R4`, `R5`) const-folding, numeric parity, LICM, SCCP, AEGraph, tail calls & Wasm parity
+# Soundness regressions : `opt` (`R3`, `R4`, `R5`) const-folding, numeric parity, LICM, SCCP, AEGraph, pipeline rewrites, tail calls & Wasm parity
 
-Promoted from `BIP032` quarantine (`opt_r4_licm_for_iterable_verify_error.batest.md`, `opt_r5_o2_sccp_compound_assign_order.batest.md`, `opt_r5_o2_sccp_loop_fixpoint_cap.batest.md`, `opt_r5_aegraph_unique_param_mut_rle.batest.md`, `opt_r5_wasm_o2_byte_range_error_message.batest.md`, `opt_r3_double_range_contains_order_divergence.batest.md`, `opt_r3_mixed_int_float_comparison_parity.batest.md`, `opt_r4_licm_early_exit_null_guard_hoist.batest.md`, `opt_r5_tail_calls_reassigned_var_method.batest.md`) and sister optimizer vectors covering `HirConstFolder`, `HirConvertMaterializer`, `HirLicmPass`, `HirSccpPass`, `HirLiveness`, `HirEffectAnalysis`, `TailCalls`, and `AeGraphBuilder`.
+Promoted from `BIP032` quarantine (`opt_r4_licm_for_iterable_verify_error.batest.md`, `opt_r5_o2_sccp_compound_assign_order.batest.md`, `opt_r5_o2_sccp_loop_fixpoint_cap.batest.md`, `opt_r5_aegraph_unique_param_mut_rle.batest.md`, `opt_r5_wasm_o2_byte_range_error_message.batest.md`, `opt_r3_double_range_contains_order_divergence.batest.md`, `opt_r3_mixed_int_float_comparison_parity.batest.md`, `opt_r4_licm_early_exit_null_guard_hoist.batest.md`, `opt_r5_tail_calls_reassigned_var_method.batest.md`, `opt_r4_range_clamp_loop_variant_bound.batest.md`, `opt_r5_wasm_undeclared_assignment_error.batest.md`) and sister optimizer vectors covering `HirConstFolder`, `HirConvertMaterializer`, `HirLicmPass`, `HirSccpPass`, `HirLiveness`, `HirEffectAnalysis`, `TailCalls`, `AeGraphBuilder`, `HirPipelineLifter`, and `WasmVarAndDefEmitter`.
 
 ## For-loop with mutating iterable and loop-invariant body arithmetic verifies and matches interpret
 
@@ -410,4 +410,119 @@ def C = class () (
     )
 )
 assert(C().step(2) == 999)
+```
+
+## Range clamping must not hoist an upper bound the loop body reassigns
+
+```babble
+def up = fn (n: int): int -> (
+    var lim = 2; var acc = 0
+    for x in 0..n then (if x <= lim then (acc += x; lim += 1))
+    acc
+)
+def ex = fn (n: int): int -> (
+    var lim = 2; var acc = 0
+    for x in 0..<n then (if x < lim then (acc += x; lim += 1))
+    acc
+)
+assert(up(10) == 55 and ex(10) == 45)
+```
+
+## Range clamping must not hoist a lower bound the loop body reassigns
+
+```babble
+def f = fn (n: int): int -> (
+    var lo = 0; var acc = 0
+    for x in 0..n then (if x >= lo then (acc += x; lo += 2))
+    acc
+)
+assert(f(10) == 30)
+```
+
+## Range clamping must not hoist a long bound the loop body reassigns
+
+```babble
+def f = fn (n: long): long -> (
+    var lim = 2L; var acc = 0L
+    for x in 0L..n then (if lim >= x then (acc += x; lim += 1L))
+    acc
+)
+assert(f(10L) == 55L)
+```
+
+## Range clamping must not hoist a bound reassigned by a closure, nested loop or match arm
+
+```babble
+def viaFn = fn (n: int): int -> (
+    var lim = 2; var acc = 0
+    def bump = fn () -> (lim += 1)
+    for x in 0..n then (if x <= lim then (acc += x; bump()))
+    acc
+)
+def viaLoop = fn (n: int): int -> (
+    var lim = 2; var acc = 0
+    for x in 0..n then (if x <= lim then (acc += x; for k in 0..<1 then (lim += 1)))
+    acc
+)
+assert(viaFn(10) == 55 and viaLoop(10) == 55)
+```
+
+## Range clamping must not hoist a bound reassigned in a match arm
+
+```babble
+def f = fn (n: int): int -> (
+    var lim = 2; var acc = 0
+    for x in 0..n then (
+        if x <= lim then (acc += x; match x case 0 then (0) else (lim += 1))
+    )
+    acc
+)
+assert(f(10) == 55)
+```
+
+## Fused producer and consumer must not hoist a bound the consumer reassigns
+
+```babble
+def f = fn (n: int): int -> (
+    var lim = 1
+    def tmp = list of int ()
+    for x in 0..n then (tmp.add(x))
+    var acc = 0
+    for y in tmp then (if y <= lim then (acc += y; lim += 1))
+    acc
+)
+assert(f(10) == 55)
+```
+
+## Loop-invariant bounds and bounds reassigned after the loop still agree
+
+```babble
+def f = fn (n: int): int -> (
+    var lim = 4; var acc = 0
+    for x in 0..n then (if x <= lim then (acc += x))
+    lim = 0
+    acc + lim
+)
+assert(f(10) == 10 and f(2) == 3)
+```
+
+## Assigning an undeclared name fails as No such name
+
+```babble
+zz = 3
+```
+
+```error
+No such name : zz
+```
+
+## Assigning an undeclared name inside a call argument fails as No such name
+
+```babble
+def g = fn (a: int): int -> (a)
+println(g(zz = 3))
+```
+
+```error
+No such name : zz
 ```

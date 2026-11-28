@@ -297,6 +297,24 @@ final class HirPipelineAnalysis {
         return out;
     }
 
+    /**
+     * Collects the locals assigned in the body of any {@link HirExpr.For} in {@code stmts}
+     * (including nested loops) : the values a lifted pipeline must not treat as loop-invariant.
+     */
+    static Set<Integer> collectLoopVariantVars(List<HirExpr> stmts) {
+        Set<Integer> out = new HashSet<>();
+        for (HirExpr s : stmts) {
+            walkExpr(
+                    s,
+                    e -> {
+                        if (e instanceof HirExpr.For f) {
+                            out.addAll(collectModifiedVars(f.body()));
+                        }
+                    });
+        }
+        return out;
+    }
+
     static void collectReadVars(HirExpr expr, Set<Integer> out) {
         walkExpr(
                 expr,

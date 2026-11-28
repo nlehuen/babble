@@ -169,7 +169,8 @@ final class HirPipelineLifter {
 
     private LiftedPipeline tryLiftChain(
             List<HirExpr> stmts, int startIdx, boolean valueIgnoredForLast) {
-        LiftBuilder b = new LiftBuilder();
+        LiftBuilder b =
+                new LiftBuilder(collectLoopVariantVars(stmts.subList(startIdx, stmts.size())));
         List<HirExpr> preservedDefs = new ArrayList<>();
         List<HirExpr.For> producerFors = new ArrayList<>();
         List<HirVar> tempVars = new ArrayList<>();
@@ -276,7 +277,7 @@ final class HirPipelineLifter {
         if (forLoop.elemSamTarget() != null || forLoop.loopVar() == null) {
             return null;
         }
-        LiftBuilder b = new LiftBuilder();
+        LiftBuilder b = new LiftBuilder(collectLoopVariantVars(List.of(forLoop)));
         SourceStage src = b.liftSource(forLoop);
         if (src == null) {
             return null;
@@ -324,6 +325,31 @@ final class HirPipelineLifter {
         int nextDistinctIdx = 0;
         boolean hasRewriteOpportunity = false;
 
+        /**
+         * Locals assigned in a lifted loop body (or captured as mutable cells) : a leaf reading one
+         * is not loop-invariant, so it is lowered as depending on the source binder, which keeps
+         * rules that evaluate binder-free leaves before the loop ({@code R6} range clamping, {@code
+         * R7} early exit and whole-range pre-check) from hoisting it.
+         */
+        final Set<Integer> loopVariantVars;
+
+        String sourceBinderSym;
+
+        LiftBuilder(Set<Integer> loopVariantVars) {
+            this.loopVariantVars = loopVariantVars;
+        }
+
+        private boolean readsLoopVariantState(HirExpr expr) {
+            return anyExpr(
+                    expr,
+                    e ->
+                            (e instanceof HirExpr.VarRead vr
+                                            && !varIdToBinder.containsKey(vr.var().id())
+                                            && (vr.var().cell()
+                                                    || loopVariantVars.contains(vr.var().id())))
+                                    || (e instanceof HirExpr.NameRead nr && !nr.finalBinding()));
+        }
+
         void addDeclaredVars(List<HirVar> vars) {
             for (HirVar v : vars) {
                 if (seenDeclaredIds.add(v.id())) {
@@ -349,6 +375,7 @@ final class HirPipelineLifter {
         SourceStage liftSource(HirExpr.For f) {
             HirVar loopVar = f.loopVar();
             String binderSym = "$e" + (nextBinderIdx++);
+            sourceBinderSym = binderSym;
             varIdToBinder.put(loopVar.id(), binderSym);
             binders.put(binderSym, new BindInfo(binderSym, loopVar, null, true));
             int binderId = graph.add(ENode.opaque(binderSym, loopVar.primitiveKind()));
@@ -664,7 +691,7 @@ final class HirPipelineLifter {
             if (expr instanceof HirExpr.Const c) {
                 return graph.add(ENode.constVal(c.value(), c.meta().kind()));
             }
-            if (expr instanceof HirExpr.VarRead v) {
+            if (expr instanceof HirExpr.VarRead v && !readsLoopVariantState(v)) {
                 String binder = varIdToBinder.get(v.var().id());
                 String key = binder != null ? binder : ("v#" + v.var().id());
                 if (binder == null) {
@@ -750,6 +777,9 @@ final class HirPipelineLifter {
         private int lowerOpaqueWithBinderDeps(HirExpr raw) {
             Set<String> deps = new LinkedHashSet<>();
             collectReferencedBinders(raw, varIdToBinder, deps);
+            if (sourceBinderSym != null && readsLoopVariantState(raw)) {
+                deps.add(sourceBinderSym);
+            }
             if (deps.isEmpty()) {
                 String key = "p#" + (nextOpaqueIdx++);
                 leaves.put(key, raw);
