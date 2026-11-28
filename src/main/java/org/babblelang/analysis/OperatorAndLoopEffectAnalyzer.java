@@ -51,6 +51,10 @@ final class OperatorAndLoopEffectAnalyzer {
                             null,
                             Set.of(ctx),
                             new Reachability.PathKey(ctx, List.of()));
+            // The loop variable is one of the iterable's elements : it aliases whatever they do
+            // (for y in list(b) : y aliases b), as an indexed read of the iterable would.
+            Reachability.Origin element = iterOrig.deriveProjection(false);
+            elemOrig = elemOrig.join(element.owned() ? element.withoutUnique() : element);
         }
         Reachability.Origin[] breakAcc = new Reachability.Origin[1];
         w.loopBreakOrigins.push(breakAcc);
