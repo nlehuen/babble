@@ -45,7 +45,7 @@ To verify that adversarial scrutiny pays off immediately, a read-only code audit
 
 All five have since been reproduced in `-crib`, remediated, and locked into `src/test/batest/soundness/` by the `BIP032-P1` red-team rounds; finding 2 turned out to be a spurious rejection rather than a hole (the join of a variadic and a non-variadic function is the non-variadic one, still a sound upper bound) and was fixed by keeping `rest` when both sides are variadic (`Type.Parameter.withModes` now preserves it wherever a parameter's modes are rewritten).
 
-`BIP032` (*The Great Escape*) turns this kind of ad-hoc bug hunting into a **repeatable, automated, permanent adversarial defense layer** for Babble.
+`BIP032` (*The Great Escape*) turns this kind of ad-hoc bug hunting into a **repeatable, automated, permanent adversarial defense layer** for Babble. See also [BIP046](bip046_formal-verification-strategies.md) for complementary formal verification strategies (mechanized metatheory, SMT rewrite-rule verification, and Verification-Guided Development oracles plugged into `-crib`).
 
 ---
 

@@ -61,7 +61,7 @@ flowchart TB
     FN -.-> T_CONC
 ```
 
-> **Reading guide:** Sections **§2–§6** describe **today's implemented Babble semantics**, grounded directly in the compiler's source files. Section **§7** is clearly demarcated and describes **how draft `BIP043` (Verified Structured Parallelism)** extends the exact same three hierarchies without adding a fourth.
+> **Reading guide:** Sections **§2–§6** describe **today's implemented Babble semantics**, grounded directly in the compiler's source files. Section **§7** is clearly demarcated and describes **how draft `BIP043` (Verified Structured Parallelism)** extends the exact same three hierarchies without adding a fourth. See also [BIP046](bip046_formal-verification-strategies.md) for a survey of formal verification strategies and tooling targeting these three hierarchies and their seven cross-hierarchy bridges.
 
 ---
 
