@@ -1,6 +1,6 @@
-# Soundness regressions : `interop` (`J2`, `J3`) curated determinism, Java varargs parity & array element nullness
+# Soundness regressions : `interop` (`J2`, `J3`) curated determinism, iterator views, Java varargs parity & array element nullness
 
-Promoted from `BIP032` quarantine (`interop_j2_container_element_tostring_hashcode.batest.md`, `interop_j2_string_format_volatile_tostring.batest.md`, `interop_j3_varargs_array_double_wrap_parity.batest.md`, `interop_j2_string_case_mapping_default_locale.batest.md`, `interop_j3_java_array_return_null_elements.batest.md`, `interop_j2_curated_nullability_and_map_entry_immutability.batest.md`, `interop_j2_java_iterable_next_io.batest.md`, `interop_j3_sam_adapter_missing_inbound_check.batest.md`) and sister vectors covering `java/lang/curated.ba`, `java/util/curated.ba`, `AxiomData`, `JavaNullability`, `JavaTypeBridge`, `ControlAndOpEmitter`, and `Faces`.
+Promoted from `BIP032` quarantine (`interop_j2_container_element_tostring_hashcode.batest.md`, `interop_j2_string_format_volatile_tostring.batest.md`, `interop_j3_varargs_array_double_wrap_parity.batest.md`, `interop_j2_string_case_mapping_default_locale.batest.md`, `interop_j3_java_array_return_null_elements.batest.md`, `interop_j2_curated_nullability_and_map_entry_immutability.batest.md`, `interop_j2_java_iterable_next_io.batest.md`, `interop_j3_sam_adapter_missing_inbound_check.batest.md`, `interop_j2_iterator_view_unique_alias.batest.md`) and sister vectors covering `java/lang/curated.ba`, `java/util/curated.ba`, `AxiomData`, `JavaNullability`, `JavaTypeBridge`, `JavaCallResultOrigins`, `ControlAndOpEmitter`, and `Faces`.
 
 ## String.format with volatile toString must not be accepted in deterministic function
 
@@ -251,4 +251,110 @@ def f = fn (xs: list of int): int -> (
     xs.hashCode() + string(xs).length() + array.of("a").hashCode() + set(R(2)).hashCode()
 )
 assert(f(list(1, 2)) == f(list(1, 2)) and string(java.util.Map.entry("a", 2)) == "a=2")
+```
+
+## A live iterator over a unique list keeps it from being consumed
+
+```babble
+def take = fn (unique xs: list of int): list of int -> (def r = list(from: move(xs)) ; r.add(9) ; r)
+def t = fn (): string -> (
+    def a = list(1, 2)
+    def it = a.iterator()
+    def b = take(a)
+    var s = ""
+    while it.hasNext() then (s = s + string(it.next()))
+    s + string(b)
+)
+```
+
+```error
+Argument for unique parameter xs must be unique
+```
+
+## A live listIterator over a unique list keeps it from being consumed
+
+```babble
+def take = fn (unique xs: list of int): list of int -> (def r = list(from: move(xs)) ; r.add(9) ; r)
+def t = fn (): string -> (
+    def a = list(1)
+    def it = a.listIterator()
+    string(take(a)) + string(it.next())
+)
+```
+
+```error
+Argument for unique parameter xs must be unique
+```
+
+## A live entry set iterator over a unique map keeps it from being consumed
+
+```babble
+def take = fn (unique m: map of (string, int)): int -> (def r = map(from: move(m)) ; r.size())
+def t = fn (): string -> (
+    def m = map of (string, int) ()
+    m.put("a", 1)
+    def it = m.entrySet().iterator()
+    string(take(m)) + string(it.next())
+)
+```
+
+```error
+Argument for unique parameter m must be unique
+```
+
+## Live iterators over a view, a key set or a set keep their unique owner from being consumed
+
+```babble
+def takeL = fn (unique xs: list of int): int -> (def r = list(from: move(xs)) ; r.size())
+def takeS = fn (unique s: set of int): int -> (def r = set(from: move(s)) ; r.size())
+def t = fn (): int -> (
+    def a = list(1, 2)
+    def s = set(1)
+    def i1 = a.subList(0, 2).iterator()
+    def i2 = s.iterator()
+    takeL(a) + takeS(s) + i1.next() + i2.next()
+)
+```
+
+```error
+Argument for unique parameter xs must be unique
+```
+
+## A live key set iterator over a unique map keeps it from being consumed
+
+```babble
+def take = fn (unique m: map of (string, int)): int -> (def r = map(from: move(m)) ; r.size())
+def t = fn (): string -> (
+    def m = map of (string, int) ()
+    m.put("a", 1)
+    def it = m.keySet().iterator()
+    string(take(m)) + it.next()
+)
+```
+
+```error
+Argument for unique parameter m must be unique
+```
+
+## Iterating a unique local or a parameter through an iterator stays pure
+
+```babble
+def sumIt = fn (xs: list of int): int -> (
+    def it = xs.iterator()
+    var s = 0
+    while it.hasNext() then (s += it.next())
+    s
+)
+def local = fn (): int -> (
+    def a = list(1, 2, 3)
+    def it = a.iterator()
+    var s = 0
+    while it.hasNext() then (s += it.next())
+    s
+)
+println(sumIt(list(4, 5)) + local())
+```
+
+```stdout
+15
 ```
