@@ -1230,9 +1230,9 @@ final class JavaTypeBridge {
     }
 
     /**
-     * The Babble function type of a Java method under a type-variable environment : plain
-     * parameters (a Java caller passes ordinary references, never {@code unique} or {@code mut}
-     * ones) and the Java return type.
+     * The Babble function type of a Java method under a type-variable environment : its parameters
+     * and the Java return type. A Java caller keeps the references it passes, so an implementation
+     * may borrow or retain them but never demand their ownership ({@code unique}).
      */
     static Type.Function javaMethodFunctionType(Method method, Map<TypeVariable<?>, Type> env) {
         java.lang.reflect.Type[] genericParams = method.getGenericParameterTypes();
