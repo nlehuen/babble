@@ -695,7 +695,13 @@ final class CallEffectAnalyzer {
                     w.absorbElementIntoLocalContainer(recvOrig.uniqueOwner, argOrigins[i]);
                 }
                 if (!uniqueP && argOrigins[i].owned() && argOrigins[i].uniqueOwner != null) {
-                    w.demoteUniqueOwner(argOrigins[i].uniqueOwner, Reachability.Origin.IMMUTABLE);
+                    // A mut receiver that may keep the argument passes its provenance on to it.
+                    w.demoteUniqueOwner(
+                            argOrigins[i].uniqueOwner,
+                            effectiveMutRecv ? recvOrig : Reachability.Origin.IMMUTABLE);
+                }
+                if (effectiveMutRecv) {
+                    StoredValueEscapes.taintReachableLocals(w, argOrigins[i], recvOrig);
                 }
                 w.markStoredOrigin(argOrigins[i], "Java call argument", argExprs[i]);
             }
@@ -1530,8 +1536,13 @@ final class CallEffectAnalyzer {
                     w.absorbElementIntoLocalContainer(recvOrig.uniqueOwner, effectiveArgOrig);
                 }
                 if (!uniqueP && effectiveArgOrig.owned() && effectiveArgOrig.uniqueOwner != null) {
+                    // A mut receiver that may keep the argument passes its provenance on to it.
                     w.demoteUniqueOwner(
-                            effectiveArgOrig.uniqueOwner, Reachability.Origin.IMMUTABLE);
+                            effectiveArgOrig.uniqueOwner,
+                            effectiveMutRecv ? recvOrig : Reachability.Origin.IMMUTABLE);
+                }
+                if (effectiveMutRecv) {
+                    StoredValueEscapes.taintReachableLocals(w, effectiveArgOrig, recvOrig);
                 }
                 if (mutCopiedSpread && argOrigins[i].owned() && argOrigins[i].uniqueOwner != null) {
                     w.demoteUniqueOwner(argOrigins[i].uniqueOwner, Reachability.Origin.IMMUTABLE);

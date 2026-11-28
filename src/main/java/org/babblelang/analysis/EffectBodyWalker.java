@@ -1418,8 +1418,11 @@ final class EffectBodyWalker {
             return;
         }
         if (value.owned() && value.uniqueOwner != null) {
-            demoteUniqueOwner(value.uniqueOwner, Reachability.Origin.IMMUTABLE);
+            // The stored local is now reachable from the target : it inherits the target's
+            // provenance, so returning it later is not a fresh unique result (BIP032 round 10).
+            demoteUniqueOwner(value.uniqueOwner, target);
         }
+        StoredValueEscapes.taintReachableLocals(this, value, target);
         // Storing `this` (or a sub-reference of `this`) back into `this`'s own field does not
         // escape `this`!
         boolean storingIntoSelfThis =
