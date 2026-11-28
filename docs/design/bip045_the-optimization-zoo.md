@@ -23,6 +23,7 @@ Every exhibit in this Zoo shows a **tiny Before / After pair written in Babble**
 - For pure HIR rewrites (Enclosures 1–8), **After** is the direct source-level equivalent of the optimized program.
 - For representation, dispatch, and packaging optimizations (Enclosure 9), **After** illustrates the equivalent runtime work that remains after the compiler removes allocations, boxing, indirection, or unused code.
 - Each exhibit also notes its **optimization level**, **target backends**, **implementing pass/source**, **required static facts**, and **soundness boundary** (when the compiler deliberately refuses to fire).
+- Every exhibit in this document is automatically parsed, formatted, executed across `interpret`/`-O0`/`-O1`/`-O2`, checked for `-O2` canonical HIR equivalence (or backend lowering), and checked for compiler determinism by [`OptimizationZooTestCase.java`](../../src/test/java/org/babblelang/tests/OptimizationZooTestCase.java).
 
 ### Optimization Levels & Pipeline Architecture
 
@@ -292,8 +293,8 @@ def classify = fn (x: int): string -> (
         case 2..10 then ("small")
         else ("large")
     match x
-        case def n if false then ("never")
-        case def n if true then (tag)
+        case 0 if false then ("never")
+        case > 0 if true then (tag)
         else ("none")
 )
 ```
@@ -301,7 +302,9 @@ def classify = fn (x: int): string -> (
 **After**
 ```babble
 def classify = fn (x: int): string -> (
-    "small"
+    match x
+        case > 0 then ("small")
+        else ("none")
 )
 ```
 
@@ -344,19 +347,19 @@ Applies exact algebraic laws for Babble's floored `//` and `mod`: unit divisors 
 
 **Before**
 ```babble
-def mods = fn (x: int, s: short, b: int): int -> (
+def mods = fn (x: int, b: int): int -> (
     def p = (x mod b) mod b
-    def q = (s * 7) // 7
-    def r = (x // 1) + (x mod 1)
-    p + q + r
+    def q = (x // 1) + (x mod 1) + (0 mod 5) + (5 // 5)
+    p + q + (x // -1)
 )
 ```
 
 **After**
 ```babble
-def mods = fn (x: int, s: short, b: int): int -> (
+def mods = fn (x: int, b: int): int -> (
     def p = x mod b
-    p + s + x
+    def q = x + 1
+    p + q + (-x)
 )
 ```
 
@@ -399,14 +402,14 @@ Eliminates double boolean negation (`not (not b) -> b`), pushes `not` into all s
 **Before**
 ```babble
 def check = fn (a: int, b: int, x: double, flag: bool): bool -> (
-    not (a < b) and (not (not flag) == true) and (x == x)
+    (x == x) and (not (not flag) == true) and not (a < b)
 )
 ```
 
 **After**
 ```babble
 def check = fn (a: int, b: int, x: double, flag: bool): bool -> (
-    (a >= b) and flag
+    flag and (a >= b)
 )
 ```
 
@@ -510,17 +513,17 @@ Tracks value numbers down the dominator tree for pure arithmetic, pure determini
 
 **Before**
 ```babble
-def hypot2 = fn (x: double, y: double): double -> (
-    def a = java.lang.Math.sqrt(x * x + y * y) + 1.0
-    def b = java.lang.Math.sqrt(x * x + y * y) * 2.0
+def hypot2 = fn (d: double): double -> (
+    def a = java.lang.Math.sqrt(d) + 1.0
+    def b = java.lang.Math.sqrt(d) * 2.0
     a + b
 )
 ```
 
 **After**
 ```babble
-def hypot2 = fn (x: double, y: double): double -> (
-    def cse0 = java.lang.Math.sqrt(x * x + y * y)
+def hypot2 = fn (d: double): double -> (
+    def cse0 = java.lang.Math.sqrt(d)
     def a = cse0 + 1.0
     def b = cse0 * 2.0
     a + b
@@ -566,21 +569,35 @@ Forwards a dominating store `obj.x = v` directly to subsequent dominated reads `
 
 **Before**
 ```babble
-def Box = class (var v: int) ()
+def Box = class (v0: int) (
+    var v = v0
+    def setAndDouble = fn mut (nv: int): int -> (
+        this.v = nv
+        this.v + this.v
+    )
+)
 
-def update = fn (unique a: Box, unique b: Box): int -> (
-    a.v = 10
-    b.v = 20  ;; disjoint unique param: cannot alias `a`!
-    a.v + b.v
+def disjoint = fn (unique a: Box, unique b: Box): int -> (
+    def x = a.v
+    b.v = 20  ;; disjoint unique param : cannot alias `a`!
+    x + a.v
 )
 ```
 
 **After**
 ```babble
-def update = fn (unique a: Box, unique b: Box): int -> (
-    a.v = 10
+def Box = class (v0: int) (
+    var v = v0
+    def setAndDouble = fn mut (nv: int): int -> (
+        this.v = nv
+        nv + nv
+    )
+)
+
+def disjoint = fn (unique a: Box, unique b: Box): int -> (
+    def x = a.v
     b.v = 20
-    30
+    x + x
 )
 ```
 
@@ -599,10 +616,12 @@ Computes backward liveness over frame-scoped functions to delete unused local `d
 ```babble
 def sumOnly = fn (n: int): int -> (
     var live = 0
-    var dead = 0
-    for i in 0..<n then (
+    var dead = 1
+    var i = 0
+    while i < n then (
         live += i
-        dead += i * 2
+        dead = dead * 3 + 1
+        i += 1
     )
     live
 )
@@ -612,8 +631,10 @@ def sumOnly = fn (n: int): int -> (
 ```babble
 def sumOnly = fn (n: int): int -> (
     var live = 0
-    for i in 0..<n then (
+    var i = 0
+    while i < n then (
         live += i
+        i += 1
     )
     live
 )
@@ -783,7 +804,8 @@ def quad = fn (n: int): int -> (
 **After**
 ```babble
 def quad = fn (n: int): int -> (
-    n * 4
+    def v = n * 2
+    v * 2
 )
 ```
 
@@ -893,8 +915,9 @@ For non-inlined, capture-free functions taking `@BORROWED` `record` parameters a
 def Vec3 = record (x: double, y: double, z: double) ()
 
 def heavyScore = fn (a: Vec3, b: Vec3): double -> (
-    ;; Suppose this body is too large (> 35 nodes) to inline,
-    ;; and only reads fields of `a` and `b`:
+    ;; Non-trailing return keeps heavyScore out of InlinePass;
+    ;; UnboxedBorrowSpecializer still flattens `a` and `b` into 6 scalar params:
+    if a.x < 0.0 then (return 0.0)
     a.x * b.x + a.y * b.y + a.z * b.z
 )
 
@@ -909,6 +932,7 @@ def heavyScore_unboxed = fn (
     a_x: double, a_y: double, a_z: double,
     b_x: double, b_y: double, b_z: double
 ): double -> (
+    if a_x < 0.0 then (return 0.0)
     a_x * b_x + a_y * b_y + a_z * b_z
 )
 
@@ -987,11 +1011,13 @@ Hoists loop-invariant pure calls, complex arithmetic/divisions, `arr.size()`, mo
 
 **Before**
 ```babble
-def scaleAll = fn (xs: array of double, factor: double): double -> (
+def Limit = record (k: int) ()
+
+def scaleAll = fn (lim: Limit, a: int, b: int, factor: double): double -> (
     var sum = 0.0
     var i = 0
-    while i < xs.size() then (
-        sum += xs.get(i) * java.lang.Math.sqrt(factor)
+    while i < a * b + lim.k then (
+        sum += i * java.lang.Math.sqrt(factor)
         i += 1
     )
     sum
@@ -1000,13 +1026,13 @@ def scaleAll = fn (xs: array of double, factor: double): double -> (
 
 **After**
 ```babble
-def scaleAll = fn (xs: array of double, factor: double): double -> (
+def scaleAll = fn (lim: Limit, a: int, b: int, factor: double): double -> (
     var sum = 0.0
     var i = 0
-    def licm0 = xs.size()
+    def licm0 = a * b + lim.k
     def licm1 = java.lang.Math.sqrt(factor)
     while i < licm0 then (
-        sum += xs.get(i) * licm1
+        sum += i * licm1
         i += 1
     )
     sum
@@ -1159,11 +1185,11 @@ When a pipeline maps through a unary `injective` function `f` and then deduplica
 
 **Before**
 ```babble
-def tag = fn injective (x: int): string -> (
-    "id:" + x
+def tag = fn injective (s: string): string -> (
+    "id:" + s
 )
 
-def uniqueTags = fn (xs: list of int): list of string -> (
+def uniqueTags = fn (xs: list of string): list of string -> (
     def seen = set of string ()
     def out = list of string ()
     for x in xs then (
@@ -1176,8 +1202,8 @@ def uniqueTags = fn (xs: list of int): list of string -> (
 
 **After**
 ```babble
-def uniqueTags = fn (xs: list of int): list of string -> (
-    def seen = set of int ()
+def uniqueTags = fn (xs: list of string): list of string -> (
+    def seen = set of string ()
     def out = list of string ()
     for x in xs then (
         if seen.add(x) then (
@@ -1591,7 +1617,8 @@ def jointSat = fn (): double -> (
     var total = 0.0
     ;; Zero list allocation, zero filter branch, 51 iterations instead of 5,001!
     for x in 0..50 then (
-        total += x * 10.0 + 5.0
+        def s = x * 10.0 + 5.0
+        total += s
     )
     total
 )
@@ -1624,11 +1651,9 @@ def march = fn (n: int, k: double): double -> (
     var pos_x = 0.0
     var pos_y = 0.0
     def licm0 = java.lang.Math.sqrt(k)
-    var i = 0
-    while i < n then (
+    for i in 0..<n then (
         pos_x = pos_x + 1.0 * licm0
         pos_y = pos_y + 2.0 * licm0
-        i += 1
     )
     pos_x + pos_y
 )
