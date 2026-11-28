@@ -298,27 +298,33 @@ public final class BuiltinAxioms {
         if (cached != null) {
             return cached;
         }
-        String resourcePath = AXIOMS_RESOURCE_ROOT + "builtins.ba";
-        ClassLoader cl = BuiltinAxioms.class.getClassLoader();
-        Map<String, Type.Function> loaded = new LinkedHashMap<>();
-        try (InputStream in =
-                cl != null
-                        ? cl.getResourceAsStream(resourcePath)
-                        : ClassLoader.getSystemResourceAsStream(resourcePath)) {
-            if (in != null) {
-                String source = new String(in.readAllBytes(), StandardCharsets.UTF_8);
-                parseAxiomFile(source, resourcePath, true, loaded);
+        synchronized (this) {
+            cached = builtinsCache;
+            if (cached != null) {
+                return cached;
             }
-        } catch (IOException e) {
-            throw new IllegalStateException(
-                    "Failed to read built-in axioms resource " + resourcePath, e);
+            String resourcePath = AXIOMS_RESOURCE_ROOT + "builtins.ba";
+            ClassLoader cl = BuiltinAxioms.class.getClassLoader();
+            Map<String, Type.Function> loaded = new LinkedHashMap<>();
+            try (InputStream in =
+                    cl != null
+                            ? cl.getResourceAsStream(resourcePath)
+                            : ClassLoader.getSystemResourceAsStream(resourcePath)) {
+                if (in != null) {
+                    String source = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+                    parseAxiomFile(source, resourcePath, true, loaded);
+                }
+            } catch (IOException e) {
+                throw new IllegalStateException(
+                        "Failed to read built-in axioms resource " + resourcePath, e);
+            }
+            Map<String, Type.Function> unmod = Collections.unmodifiableMap(loaded);
+            Set<Type.Function> idSet = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+            idSet.addAll(unmod.values());
+            builtinFnSet = idSet;
+            builtinsCache = unmod;
+            return unmod;
         }
-        Map<String, Type.Function> unmod = Collections.unmodifiableMap(loaded);
-        Set<Type.Function> idSet = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-        idSet.addAll(unmod.values());
-        builtinFnSet = idSet;
-        builtinsCache = unmod;
-        return unmod;
     }
 
     /** Whether {@code fn} is a built-in function type loaded from {@code builtins.ba}. */
