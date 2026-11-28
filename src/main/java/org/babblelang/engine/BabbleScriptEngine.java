@@ -143,6 +143,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     private final Map<String, ModuleId> compiledAs = new HashMap<>();
 
     private boolean allowAxioms = true;
+    private boolean allowTopLevelIO = true;
     private boolean bytecodeEffectAnalysis = true;
     private final HostEffects.Registry hostRegistrations = new HostEffects.Registry();
     private org.babblelang.analysis.BuiltinAxioms builtinAxioms =
@@ -198,6 +199,28 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     public boolean allowsAxioms() {
         synchronized (moduleLock) {
             return allowAxioms;
+        }
+    }
+
+    /**
+     * Controls whether top-level expressions and top-level {@code static} blocks may perform
+     * non-hermetic ({@code io}) effects during script or module initialization (default {@code
+     * true}). When {@code false}, the compiler rejects top-level {@code io}, dynamic {@code
+     * import(...)}, and static-block {@code io} at compile time before execution.
+     */
+    public BabbleScriptEngine allowTopLevelIO(boolean allow) {
+        synchronized (moduleLock) {
+            if (this.allowTopLevelIO != allow) {
+                this.allowTopLevelIO = allow;
+                this.moduleCache.clear();
+            }
+        }
+        return this;
+    }
+
+    public boolean allowsTopLevelIO() {
+        synchronized (moduleLock) {
+            return allowTopLevelIO;
         }
     }
 
@@ -300,7 +323,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     HostEffects hostEffects() {
         synchronized (moduleLock) {
             return hostRegistrations.toHostEffects(
-                    allowAxioms, bytecodeEffectAnalysis, builtinAxioms);
+                    allowAxioms, allowTopLevelIO, bytecodeEffectAnalysis, builtinAxioms);
         }
     }
 

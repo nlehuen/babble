@@ -72,3 +72,5 @@ export def build = fn (
     )
     Scene("cover", BVHNode.fromList(worldList), camera, seed)
 )
+
+export def scene = fn (): Scene -> (build())

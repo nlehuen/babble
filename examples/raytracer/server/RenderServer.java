@@ -14,7 +14,10 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
@@ -32,29 +35,36 @@ import org.babblelang.engine.BabbleScriptEngine;
 import org.babblelang.engine.BabbleScriptEngineFactory;
 import org.babblelang.engine.BabbleSession;
 import org.babblelang.engine.FileModuleSource;
+import org.babblelang.engine.ModuleId;
+import org.babblelang.engine.ModuleSource;
+import org.babblelang.engine.ModuleText;
 import org.babblelang.engine.impl.natives.java.JavaObject;
 import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.Callable;
 import org.babblelang.runtime.JavaValue;
+import org.babblelang.runtime.LogicalPaths;
 import org.babblelang.runtime.Module;
 import org.babblelang.runtime.ScriptRuntime;
 
 /**
  * Dedicated warm-JVM HTTP render server for fast iteration on Babble raytracer scenes.
  *
- * <p>Embeds a single warm {@link BabbleScriptEngine} rooted at {@code examples/raytracer} so all
- * {@code core/} and {@code io/jvm/} modules stay compiled and C2-JITted across requests (with
- * automatic SHA-256 hot-reload if any file on disk changes).
+ * <p>Embeds a single warm {@link BabbleScriptEngine} rooted at {@code examples/raytracer} with
+ * compiler-enforced hermetic sandboxing ({@code allowAxioms(false)}, {@code allowTopLevelIO(false)},
+ * and blocked {@code io/} imports for client modules). All {@code core/} and {@code io/jvm/}
+ * modules stay compiled and C2-JITted across requests (with automatic SHA-256 hot-reload if any
+ * file on disk changes).
  *
  * <p>Endpoints:
  *
  * <ul>
  *   <li>{@code GET /health} — JSON server status & counters
  *   <li>{@code POST /warmup} — pre-compiles core modules and runs a tiny warmup render
- *   <li>{@code POST /render?<options>} — compiles & evaluates Babble source defining {@code scene}
- *       ({@code Scene}, {@code Hittable}, or {@code HittableList}), a final expression, {@code
- *       world}, or {@code build()}, and returns {@code image/png} (single view, multi-angle
- *       turntable contact sheet, or 4-panel reference diff strip) or {@code application/json}
+ *   <li>{@code POST /render?<options>} — compiles & verifies a hermetic Babble client module
+ *       exporting {@code export def scene = fn (): Scene | Hittable | HittableList -> (...)}
+ *       (zero {@code io}, zero {@code axiom}, zero top-level/static-block {@code io}), and returns
+ *       {@code image/png} (single view, multi-angle turntable contact sheet, or 4-panel reference
+ *       diff strip) or {@code application/json}
  * </ul>
  */
 public final class RenderServer implements Closeable {
@@ -63,14 +73,10 @@ public final class RenderServer implements Closeable {
     private static final int MAX_PENDING_REQUESTS = 8;
     private static final String BRIDGE_PATH = "io/jvm/render_bridge.ba";
 
-    private static final CallSite SITE_IS_RENDERABLE =
-            new CallSite("<render-server>", 1, "render_bridge.isRenderable", new String[] {"target"});
     private static final CallSite SITE_PREPARE =
             new CallSite("<render-server>", 1, "render_bridge.prepareTarget", new String[] {"target"});
     private static final CallSite SITE_RENDER =
             new CallSite("<render-server>", 1, "render_bridge.renderTarget", new String[] {"target"});
-    private static final CallSite SITE_BUILD =
-            new CallSite("<render-server>", 1, "build", new String[0]);
     private static final CallSite SITE_WARMUP =
             new CallSite("<render-server>", 1, "render_bridge.warmupBridge", new String[] {"threads"});
 
@@ -89,6 +95,7 @@ public final class RenderServer implements Closeable {
 
     private final Config config;
     private final Path realRoot;
+    private final SandboxModuleSource moduleSource;
     private final BabbleScriptEngine engine;
     private final HttpServer httpServer;
     private final ExecutorService httpExecutor;
@@ -101,11 +108,14 @@ public final class RenderServer implements Closeable {
     public RenderServer(Config config) throws IOException {
         this.config = config;
         this.realRoot = config.root().toRealPath();
+        this.moduleSource = new SandboxModuleSource(FileModuleSource.rooted(realRoot));
 
         this.engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         this.engine.put(BabbleScriptEngine.MODE, BabbleScriptEngine.Mode.COMPILE);
         this.engine.put(BabbleCompiler.OPT_LEVEL, config.optLevel());
-        this.engine.put(BabbleScriptEngine.MODULE_SOURCE, FileModuleSource.rooted(realRoot));
+        this.engine.put(BabbleScriptEngine.MODULE_SOURCE, moduleSource);
+        this.engine.allowAxioms(false);
+        this.engine.allowTopLevelIO(false);
 
         this.httpExecutor =
                 Executors.newFixedThreadPool(
@@ -282,23 +292,21 @@ public final class RenderServer implements Closeable {
             BabbleSession session = engine.newSession(ctx);
             ScriptRuntime rt = engine.createRuntime(ctx);
 
-            String virtualName = resolveVirtualSourceName(source, opts.sourceName());
+            String clientPath;
+            try {
+                clientPath = resolveVirtualSourceName(source, opts.sourceName());
+            } catch (IllegalArgumentException e) {
+                sendText(exchange, 400, "Error : " + e.getMessage());
+                return;
+            }
             long c0 = System.nanoTime();
-            Object evalResult;
             Module bridge;
             Object preparedTarget;
+            moduleSource.setClientModule(clientPath, source);
             try {
-                evalResult = session.eval(source, virtualName);
+                String harness = buildHermeticHarness(clientPath);
+                Object rawTarget = session.eval(harness, "__harness__.ba");
                 bridge = loadBridge(session);
-                Object rawTarget = resolveTarget(session, evalResult, bridge, rt);
-                if (rawTarget == null) {
-                    sendText(
-                            exchange,
-                            400,
-                            "Error : Script did not produce a Scene, Hittable, or HittableList "
-                                    + "(define `scene`, `world`, `build`, or return one as the final expression)");
-                    return;
-                }
                 Callable prepareFn = asCallable(bridge.getMember("prepareTarget", true));
                 preparedTarget =
                         prepareFn.call(rt, new Object[] {rawTarget}, null, SITE_PREPARE);
@@ -310,6 +318,8 @@ public final class RenderServer implements Closeable {
                 String diag = formatDiagnostics(err.toString(), e.getMessage());
                 sendText(exchange, 400, diag);
                 return;
+            } finally {
+                moduleSource.clearClientModule();
             }
             compileMs = (System.nanoTime() - c0) / 1_000_000L;
 
@@ -406,38 +416,21 @@ public final class RenderServer implements Closeable {
         return m;
     }
 
-    private Object resolveTarget(
-            BabbleSession session, Object evalResult, Module bridge, ScriptRuntime rt) {
-        Callable isRenderable = asCallable(bridge.getMember("isRenderable", true));
-
-        Object sceneBinding = session.peek("scene");
-        if (checkRenderable(isRenderable, rt, sceneBinding)) {
-            return sceneBinding;
-        }
-        if (checkRenderable(isRenderable, rt, evalResult)) {
-            return evalResult;
-        }
-        Object worldBinding = session.peek("world");
-        if (checkRenderable(isRenderable, rt, worldBinding)) {
-            return worldBinding;
-        }
-        Object buildBinding = session.peek("build");
-        if (buildBinding instanceof Callable buildFn) {
-            Object built = buildFn.call(rt, new Object[0], null, SITE_BUILD);
-            if (checkRenderable(isRenderable, rt, built)) {
-                return built;
-            }
-        }
-        return null;
-    }
-
-    private static boolean checkRenderable(
-            Callable isRenderable, ScriptRuntime rt, Object candidate) {
-        if (candidate == null) {
-            return false;
-        }
-        Object ok = isRenderable.call(rt, new Object[] {candidate}, null, SITE_IS_RENDERABLE);
-        return Boolean.TRUE.equals(ok);
+    /**
+     * Generates a 4-line typed Babble harness that statically imports the client module and binds
+     * its {@code export def scene} to a hermetic (non-{@code io}) 0-argument function type
+     * returning {@code core.Scene | core.Hittable | core.HittableList}. Combined with {@code
+     * engine.allowAxioms(false)}, {@code engine.allowTopLevelIO(false)}, and {@link
+     * SandboxModuleSource}, Babble's compiler rejects any {@code io} (top-level, static block,
+     * inside {@code scene}, or inside returned geometry/material callbacks) before execution.
+     */
+    private static String buildHermeticHarness(String clientPath) {
+        return "def __core = import(\"/core/core.ba\")\n"
+                + "def __client = import(\"/"
+                + clientPath
+                + "\")\n"
+                + "def __scene: fn volatile (): __core.Scene | __core.Hittable | __core.HittableList = __client.scene\n"
+                + "__scene()\n";
     }
 
     private static BufferedImage invokeRender(
@@ -503,24 +496,124 @@ public final class RenderServer implements Closeable {
 
     private static String resolveVirtualSourceName(String source, String explicitName) {
         if (explicitName != null && !explicitName.isBlank()) {
-            return explicitName;
+            String normalized = LogicalPaths.normalize(explicitName.trim());
+            if (normalized == null
+                    || !normalized.endsWith(".ba")
+                    || normalized.startsWith("io/")
+                    || normalized.equals("__bridge__.ba")
+                    || normalized.equals("__harness__.ba")) {
+                throw new IllegalArgumentException(
+                        "Invalid client sourceName (must be a .ba path outside io/) : "
+                                + explicitName);
+            }
+            return normalized;
         }
-        if (source.contains("import(\"../core/") || source.contains("import(\"../io/")) {
-            return "scenes/__render__.ba";
+        if (source.contains("import(\"../core/")) {
+            return "scenes/__client__.ba";
         }
-        return "__render__.ba";
+        return "__client__.ba";
     }
 
     private Path resolveReferencePath(String ref) {
         Path direct = realRoot.resolve(ref).normalize();
-        if (Files.isRegularFile(direct)) {
-            return direct;
-        }
-        Path cwdRel = Path.of(ref).toAbsolutePath().normalize();
-        if (Files.isRegularFile(cwdRel)) {
-            return cwdRel;
+        if (direct.startsWith(realRoot) && Files.isRegularFile(direct)) {
+            try {
+                Path real = direct.toRealPath();
+                if (real.startsWith(realRoot)) {
+                    return real;
+                }
+            } catch (IOException ignored) {
+                return null;
+            }
         }
         return null;
+    }
+
+    /**
+     * Sandboxed {@link ModuleSource} serving one virtual client module in memory (keyed by fixed
+     * logical path and SHA-256 content version for cache reuse without unbounded cache growth) and
+     * preventing client modules from importing anything under {@code io/}.
+     */
+    private static final class SandboxModuleSource implements ModuleSource {
+        private final FileModuleSource delegate;
+        private volatile String clientPath;
+        private volatile ModuleText clientText;
+
+        SandboxModuleSource(FileModuleSource delegate) {
+            this.delegate = delegate;
+        }
+
+        void setClientModule(String path, String source) {
+            this.clientPath = path;
+            this.clientText = new ModuleText(source, sha256(source));
+        }
+
+        void clearClientModule() {
+            this.clientPath = null;
+            this.clientText = null;
+        }
+
+        @Override
+        public ModuleId resolve(String name, ModuleId importer) throws IOException {
+            String cp = clientPath;
+            String logical = LogicalPaths.resolve(name, importer != null ? importer.key() : null);
+            if (cp != null && cp.equals(logical)) {
+                return new ModuleId(cp, cp);
+            }
+            ModuleId resolved = delegate.resolve(name, importer);
+            if (resolved != null && resolved.key().startsWith("io/")) {
+                boolean trustedImporter =
+                        importer != null
+                                && ("__bridge__.ba".equals(importer.key())
+                                        || importer.key().startsWith("io/"));
+                if (!trustedImporter) {
+                    throw new IOException(
+                            "Import under io/ is forbidden in hermetic client modules : "
+                                    + resolved.key());
+                }
+            }
+            return resolved;
+        }
+
+        @Override
+        public ModuleId identify(String sourceName) {
+            String cp = clientPath;
+            if (cp != null && cp.equals(sourceName)) {
+                return new ModuleId(cp, cp);
+            }
+            return delegate.identify(sourceName);
+        }
+
+        @Override
+        public ModuleText read(ModuleId module) throws IOException {
+            String cp = clientPath;
+            ModuleText ct = clientText;
+            if (cp != null && ct != null && cp.equals(module.key())) {
+                return ct;
+            }
+            return delegate.read(module);
+        }
+
+        @Override
+        public String version(ModuleId module) throws IOException {
+            String cp = clientPath;
+            ModuleText ct = clientText;
+            if (cp != null && ct != null && cp.equals(module.key())) {
+                return ct.version();
+            }
+            return delegate.version(module);
+        }
+
+        private static String sha256(String text) {
+            try {
+                return HexFormat.of()
+                        .formatHex(
+                                MessageDigest.getInstance("SHA-256")
+                                        .digest(text.getBytes(StandardCharsets.UTF_8)));
+            } catch (NoSuchAlgorithmException e) {
+                throw new IllegalStateException("SHA-256 unavailable", e);
+            }
+        }
     }
 
     // ------------------------------------------------------------------ Query parsing

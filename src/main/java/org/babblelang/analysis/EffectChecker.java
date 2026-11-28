@@ -1599,9 +1599,9 @@ final class EffectChecker {
             verifyCallable(callable);
         }
 
-        // 3. Verify top-level / package / class static blocks for static mut exclusivity and
-        // parameter rules.
-        verifyTopLevelAndStatics(file);
+        // 3. Verify top-level / package / class static blocks for static mut exclusivity,
+        // parameter rules, and (when disabled on the engine) hermetic top-level initialization.
+        InitEffectAnalyzer.verifyTopLevelAndStatics(this, file);
 
         // 4. Populate call-site EffectSet map on ScopeAnalysis.
         recordAllCallEffects(file);
@@ -1820,96 +1820,6 @@ final class EffectChecker {
                         prefixMsg + " violates borrow guarantee of " + axiomLabel, fn);
                 break;
             }
-        }
-    }
-
-    private void verifyTopLevelAndStatics(BabbleParser.FileContext file) {
-        // Run EffectBodyWalker in unconstrained top-level mode to enforce mut exclusivity and
-        // unused-pure checks!
-        EffectBodyWalker top =
-                new EffectBodyWalker(
-                        this,
-                        file,
-                        pass.fileScope,
-                        List.of(),
-                        false,
-                        new boolean[0],
-                        new boolean[0],
-                        new boolean[0],
-                        false,
-                        false,
-                        ParsedPrefix.EMPTY,
-                        Set.of(),
-                        true);
-        for (BabbleParser.ExpressionContext expr : file.expression()) {
-            top.eval(expr);
-        }
-        verifyStaticBlocks(file, Set.of());
-    }
-
-    private void verifyStaticBlocks(ParseTree tree, Set<Effect> activeEnclosingConstraints) {
-        Set<Effect> nextConstraints = activeEnclosingConstraints;
-        if (tree instanceof BabbleParser.FunctionLiteralContext fn) {
-            ParsedPrefix p = parseFunctionPrefix(fn, false);
-            if (p.axiom()) {
-                return;
-            }
-            nextConstraints = p.effects();
-        }
-        if (tree instanceof BabbleParser.ClassExpressionContext cls && cls.staticBlock != null) {
-            checkConstrainedBlock(
-                    cls.staticBlock, pass.scopeNodes.get(cls.staticBlock), nextConstraints);
-        } else if (tree instanceof BabbleParser.InterfaceExpressionContext iface
-                && iface.staticBlock != null) {
-            checkConstrainedBlock(
-                    iface.staticBlock, pass.scopeNodes.get(iface.staticBlock), nextConstraints);
-        }
-        for (int i = 0; i < tree.getChildCount(); i++) {
-            verifyStaticBlocks(tree.getChild(i), nextConstraints);
-        }
-    }
-
-    private void checkConstrainedBlock(
-            BabbleParser.BlockContext block, ScopeNode scope, Set<Effect> constraints) {
-        ParsedPrefix req =
-                new ParsedPrefix(
-                        constraints.isEmpty()
-                                ? EnumSet.noneOf(Effect.class)
-                                : EnumSet.copyOf(constraints),
-                        false,
-                        false,
-                        false,
-                        false,
-                        false,
-                        false,
-                        false,
-                        !constraints.isEmpty());
-        EffectBodyWalker ba =
-                new EffectBodyWalker(
-                        this,
-                        block,
-                        scope,
-                        List.of(),
-                        false,
-                        new boolean[0],
-                        new boolean[0],
-                        new boolean[0],
-                        false,
-                        false,
-                        req,
-                        Set.of(),
-                        true);
-        ba.evalBlock(block, false, true);
-        if (constraints.contains(Effect.PURE) && !ba.hermetic) {
-            checker.effectDiagnostic(
-                    "static block inside pure function violates pure guarantee", block);
-        } else if (constraints.contains(Effect.HERMETIC) && !ba.hermetic) {
-            checker.effectDiagnostic(
-                    "static block inside hermetic function violates hermetic guarantee", block);
-        } else if (constraints.contains(Effect.DETERMINISTIC) && !ba.deterministic) {
-            checker.effectDiagnostic(
-                    "static block inside deterministic function violates deterministic guarantee",
-                    block);
         }
     }
 

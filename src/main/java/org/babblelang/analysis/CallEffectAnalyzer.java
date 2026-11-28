@@ -132,7 +132,16 @@ final class CallEffectAnalyzer {
             return evalCoreConversionCall(resType, argExprs);
         }
         if (isImportCall(calleeExpr)) {
-            w.hermetic = false;
+            boolean staticTopLevelHermeticImport = false;
+            if (w.owner instanceof BabbleParser.FileContext) {
+                ModuleInterface imported = ec.pass.modules.get(call);
+                if (imported != null && imported.isInitHermetic()) {
+                    staticTopLevelHermeticImport = true;
+                }
+            }
+            if (!staticTopLevelHermeticImport) {
+                w.hermetic = false;
+            }
             w.deterministic = false;
             w.nothrow = false;
             w.terminating = false;

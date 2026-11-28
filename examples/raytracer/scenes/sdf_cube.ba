@@ -185,3 +185,5 @@ export def build = fn (
     )
     Scene("sdf-cube", BVHNode.fromList(worldList), camera, seed)
 )
+
+export def scene = fn (): Scene -> (build())

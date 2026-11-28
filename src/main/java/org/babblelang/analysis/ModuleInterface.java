@@ -25,6 +25,7 @@ public final class ModuleInterface {
     private TypeChecks checks;
     private TypedModuleSummary summary;
     private volatile boolean hasDynamicImport;
+    private volatile boolean initHermetic = true;
     private volatile ClassLoader compiledClassLoader;
     private volatile Map<String, String> interfaceJvmNames = Map.of();
     private volatile Map<String, String> classJvmNames = Map.of();
@@ -89,6 +90,18 @@ public final class ModuleInterface {
 
     void markDynamicImport() {
         this.hasDynamicImport = true;
+    }
+
+    void setInitHermetic(boolean initHermetic) {
+        this.initHermetic = initHermetic;
+    }
+
+    /**
+     * Whether this module's top-level initialization expressions and top-level {@code static}
+     * blocks perform no ambient {@code io} (hermetic module initialization).
+     */
+    public boolean isInitHermetic() {
+        return initHermetic;
     }
 
     /**
