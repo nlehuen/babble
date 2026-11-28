@@ -12,7 +12,8 @@ import java.util.Objects;
  * {@code unique} value although it may be the live local {@code a} itself : binding or consuming it
  * would then never demote {@code a} ({@code BIP032} round 8). Like {@code def alias = a}, a branch
  * value whose owner the join drops aliases that owner, which is demoted, and the joined value stops
- * being {@code unique}.
+ * being {@code unique}. Returned as is, the join is {@code unique} again : the owners it may alias
+ * are the returning frame's own, which die with it, exactly as for {@code return a}.
  */
 final class BranchValueJoins {
 
@@ -41,8 +42,22 @@ final class BranchValueJoins {
                 dropped = true;
             }
         }
-        return dropped && joined.owned()
-                ? joined.demoteAlias(Reachability.Origin.IMMUTABLE)
-                : joined;
+        if (!dropped || !joined.owned()) {
+            return joined;
+        }
+        Reachability.Origin demoted = joined.demoteAlias(Reachability.Origin.IMMUTABLE);
+        if (joined.unique) {
+            w.uniqueBranchJoins.put(demoted, joined);
+        }
+        return demoted;
+    }
+
+    /**
+     * The origin a function returning {@code value} returns : the {@code unique} join {@link
+     * #settle} demoted when {@code value} is exactly that demoted join, else {@code value}.
+     */
+    static Reachability.Origin atReturn(EffectBodyWalker w, Reachability.Origin value) {
+        Reachability.Origin unique = w.uniqueBranchJoins.get(value);
+        return unique != null ? unique : value;
     }
 }
