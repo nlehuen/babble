@@ -1,6 +1,6 @@
 # Soundness regressions : `ownership` (`O2`, `O3`, `O4`) unique capture, projection, fresh containers & exclusivity
 
-Promoted from `BIP032` quarantine (`ownership_o3_closure_capture_unique_fbip.batest.md`, `ownership_o4_collection_get_mut_exclusivity.batest.md`, `ownership_o4_mut_exclusivity_field_alias.batest.md`, `ownership_o4_mut_exclusivity_closure_capture.batest.md`, `ownership_o4_mut_exclusivity_match_rest_slice.batest.md`, `ownership_o3_fresh_container_view_aliases_shared_arg.batest.md`, `ownership_o4_mut_exclusivity_container_and_recurse.batest.md`, `ownership_o4_mut_exclusivity_loop_match_closure_alias.batest.md`, `effects_e2_operator_method_launders_calling_and_borrow.batest.md`, `ownership_o3_branch_join_unique_alias.batest.md`) and sister vectors covering `InitEffectAnalyzer`, `MatchEffectAnalyzer`, `Reachability`, `EffectBodyWalker`, `OperatorAndLoopEffectAnalyzer`, `TryEffectAnalyzer`, `BranchValueJoins`, and `CallEffectAnalyzer`.
+Promoted from `BIP032` quarantine (`ownership_o3_closure_capture_unique_fbip.batest.md`, `ownership_o4_collection_get_mut_exclusivity.batest.md`, `ownership_o4_mut_exclusivity_field_alias.batest.md`, `ownership_o4_mut_exclusivity_closure_capture.batest.md`, `ownership_o4_mut_exclusivity_match_rest_slice.batest.md`, `ownership_o3_fresh_container_view_aliases_shared_arg.batest.md`, `ownership_o4_mut_exclusivity_container_and_recurse.batest.md`, `ownership_o4_mut_exclusivity_loop_match_closure_alias.batest.md`, `effects_e2_operator_method_launders_calling_and_borrow.batest.md`, `ownership_o3_branch_join_unique_alias.batest.md`, `ownership_o3_stored_local_returned_unique.batest.md`) and sister vectors covering `InitEffectAnalyzer`, `MatchEffectAnalyzer`, `Reachability`, `EffectBodyWalker`, `OperatorAndLoopEffectAnalyzer`, `TryEffectAnalyzer`, `BranchValueJoins`, `StoredValueEscapes`, and `CallEffectAnalyzer`.
 
 ```babble
 ;; babble preamble
@@ -716,6 +716,66 @@ def pick = fn (c: bool): list of int -> (
     if c then (a) else (b)
 )
 println(string(consume(pick(true))) + string(consume(pick(false))))
+```
+
+```stdout
+[1, 99][2, 99]
+```
+
+## A local stored into a mut parameter's field or list is not a unique result
+
+```babble
+def LB = class (var xs: (list of int)?) ()
+def viaField = fn (mut b: LB): list of int -> (def a = list(1) ; b.xs = a ; a)
+def viaList = fn (mut s: list of (list of int)): list of int -> (def a = list(1) ; s.add(a) ; a)
+def t = fn (): int -> (
+    def s = list of (list of int) ()
+    consume(viaField(LB(null))).size() + consume(viaList(s)).size()
+)
+```
+
+```error
+Argument for unique parameter xs must be unique
+```
+
+## A local stored into this is not a unique result
+
+```babble
+def H = class (var xs: (list of int)?) (
+    def mk = fn mut (): list of int -> (def a = list(1) ; this.xs = a ; a)
+)
+def t = fn (): string -> (def h = H(null) ; def r = consume(h.mk()) ; string(h.xs) + string(r))
+```
+
+```error
+Argument for unique parameter xs must be unique
+```
+
+## A local inside a fresh container that escapes is not a unique result
+
+```babble
+def LB = class (var xs: (list of int)?) ()
+def mk = fn (mut sink: list of LB): list of int -> (
+    def a = list(1)
+    def box = LB(null)
+    box.xs = a
+    sink.add(box)
+    a
+)
+def t = fn (): string -> (def s = list of LB () ; def r = consume(mk(s)) ; string(s.get(0).xs) + string(r))
+```
+
+```error
+Argument for unique parameter xs must be unique
+```
+
+## Fresh results and immutable stores into a mut parameter stay unique
+
+```babble
+def LB = class (var n: int) ()
+def mk = fn (mut b: LB): list of int -> (def a = list(1) ; b.n = a.size() ; a)
+def fresh = fn io (): list of int -> (list(2))
+println(string(consume(mk(LB(0)))) + string(consume(fresh())))
 ```
 
 ```stdout

@@ -1,6 +1,6 @@
 # Soundness regressions : `interop` (`J2`, `J3`) curated determinism, iterator views, Java varargs parity & array element nullness
 
-Promoted from `BIP032` quarantine (`interop_j2_container_element_tostring_hashcode.batest.md`, `interop_j2_string_format_volatile_tostring.batest.md`, `interop_j3_varargs_array_double_wrap_parity.batest.md`, `interop_j2_string_case_mapping_default_locale.batest.md`, `interop_j3_java_array_return_null_elements.batest.md`, `interop_j2_curated_nullability_and_map_entry_immutability.batest.md`, `interop_j2_java_iterable_next_io.batest.md`, `interop_j3_sam_adapter_missing_inbound_check.batest.md`, `interop_j2_iterator_view_unique_alias.batest.md`) and sister vectors covering `java/lang/curated.ba`, `java/util/curated.ba`, `AxiomData`, `JavaNullability`, `JavaTypeBridge`, `JavaCallResultOrigins`, `ControlAndOpEmitter`, and `Faces`.
+Promoted from `BIP032` quarantine (`interop_j2_container_element_tostring_hashcode.batest.md`, `interop_j2_string_format_volatile_tostring.batest.md`, `interop_j3_varargs_array_double_wrap_parity.batest.md`, `interop_j2_string_case_mapping_default_locale.batest.md`, `interop_j3_java_array_return_null_elements.batest.md`, `interop_j2_curated_nullability_and_map_entry_immutability.batest.md`, `interop_j2_java_iterable_next_io.batest.md`, `interop_j3_sam_adapter_missing_inbound_check.batest.md`, `interop_j2_iterator_view_unique_alias.batest.md`, `interop_j2_escaped_iterator_fresh_return.batest.md`) and sister vectors covering `java/lang/curated.ba`, `java/util/curated.ba`, `AxiomData`, `JavaNullability`, `JavaTypeBridge`, `JavaCallResultOrigins`, `StoredValueEscapes`, `ControlAndOpEmitter`, and `Faces`.
 
 ## String.format with volatile toString must not be accepted in deterministic function
 
@@ -334,6 +334,26 @@ def t = fn (): string -> (
 
 ```error
 Argument for unique parameter m must be unique
+```
+
+## A list whose iterator escaped into a mut sink is not a unique result
+
+```babble
+def take = fn (unique xs: list of int): list of int -> (def r = list(from: move(xs)) ; r.add(9) ; r)
+def mk = fn (mut sink: list of (java.util.Iterator of int)): list of int -> (
+    def a = list(1, 2)
+    sink.add(a.iterator())
+    a
+)
+def t = fn io (): string -> (
+    def its = list of (java.util.Iterator of int) ()
+    def b = take(mk(its))
+    string(its.get(0).next()) + string(b)
+)
+```
+
+```error
+Argument for unique parameter xs must be unique
 ```
 
 ## Iterating a unique local or a parameter through an iterator stays pure
