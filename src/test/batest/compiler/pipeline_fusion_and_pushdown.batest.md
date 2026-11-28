@@ -657,17 +657,18 @@ fn seqFold (n:int) -> int {pure unique}
   var(best)
 ```
 
-## List-source fusion into fresh output list (R1)
+## List-source fusion into fresh output list and local sum (R1)
 
 ```babble
 def listFuse = fn (xs: list of int): int -> (
     def tmp = list of int ()
     for x in xs then ( tmp.add(x + 1) )
     def out = list of int ()
-    for y in tmp then ( out.add(y * 2) )
-    out.size()
+    var s = 0
+    for y in tmp then ( out.add(y * 2); s += y )
+    out.size() + s
 )
-assert(listFuse((list of int).of(1, 2, 3)) == 3)
+assert(listFuse((list of int).of(1, 2, 3)) == 12)
 ```
 
 ```hir
@@ -678,10 +679,12 @@ fn listFuse (xs:obj) -> int {pure unique}
     (block
       (jcall List.add var(tmp) (+:int var(x) 1:int))))
   (def out (core-new list))
+  (def s 0:int)
   (for y in var(tmp)
     (block
-      (jcall List.add var(out) (*:int var(y) 2:int))))
-  (jcall List.size var(out))
+      (jcall List.add var(out) (*:int var(y) 2:int))
+      (set s += var(y))))
+  (+:int (jcall List.size var(out)) var(s))
 ```
 
 ```hir
@@ -692,21 +695,25 @@ fn listFuse (xs:obj) -> int {pure unique}
     (block
       (jcall List.add var(tmp) (+:int var(x) 1:int))))
   (def out (core-new list))
+  (def s 0:int)
   (for y in var(tmp)
     (block
-      (jcall List.add var(out) (*:int var(y) 2:int))))
-  (jcall List.size var(out))
+      (jcall List.add var(out) (*:int var(y) 2:int))
+      (set s += var(y))))
+  (+:int (jcall List.size var(out)) var(s))
 ```
 
 ```hir
 ;; hir -O2 fn=listFuse
 fn listFuse (xs:obj) -> int {pure unique}
   (def out (core-new list))
+  (def s 0:int)
   (for x in var(xs)
     (block
       (def y#0 (+:int var(x) 1:int))
-      (jcall List.add var(out) (*:int var(y#0) 2:int))))
-  (jcall List.size var(out))
+      (jcall List.add var(out) (*:int var(y#0) 2:int))
+      (set s += var(y#0))))
+  (+:int (jcall List.size var(out)) var(s))
 ```
 
 ## List-source alias conflict and stepped range bailout
@@ -776,5 +783,114 @@ fn listAliasBail (xs:obj) -> int {unique}
       (if (<=:bool var(k) 4:int) (box (set s += var(k))))))
   (+:int (jcall List.size var(xs)) var(s))
 ```
+
+## String pipeline with instance Java idempotent call and equality (R1)
+
+```babble
+def strPipe = fn (a: string, b: string): int -> (
+    def tmp = list of string ()
+    for i in 0..1 then ( tmp.add(if i == 0 then ( a ) else ( b )) )
+    var n = 0
+    for t in tmp then ( if t.trim() == "ok" then ( n += 1 ) )
+    n
+)
+assert(strPipe(" ok ", "no") == 1 and strPipe("ok", " ok ") == 2)
+```
+
+```hir
+;; hir -O0 fn=strPipe
+fn strPipe (a:obj, b:obj) -> int {pure unique}
+  (def tmp (core-new list))
+  (for-range i .. 0:int 1:int
+    (block
+      (jcall List.add var(tmp) (if (==:bool var(i) 0:int) (block var(a)) (block var(b))))))
+  (def n 0:int)
+  (for t in var(tmp)
+    (block
+      (if (==:bool (jcall String.trim var(t)) "ok") (box (block (set n += 1:int))))))
+  var(n)
+```
+
+```hir
+;; hir -O1 fn=strPipe
+fn strPipe (a:obj, b:obj) -> int {pure unique}
+  (def tmp (core-new list))
+  (for-range i .. 0:int 1:int
+    (block
+      (jcall List.add var(tmp) (if (==:bool var(i) 0:int) var(a) var(b)))))
+  (def n 0:int)
+  (for t in var(tmp)
+    (block
+      (if (==:bool (jcall String.trim var(t)) "ok") (box (set n += 1:int)))))
+  var(n)
+```
+
+```hir
+;; hir -O2 fn=strPipe
+fn strPipe (a:obj, b:obj) -> int {pure unique}
+  (def n 0:int)
+  (for-range i .. 0:int 1:int
+    (block
+      (def t#0 (if (==:bool var(i) 0:int) var(a) var(b)))
+      (if (==:bool (jcall String.trim var(t#0)) "ok") (box (set n += 1:int)))))
+  var(n)
+```
+
+## Fused unary neg, floor-div and boolean not filter (R1)
+
+```babble
+def negNotPipe = fn (n: int): int -> (
+    def negs = list of int ()
+    for x in 0..n then ( negs.add((-x) // 2) )
+    var s = 0
+    for y in negs then ( if not slowCheck(y) and y >= -3 then ( s += y ) )
+    s
+)
+assert(negNotPipe(10) == -12)
+```
+
+```hir
+;; hir -O0 fn=negNotPipe
+fn negNotPipe (n:int) -> int {pure unique}
+  (def negs (core-new list))
+  (for-range x .. 0:int var(n)
+    (block
+      (jcall List.add var(negs) (//:int (block (neg var(x))) 2:int))))
+  (def s 0:int)
+  (for y in var(negs)
+    (block
+      (if (and (not (call-fn slowCheck var(y))) (>=:bool var(y) -3:int)) (box (block (set s += var(y)))))))
+  var(s)
+```
+
+```hir
+;; hir -O1 fn=negNotPipe
+fn negNotPipe (n:int) -> int {pure unique}
+  (def negs (core-new list))
+  (for-range x .. 0:int var(n)
+    (block
+      (jcall List.add var(negs) (//:int (neg var(x)) 2:int))))
+  (def s 0:int)
+  (for y in var(negs)
+    (block
+      (if (and (>=:bool var(y) -3:int) (not (block
+              (def r (==:bool (mod:int (+:int (*:int var(y) 7:int) 3:int) 5:int) 0:int))
+              var(r)))) (box (set s += var(y))))))
+  var(s)
+```
+
+```hir
+;; hir -O2 fn=negNotPipe
+fn negNotPipe (n:int) -> int {pure unique}
+  (def s 0:int)
+  (for-range x .. 0:int var(n)
+    (block
+      (def y#0 (//:int (neg var(x)) 2:int))
+      (if (and (>=:bool var(y#0) -3:int) (not (block
+              (def r (==:bool (mod:int (+:int (*:int var(y#0) 7:int) 3:int) 5:int) 0:int))
+              var(r)))) (box (set s += var(y#0))))))
+  var(s)
+```
+
 
 

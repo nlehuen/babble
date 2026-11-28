@@ -1,13 +1,12 @@
 package org.babblelang.opt.hir;
 
-import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 import org.babblelang.analysis.PrimitiveKind;
-import org.babblelang.ir.egraph.ENode;
 import org.babblelang.ir.hir.HirExpr;
 import org.babblelang.ir.hir.HirModule;
 import org.babblelang.ir.hir.HirVar;
@@ -83,6 +82,15 @@ final class HirPipelineAnalysis {
         return true;
     }
 
+    static boolean isCollectionAddOn(HirExpr expr, Predicate<Integer> receiverVarMatches) {
+        return expr instanceof HirExpr.JavaMethodCall c
+                && !c.target().isStatic()
+                && "add".equals(c.target().method().getName())
+                && c.args().size() == 1
+                && HirRewriter.unwrapTransparent(c.receiver()) instanceof HirExpr.VarRead vr
+                && receiverVarMatches.test(vr.var().id());
+    }
+
     private static void scanConsumerWrites(
             HirEffectAnalysis fx,
             Map<Integer, HirVar> freshLocalLists,
@@ -91,27 +99,23 @@ final class HirPipelineAnalysis {
             Set<IrEffect.AliasClass> producerReads,
             Set<Integer> producerReadVars,
             boolean[] conflict) {
-        if (expr == null || conflict[0]) {
+        if (conflict[0]) {
             return;
         }
-        if (expr instanceof HirExpr.JavaMethodCall c
-                && !c.target().isStatic()
-                && "add".equals(c.target().method().getName())
-                && Collection.class.isAssignableFrom(c.target().method().getDeclaringClass())
-                && HirRewriter.unwrapTransparent(c.receiver()) instanceof HirExpr.VarRead vr
-                && (freshLocalLists.containsKey(vr.var().id())
-                        || freshLocalSets.containsKey(vr.var().id()))
-                && !producerReadVars.contains(vr.var().id())) {
-            for (HirExpr arg : c.args()) {
-                scanConsumerWrites(
-                        fx,
-                        freshLocalLists,
-                        freshLocalSets,
-                        arg,
-                        producerReads,
-                        producerReadVars,
-                        conflict);
-            }
+        if (isCollectionAddOn(
+                expr,
+                id ->
+                        (freshLocalLists.containsKey(id) || freshLocalSets.containsKey(id))
+                                && !producerReadVars.contains(id))) {
+            HirExpr.JavaMethodCall c = (HirExpr.JavaMethodCall) expr;
+            scanConsumerWrites(
+                    fx,
+                    freshLocalLists,
+                    freshLocalSets,
+                    c.args().get(0),
+                    producerReads,
+                    producerReadVars,
+                    conflict);
             return;
         }
         if (expr instanceof HirExpr.VarAssign va
@@ -157,17 +161,9 @@ final class HirPipelineAnalysis {
             HirExpr expr,
             Set<Integer> tempIds,
             Set<IrEffect.AliasClass> out) {
-        if (expr == null) {
-            return;
-        }
-        if (expr instanceof HirExpr.JavaMethodCall c
-                && !c.target().isStatic()
-                && "add".equals(c.target().method().getName())
-                && HirRewriter.unwrapTransparent(c.receiver()) instanceof HirExpr.VarRead vr
-                && tempIds.contains(vr.var().id())) {
-            for (HirExpr arg : c.args()) {
-                scanProducerHeapReads(module, fx, arg, tempIds, out);
-            }
+        if (isCollectionAddOn(expr, tempIds::contains)) {
+            scanProducerHeapReads(
+                    module, fx, ((HirExpr.JavaMethodCall) expr).args().get(0), tempIds, out);
             return;
         }
         if (expr instanceof HirExpr.DirectBabbleCall c
@@ -209,10 +205,7 @@ final class HirPipelineAnalysis {
     }
 
     static boolean isVarReflexiveEq(HirVar v, HirExpr.For f) {
-        if (v.primitiveKind().isPrimitive()) {
-            return true;
-        }
-        return f.target() != null && f.target().elemKind().isPrimitive();
+        return v.primitiveKind().isPrimitive();
     }
 
     static HirExpr unwrapStmtConvert(HirExpr expr) {
@@ -235,47 +228,38 @@ final class HirPipelineAnalysis {
     }
 
     static HirExpr extractListAddArg(HirExpr stmt, HirVar tmpVar) {
-        if (!(stmt instanceof HirExpr.JavaMethodCall c)
-                || c.target().isStatic()
-                || !"add".equals(c.target().method().getName())
-                || c.args().size() != 1
-                || !Collection.class.isAssignableFrom(c.target().method().getDeclaringClass())
-                || c.meta().checkedType() != null) {
+        if (!isCollectionAddOn(stmt, id -> id == tmpVar.id())) {
             return null;
         }
-        HirExpr recv = HirRewriter.unwrapTransparent(c.receiver());
-        if (!(recv instanceof HirExpr.VarRead vr) || vr.var().id() != tmpVar.id()) {
-            return null;
-        }
-        return c.args().get(0);
+        HirExpr.JavaMethodCall c = (HirExpr.JavaMethodCall) stmt;
+        return c.meta().checkedType() == null ? c.args().get(0) : null;
     }
 
-    static boolean isLowerableComparison(HirExpr.Binary b) {
-        if (!b.op().isComparison()) {
-            return false;
-        }
-        if (b.left().meta().wideningRank() >= 0 || b.right().meta().wideningRank() >= 0) {
-            return false;
-        }
-        PrimitiveKind lk = b.left().meta().kind();
-        PrimitiveKind rk = b.right().meta().kind();
-        if (b.op() == HirExpr.BinaryOp.EQ || b.op() == HirExpr.BinaryOp.NEQ) {
-            return (lk.isPrimitive() && lk == rk)
-                    || (b.left().meta().stringType() && b.right().meta().stringType());
-        }
-        return lk == rk && (HirPurity.isNumericKind(lk) || lk == PrimitiveKind.CHAR);
-    }
+    private static final Set<Class<?>> CONTROL_FLOW_EXIT_TYPES =
+            Set.of(
+                    HirExpr.Break.class,
+                    HirExpr.Continue.class,
+                    HirExpr.Return.class,
+                    HirExpr.Throw.class);
 
-    static ENode.Op toComparisonOp(HirExpr.BinaryOp op) {
-        return switch (op) {
-            case EQ -> ENode.Op.EQ;
-            case NEQ -> ENode.Op.NEQ;
-            case LT -> ENode.Op.LT;
-            case LTE -> ENode.Op.LTE;
-            case GT -> ENode.Op.GT;
-            case GTE -> ENode.Op.GTE;
-            default -> throw new IllegalStateException();
-        };
+    private static final Set<Class<?>> DECL_OR_CONTROL_FLOW_TYPES =
+            Set.of(
+                    HirExpr.Def.class,
+                    HirExpr.Break.class,
+                    HirExpr.Continue.class,
+                    HirExpr.Return.class,
+                    HirExpr.Throw.class,
+                    HirExpr.For.class,
+                    HirExpr.While.class);
+
+    static void walkExpr(HirExpr expr, Consumer<HirExpr> visitor) {
+        visitor.accept(expr);
+        HirRewriter.rewriteChildren(
+                expr,
+                child -> {
+                    walkExpr(child, visitor);
+                    return child;
+                });
     }
 
     static int countVarRefsInBody(List<HirExpr> stmts, int varId) {
@@ -287,20 +271,14 @@ final class HirPipelineAnalysis {
     }
 
     static int countVarRefs(HirExpr expr, int varId) {
-        if (expr == null) {
-            return 0;
-        }
         int[] count = {0};
-        if (expr instanceof HirExpr.VarRead vr && vr.var().id() == varId) {
-            count[0]++;
-        } else if (expr instanceof HirExpr.VarAssign va && va.var().id() == varId) {
-            count[0]++;
-        }
-        HirRewriter.rewriteChildren(
+        walkExpr(
                 expr,
-                child -> {
-                    count[0] += countVarRefs(child, varId);
-                    return child;
+                e -> {
+                    if ((e instanceof HirExpr.VarRead vr && vr.var().id() == varId)
+                            || (e instanceof HirExpr.VarAssign va && va.var().id() == varId)) {
+                        count[0]++;
+                    }
                 });
         return count[0];
     }
@@ -308,75 +286,49 @@ final class HirPipelineAnalysis {
     static Set<Integer> collectModifiedVars(List<HirExpr> stmts) {
         Set<Integer> out = new HashSet<>();
         for (HirExpr s : stmts) {
-            collectModifiedVarsExpr(s, out);
+            walkExpr(
+                    s,
+                    e -> {
+                        if (e instanceof HirExpr.VarAssign va) {
+                            out.add(va.var().id());
+                        }
+                    });
         }
         return out;
     }
 
-    private static void collectModifiedVarsExpr(HirExpr expr, Set<Integer> out) {
-        if (expr == null) {
-            return;
-        }
-        if (expr instanceof HirExpr.VarAssign va) {
-            out.add(va.var().id());
-        }
-        HirRewriter.rewriteChildren(
-                expr,
-                child -> {
-                    collectModifiedVarsExpr(child, out);
-                    return child;
-                });
-    }
-
     static void collectReadVars(HirExpr expr, Set<Integer> out) {
-        if (expr == null) {
-            return;
-        }
-        if (expr instanceof HirExpr.VarRead vr) {
-            out.add(vr.var().id());
-        }
-        HirRewriter.rewriteChildren(
+        walkExpr(
                 expr,
-                child -> {
-                    collectReadVars(child, out);
-                    return child;
+                e -> {
+                    if (e instanceof HirExpr.VarRead vr) {
+                        out.add(vr.var().id());
+                    }
                 });
     }
 
     static void collectReferencedBinders(
             HirExpr expr, Map<Integer, String> varIdToBinder, Set<String> out) {
-        if (expr == null) {
-            return;
-        }
-        if (expr instanceof HirExpr.VarRead vr) {
-            String b = varIdToBinder.get(vr.var().id());
-            if (b != null) {
-                out.add(b);
-            }
-        }
-        HirRewriter.rewriteChildren(
+        walkExpr(
                 expr,
-                child -> {
-                    collectReferencedBinders(child, varIdToBinder, out);
-                    return child;
+                e -> {
+                    if (e instanceof HirExpr.VarRead vr) {
+                        String b = varIdToBinder.get(vr.var().id());
+                        if (b != null) {
+                            out.add(b);
+                        }
+                    }
                 });
     }
 
     static boolean anyExpr(HirExpr expr, Predicate<HirExpr> predicate) {
-        if (expr == null) {
-            return false;
-        }
-        if (predicate.test(expr)) {
-            return true;
-        }
         boolean[] found = {false};
-        HirRewriter.rewriteChildren(
+        walkExpr(
                 expr,
-                child -> {
-                    if (!found[0] && anyExpr(child, predicate)) {
+                e -> {
+                    if (!found[0] && predicate.test(e)) {
                         found[0] = true;
                     }
-                    return child;
                 });
         return found[0];
     }
@@ -391,13 +343,7 @@ final class HirPipelineAnalysis {
     }
 
     static boolean containsControlFlowExit(List<HirExpr> stmts) {
-        return anyStmt(
-                stmts,
-                e ->
-                        e instanceof HirExpr.Break
-                                || e instanceof HirExpr.Continue
-                                || e instanceof HirExpr.Return
-                                || e instanceof HirExpr.Throw);
+        return anyStmt(stmts, e -> CONTROL_FLOW_EXIT_TYPES.contains(e.getClass()));
     }
 
     static boolean containsNarrowOrRightNarrowed(HirExpr expr) {
@@ -420,28 +366,14 @@ final class HirPipelineAnalysis {
         return anyExpr(
                 expr,
                 e ->
-                        e instanceof HirExpr.Def
-                                || e instanceof HirExpr.Break
-                                || e instanceof HirExpr.Continue
-                                || e instanceof HirExpr.Return
-                                || e instanceof HirExpr.Throw
-                                || e instanceof HirExpr.For
-                                || e instanceof HirExpr.While
+                        DECL_OR_CONTROL_FLOW_TYPES.contains(e.getClass())
                                 || (e instanceof HirExpr.Block blk
                                         && !blk.declaredVars().isEmpty()));
     }
 
     static int hirNodeCount(HirExpr expr) {
-        if (expr == null) {
-            return 0;
-        }
-        int[] count = {1};
-        HirRewriter.rewriteChildren(
-                expr,
-                child -> {
-                    count[0] += hirNodeCount(child);
-                    return child;
-                });
+        int[] count = {0};
+        walkExpr(expr, e -> count[0]++);
         return count[0];
     }
 }

@@ -4,7 +4,6 @@ import static org.babblelang.opt.hir.HirPipelineAnalysis.*;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -36,6 +35,13 @@ import org.babblelang.opt.HirRewriter;
 final class HirPipelineLifter {
     private static final int MAX_INTERVENING_DEFS = 4;
     private static final int MAX_FOLD_ELEM_NODES = 20;
+    private static final Map<HirExpr.BinaryOp, ENode.Op> INTEGRAL_BINARY_OPS =
+            Map.of(
+                    HirExpr.BinaryOp.ADD, ENode.Op.ADD,
+                    HirExpr.BinaryOp.SUB, ENode.Op.SUB,
+                    HirExpr.BinaryOp.MUL, ENode.Op.MUL,
+                    HirExpr.BinaryOp.FLOOR_DIV, ENode.Op.FLOOR_DIV,
+                    HirExpr.BinaryOp.MOD, ENode.Op.MOD);
 
     record SourceInfo(HirExpr.For originFor, HirVar loopVar, String binderSym) {}
 
@@ -108,36 +114,26 @@ final class HirPipelineLifter {
 
     private void scanFreshLocalCollections(List<HirExpr> stmts) {
         for (HirExpr stmt : stmts) {
-            scanFreshLocalCollectionExpr(stmt);
+            HirPipelineAnalysis.walkExpr(
+                    stmt,
+                    expr -> {
+                        if (expr instanceof HirExpr.Def d
+                                && d.var() != null
+                                && !d.var().cell()
+                                && !d.var().isCaptured()) {
+                            HirExpr rhs = HirRewriter.unwrapTransparent(d.value());
+                            if (rhs instanceof HirExpr.CoreCollectionCall cc
+                                    && cc.args().isEmpty()
+                                    && cc.meta().checkedType() == null) {
+                                if ("list".equals(cc.collectionKind())) {
+                                    freshLocalLists.put(d.var().id(), d.var());
+                                } else if ("set".equals(cc.collectionKind())) {
+                                    freshLocalSets.put(d.var().id(), d.var());
+                                }
+                            }
+                        }
+                    });
         }
-    }
-
-    private void scanFreshLocalCollectionExpr(HirExpr expr) {
-        if (expr == null) {
-            return;
-        }
-        if (expr instanceof HirExpr.Def d
-                && d.var() != null
-                && !d.var().cell()
-                && !d.var().isCaptured()
-                && d.value() != null) {
-            HirExpr rhs = HirRewriter.unwrapTransparent(d.value());
-            if (rhs instanceof HirExpr.CoreCollectionCall cc
-                    && cc.args().isEmpty()
-                    && cc.meta().checkedType() == null) {
-                if ("list".equals(cc.collectionKind())) {
-                    freshLocalLists.put(d.var().id(), d.var());
-                } else if ("set".equals(cc.collectionKind())) {
-                    freshLocalSets.put(d.var().id(), d.var());
-                }
-            }
-        }
-        HirRewriter.rewriteChildren(
-                expr,
-                child -> {
-                    scanFreshLocalCollectionExpr(child);
-                    return child;
-                });
     }
 
     /**
@@ -153,7 +149,9 @@ final class HirPipelineLifter {
 
         HirExpr first = stmts.get(startIdx);
         // 1. Try multi-stage producer-consumer chain starting with `def tmp = list()`
-        if (isFreshListDef(first) && startIdx + 2 < stmts.size()) {
+        if (isFreshListDef(first)
+                && startIdx + 2 < stmts.size()
+                && stmts.get(startIdx + 1) instanceof HirExpr.For) {
             LiftedPipeline chain = tryLiftChain(stmts, startIdx, valueIgnoredForLast);
             if (chain != null) {
                 return chain;
@@ -181,39 +179,20 @@ final class HirPipelineLifter {
         String curBinderSym = null;
         int tmpCounter = 0;
 
-        while (curIdx + 1 < stmts.size()) {
-            HirExpr defStmt = stmts.get(curIdx);
-            if (!isFreshListDef(defStmt)) {
-                break;
-            }
-            HirExpr.Def tmpDef = (HirExpr.Def) defStmt;
-            HirVar tmpVar = tmpDef.var();
-            if (!(stmts.get(curIdx + 1) instanceof HirExpr.For prodFor)) {
-                break;
-            }
+        while (true) {
+            HirVar tmpVar = ((HirExpr.Def) stmts.get(curIdx)).var();
+            HirExpr.For prodFor = (HirExpr.For) stmts.get(curIdx + 1);
             if (prodFor.elemSamTarget() != null || containsControlFlowExit(prodFor.body())) {
-                break;
+                return null;
             }
             if (streamId < 0) {
-                if (prodFor.loopVar() == null) {
-                    break;
-                }
                 SourceStage src = b.liftSource(prodFor);
-                if (src == null) {
-                    break;
-                }
                 streamId = src.streamId;
                 curElemVar = prodFor.loopVar();
                 curBinderSym = src.binderSym;
             } else {
-                HirVar prevTmp = tempVars.get(tempVars.size() - 1);
-                if (!iteratesVar(prodFor, prevTmp)) {
-                    break;
-                }
-                if (prodFor.loopVar() != null) {
-                    b.aliasVarToBinder(prodFor.loopVar(), curBinderSym);
-                    curElemVar = prodFor.loopVar();
-                }
+                b.aliasVarToBinder(prodFor.loopVar(), curBinderSym);
+                curElemVar = prodFor.loopVar();
             }
             b.addDeclaredVars(prodFor.bodyDeclaredVars());
 
@@ -266,7 +245,6 @@ final class HirPipelineLifter {
 
             HirExpr.For consumerFor = (HirExpr.For) stmts.get(consumerForIdx);
             if (consumerFor.elemSamTarget() != null
-                    || consumerFor.loopVar() == null
                     || (consumerFor.target() != null && consumerFor.target().elemWidenRank() > 0)) {
                 return null;
             }
@@ -290,7 +268,6 @@ final class HirPipelineLifter {
             }
             return b.build(rootId, startIdx, consumerForIdx, preservedDefs);
         }
-        return null;
     }
 
     // ---------------------------------------------------------------- single-loop lifting
@@ -588,43 +565,37 @@ final class HirPipelineLifter {
                 return -1;
             }
             HirExpr rhs = HirRewriter.unwrapTransparent(va.value());
-            String opSym = null;
-            HirExpr arg0 = null;
-            HirExpr arg1 = null;
+            if (rhs.meta().wideningRank() >= 0
+                    || rhs.meta().checkedType() != null
+                    || rhs.meta().kind() != va.var().primitiveKind()
+                    || !HirPurity.isAssociativeCall(rhs, module)
+                    || !HirPurity.isPureNothrowTerminating(rhs, module)) {
+                return -1;
+            }
+            String opSym;
+            List<HirExpr> args;
             if (rhs instanceof HirExpr.DirectBabbleCall c
                     && c.args().size() == 2
-                    && c.meta().wideningRank() < 0
-                    && c.meta().checkedType() == null
-                    && (c.binding() == null || c.binding().isIdentityPositional())
-                    && HirPurity.isAssociativeCall(c, module)
-                    && HirPurity.isPureNothrowTerminating(c, module)) {
+                    && (c.binding() == null || c.binding().isIdentityPositional())) {
                 opSym =
                         c.externalTarget() != null
                                 ? "babble-ext#" + c.externalTarget().canonicalKey()
                                 : "babble#" + c.targetFunctionId();
-                arg0 = c.args().get(0);
-                arg1 = c.args().get(1);
+                args = c.args();
             } else if (rhs instanceof HirExpr.JavaMethodCall c
                     && c.target().isStatic()
-                    && c.args().size() == 2
-                    && c.meta().wideningRank() < 0
-                    && c.meta().checkedType() == null
-                    && HirPurity.isAssociativeCall(c, module)
-                    && HirPurity.isPureNothrowTerminating(c, module)) {
+                    && c.args().size() == 2) {
                 Method m = c.target().method();
                 opSym = "jstatic#" + m.getDeclaringClass().getName() + "." + m.getName() + ":2";
-                arg0 = c.args().get(0);
-                arg1 = c.args().get(1);
-            }
-            if (opSym == null || rhs.meta().kind() != va.var().primitiveKind()) {
+                args = c.args();
+            } else {
                 return -1;
             }
-            HirExpr a0 = HirRewriter.unwrapTransparent(arg0);
-            if (!(a0 instanceof HirExpr.VarRead vr) || vr.var().id() != va.var().id()) {
-                return -1;
-            }
-            if (countVarRefs(arg1, va.var().id()) != 0
-                    || !HirPurity.isPureNothrowTerminating(arg1, module)
+            HirExpr a0 = HirRewriter.unwrapTransparent(args.get(0));
+            HirExpr arg1 = args.get(1);
+            if (!(a0 instanceof HirExpr.VarRead vr)
+                    || vr.var().id() != va.var().id()
+                    || countVarRefs(arg1, va.var().id()) != 0
                     || hirNodeCount(arg1) > MAX_FOLD_ELEM_NODES
                     || containsDeclOrControlFlow(arg1)) {
                 return -1;
@@ -649,20 +620,17 @@ final class HirPipelineLifter {
 
         private DistinctMatch matchDistinctGuard(HirExpr cond, HirVar curElemVar) {
             HirExpr u = HirRewriter.unwrapTransparent(cond);
-            if (!(u instanceof HirExpr.JavaMethodCall c)
-                    || c.target().isStatic()
-                    || !"add".equals(c.target().method().getName())
-                    || c.args().size() != 1
-                    || !Collection.class.isAssignableFrom(c.target().method().getDeclaringClass())
-                    || c.meta().checkedType() != null) {
+            if (!HirPipelineAnalysis.isCollectionAddOn(u, freshLocalSets::containsKey)) {
                 return null;
             }
-            HirExpr recv = HirRewriter.unwrapTransparent(c.receiver());
-            if (!(recv instanceof HirExpr.VarRead svr)) {
-                return null;
-            }
-            HirVar seenVar = freshLocalSets.get(svr.var().id());
-            if (seenVar == null || countVarRefsInBody(wholeBody, seenVar.id()) != 1) {
+            HirExpr.JavaMethodCall c = (HirExpr.JavaMethodCall) u;
+            HirVar seenVar =
+                    freshLocalSets.get(
+                            ((HirExpr.VarRead) HirRewriter.unwrapTransparent(c.receiver()))
+                                    .var()
+                                    .id());
+            if (c.meta().checkedType() != null
+                    || countVarRefsInBody(wholeBody, seenVar.id()) != 1) {
                 return null;
             }
             HirExpr arg = unwrapBoxConvert(c.args().get(0));
@@ -733,24 +701,16 @@ final class HirPipelineLifter {
                         && b.right().meta().kind() == rk
                         && b.left().meta().wideningRank() < 0
                         && b.right().meta().wideningRank() < 0) {
-                    ENode.Op op =
-                            switch (b.op()) {
-                                case ADD -> ENode.Op.ADD;
-                                case SUB -> ENode.Op.SUB;
-                                case MUL -> ENode.Op.MUL;
-                                case FLOOR_DIV -> ENode.Op.FLOOR_DIV;
-                                case MOD -> ENode.Op.MOD;
-                                default -> null;
-                            };
+                    ENode.Op op = INTEGRAL_BINARY_OPS.get(b.op());
                     if (op != null) {
                         return graph.add(
                                 ENode.binary(op, rk, lowerExpr(b.left()), lowerExpr(b.right())));
                     }
                 }
-                if (isLowerableComparison(b)) {
+                if (HirEGraphCodec.isLowerableComparison(b)) {
                     return graph.add(
                             ENode.binary(
-                                    toComparisonOp(b.op()),
+                                    HirEGraphCodec.toComparisonOp(b.op()),
                                     PrimitiveKind.BOOL,
                                     lowerExpr(b.left()),
                                     lowerExpr(b.right())));
@@ -847,12 +807,7 @@ final class HirPipelineLifter {
         }
 
         private List<HirExpr> unwrapThenStmts(HirExpr thenBranch) {
-            HirExpr u = unwrapStmtConvert(thenBranch);
-            if (u instanceof HirExpr.Block blk && !blk.opensNamespaceScope()) {
-                addDeclaredVars(blk.declaredVars());
-                return blk.statements();
-            }
-            return List.of(u);
+            return unwrapSingleBlockStmts(List.of(thenBranch));
         }
 
         private List<HirExpr> unwrapSingleBlockStmts(List<HirExpr> stmts) {
@@ -862,7 +817,7 @@ final class HirPipelineLifter {
                     addDeclaredVars(blk.declaredVars());
                     stmts = blk.statements();
                 } else {
-                    break;
+                    return List.of(u);
                 }
             }
             return stmts;
@@ -893,7 +848,6 @@ final class HirPipelineLifter {
 
     private boolean isPureMapDef(HirExpr.Def d, Set<Integer> modifiedVars) {
         return d.var() != null
-                && d.value() != null
                 && !d.var().cell()
                 && !d.var().isCaptured()
                 && !modifiedVars.contains(d.var().id())
@@ -915,10 +869,9 @@ final class HirPipelineLifter {
 
     private boolean isHoistableInterveningDef(
             HirExpr stmt, HirVar tmpVar, List<HirExpr.For> producerFors) {
-        if (!(stmt instanceof HirExpr.Def d) || d.var() == null || d.value() == null) {
-            return false;
-        }
-        if (countVarRefs(d.value(), tmpVar.id()) != 0) {
+        if (!(stmt instanceof HirExpr.Def d)
+                || d.var() == null
+                || countVarRefs(d.value(), tmpVar.id()) != 0) {
             return false;
         }
         for (HirExpr.For pf : producerFors) {
@@ -926,11 +879,7 @@ final class HirPipelineLifter {
                 return false;
             }
         }
-        HirExpr rhs = HirRewriter.unwrapTransparent(d.value());
-        if (rhs instanceof HirExpr.CoreCollectionCall cc
-                && cc.args().isEmpty()
-                && cc.meta().checkedType() == null
-                && ("list".equals(cc.collectionKind()) || "set".equals(cc.collectionKind()))) {
+        if (freshLocalLists.containsKey(d.var().id()) || freshLocalSets.containsKey(d.var().id())) {
             return true;
         }
         return d.value().meta().checkedType() == null

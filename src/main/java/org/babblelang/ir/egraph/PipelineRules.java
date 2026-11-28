@@ -42,12 +42,21 @@ public final class PipelineRules {
 
     private static final EGraph.CostModel COST_MODEL = PipelineRules::computePipelineCost;
 
-    /** Pipeline-specific rewrite rules ({@code R1}–{@code R8} plus {@code $min}/{@code $max}). */
-    public static List<EGraph.RewriteRule> rules() {
-        return PIPELINE_ONLY_RULES;
-    }
+    private static final Set<ENode.Op> COMPARISON_OPS =
+            java.util.EnumSet.of(
+                    ENode.Op.EQ,
+                    ENode.Op.NEQ,
+                    ENode.Op.LT,
+                    ENode.Op.LTE,
+                    ENode.Op.GT,
+                    ENode.Op.GTE);
 
-    /** Joint rule set combining {@link AlgebraicRules#optimizerRules()} and {@link #rules()}. */
+    private static final Set<ENode.Op> ORDER_OPS =
+            java.util.EnumSet.of(ENode.Op.LT, ENode.Op.LTE, ENode.Op.GT, ENode.Op.GTE);
+
+    /**
+     * Joint rule set combining {@link AlgebraicRules#optimizerRules()} and {@code R1}–{@code R8}.
+     */
     public static List<EGraph.RewriteRule> allRules() {
         return ALL_RULES;
     }
@@ -71,20 +80,12 @@ public final class PipelineRules {
 
     /** Extracts the opaque source id from a {@link ENode.Op#PIPE_SRC} symbol. */
     public static String srcId(String spec) {
-        if (spec == null) {
-            return null;
-        }
-        int sep = spec.indexOf(':');
-        return sep < 0 ? spec : spec.substring(0, sep);
+        return spec.substring(0, spec.indexOf(':'));
     }
 
-    /** Extracts the element binder symbol from a {@link ENode.Op#PIPE_SRC} symbol, if present. */
+    /** Extracts the element binder symbol from a {@link ENode.Op#PIPE_SRC} symbol. */
     public static String srcBinder(String spec) {
-        if (spec == null) {
-            return null;
-        }
-        int sep = spec.indexOf(':');
-        return sep < 0 ? null : spec.substring(sep + 1);
+        return spec.substring(spec.indexOf(':') + 1);
     }
 
     /**
@@ -96,27 +97,19 @@ public final class PipelineRules {
     }
 
     public static boolean isAscendingRange(String spec) {
-        return spec != null && spec.startsWith("asc:");
+        return spec.startsWith("asc:");
     }
 
     public static boolean isDescendingRange(String spec) {
-        return spec != null && spec.startsWith("desc:");
+        return spec.startsWith("desc:");
     }
 
     public static boolean isInclusiveRange(String spec) {
-        return spec != null && (spec.startsWith("asc:incl:") || spec.startsWith("desc:incl:"));
+        return spec.contains(":incl:");
     }
 
     public static String rangeBinder(String spec) {
-        if (spec == null) {
-            return null;
-        }
-        int first = spec.indexOf(':');
-        if (first < 0) {
-            return null;
-        }
-        int second = spec.indexOf(':', first + 1);
-        return second < 0 ? null : spec.substring(second + 1);
+        return spec.substring(spec.lastIndexOf(':') + 1);
     }
 
     /** Encodes a {@link ENode.Op#PIPE_FOLD} / {@link ENode.Op#PIPE_FOLD_PAIRWISE} symbol. */
@@ -125,19 +118,7 @@ public final class PipelineRules {
     }
 
     public static String foldOpSymbol(String spec) {
-        if (spec == null) {
-            return null;
-        }
-        int sep = spec.lastIndexOf('|');
-        return sep <= 0 ? null : spec.substring(0, sep);
-    }
-
-    public static String foldAccId(String spec) {
-        if (spec == null) {
-            return null;
-        }
-        int sep = spec.lastIndexOf('|');
-        return sep < 0 ? null : spec.substring(sep + 1);
+        return spec.substring(0, spec.lastIndexOf('|'));
     }
 
     // ---------------------------------------------------------------- selectivity cost model
@@ -164,12 +145,11 @@ public final class PipelineRules {
     }
 
     private static int satAdd(int a, int b) {
-        int s = a + b;
-        return (s < 0 || s > 1_000_000) ? 1_000_000 : s;
+        return Math.min(1_000_000, a + b);
     }
 
     private static int satMul2(int a) {
-        return a >= 500_000 ? 1_000_000 : a * 2;
+        return Math.min(1_000_000, a * 2);
     }
 
     // ---------------------------------------------------------------- $min / $max constant folding
@@ -179,8 +159,7 @@ public final class PipelineRules {
             return;
         }
         boolean isMin = AlgebraicRules.SYM_MIN.equals(n.symbol());
-        boolean isMax = !isMin && AlgebraicRules.SYM_MAX.equals(n.symbol());
-        if (!isMin && !isMax) {
+        if (!isMin && !AlgebraicRules.SYM_MAX.equals(n.symbol())) {
             return;
         }
         int a = n.child(0);
@@ -189,24 +168,18 @@ public final class PipelineRules {
             out.union(id, a);
             return;
         }
-        ENode ca = g.constantOf(a);
-        ENode cb = g.constantOf(b);
-        Long va = ca != null ? ca.asIntegralLong() : null;
-        Long vb = cb != null ? cb.asIntegralLong() : null;
+        Long va = constantIntegral(g, a);
+        Long vb = constantIntegral(g, b);
         if (va != null && vb != null) {
-            long folded = isMin ? Math.min(va, vb) : Math.max(va, vb);
-            out.addAndUnion(id, integralConst(n.kind(), folded));
+            out.addAndUnion(
+                    id, integralConst(n.kind(), isMin ? Math.min(va, vb) : Math.max(va, vb)));
             return;
         }
         // Reassociate nested `$min($min(x, c1), c2) -> $min(x, min(c1, c2))` for multi-bound clamps
         if (vb != null) {
             for (ENode left : g.nodesIn(a)) {
-                if (left.op() == ENode.Op.CALL
-                        && left.arity() == 2
-                        && n.symbol().equals(left.symbol())
-                        && left.kind() == n.kind()) {
-                    ENode c1 = g.constantOf(left.child(1));
-                    Long v1 = c1 != null ? c1.asIntegralLong() : null;
+                if (left.op() == ENode.Op.CALL && n.symbol().equals(left.symbol())) {
+                    Long v1 = constantIntegral(g, left.child(1));
                     if (v1 != null) {
                         long merged = isMin ? Math.min(v1, vb) : Math.max(v1, vb);
                         int mergedId = g.add(integralConst(n.kind(), merged));
@@ -556,9 +529,6 @@ public final class PipelineRules {
      * acyclic representation that does not reference {@code OPAQUE(binderSym)}.
      */
     public static boolean isIndependentOf(EGraph g, int classId, String binderSym) {
-        if (binderSym == null) {
-            return true;
-        }
         return isIndependentRec(g, g.find(classId), binderSym, new HashSet<>(), new HashMap<>());
     }
 
@@ -598,9 +568,6 @@ public final class PipelineRules {
     }
 
     private static boolean isBinderClass(EGraph g, int classId, String binderSym) {
-        if (binderSym == null) {
-            return false;
-        }
         for (ENode node : g.nodesIn(classId)) {
             if (node.op() == ENode.Op.OPAQUE && binderSym.equals(node.symbol())) {
                 return true;
@@ -658,16 +625,11 @@ public final class PipelineRules {
     }
 
     private static boolean isComparisonOp(ENode.Op op) {
-        return op == ENode.Op.EQ
-                || op == ENode.Op.NEQ
-                || op == ENode.Op.LT
-                || op == ENode.Op.LTE
-                || op == ENode.Op.GT
-                || op == ENode.Op.GTE;
+        return COMPARISON_OPS.contains(op);
     }
 
     private static boolean isOrderOp(ENode.Op op) {
-        return op == ENode.Op.LT || op == ENode.Op.LTE || op == ENode.Op.GT || op == ENode.Op.GTE;
+        return ORDER_OPS.contains(op);
     }
 
     private static ENode.Op flipOrderOp(ENode.Op op) {
@@ -695,7 +657,7 @@ public final class PipelineRules {
 
     private static PrimitiveKind inferKind(EGraph g, int classId) {
         for (ENode node : g.nodesIn(classId)) {
-            if (node.kind() != null && node.kind() != PrimitiveKind.NONE) {
+            if (node.kind() != PrimitiveKind.NONE) {
                 return node.kind();
             }
         }

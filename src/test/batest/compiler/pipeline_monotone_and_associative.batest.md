@@ -700,3 +700,246 @@ fn javaFold (n:int) -> int {nothrow unique}
   var(m)
 ```
 
+## Java static monotone+injective map+filter fusion and cancellation (R1 + R4b)
+
+```babble
+axiom java.lang.Math.exp: fn pure nothrow monotone injective (double): double
+def expPipe = fn (k: int): double -> (
+    def vals = list of double ()
+    for x in 0..5 then ( vals.add(java.lang.Math.exp(x * 1.0)) )
+    var s = 0.0
+    for d in vals then (
+        if d <= java.lang.Math.exp(k * 1.0) then ( s += d )
+    )
+    s
+)
+assert(expPipe(0) == 1.0 and expPipe(1) > 3.7 and expPipe(1) < 3.8)
+```
+
+```hir
+;; hir -O0 fn=expPipe
+fn expPipe (k:int) -> double {pure unique}
+  (def vals (core-new list))
+  (for-range x .. 0:int 5:int
+    (block
+      (jcall List.add var(vals) (jcall Math.exp (*:double (convert[double] var(x)) 1.0:double)))))
+  (def s 0.0:double)
+  (for d in var(vals)
+    (block
+      (if (<=:bool var(d) (jcall Math.exp (*:double (convert[double] var(k)) 1.0:double))) (box (block (set s += var(d)))))))
+  var(s)
+```
+
+```hir
+;; hir -O1 fn=expPipe
+fn expPipe (k:int) -> double {pure unique}
+  (def vals (core-new list))
+  (for-range x .. 0:int 5:int
+    (block
+      (jcall List.add var(vals) (jcall Math.exp (*:double (convert[double] var(x)) 1.0:double)))))
+  (def s 0.0:double)
+  (for d in var(vals)
+    (block
+      (if (<=:bool var(d) (jcall Math.exp (*:double (convert[double] var(k)) 1.0:double))) (box (set s += var(d))))))
+  var(s)
+```
+
+```hir
+;; hir -O2 fn=expPipe
+fn expPipe (k:int) -> double {pure unique}
+  (def vals (core-new list))
+  (for-range x .. 0:int 5:int
+    (block
+      (jcall List.add var(vals) (jcall Math.exp (*:double (convert[double] var(x)) 1.0:double)))))
+  (def s 0.0:double)
+  (for d in var(vals)
+    (block
+      (if (<=:bool var(d) (jcall Math.exp (*:double (convert[double] var(k)) 1.0:double))) (box (set s += var(d))))))
+  var(s)
+```
+
+## Pairwise fold with opaque element expression (R8)
+
+```babble
+def opaqueFold = fn (n: int): int -> (
+    var m = -1
+    for i in 0..<n then ( m = combineMax(m, if i > 2 then ( i ) else ( 0 )) )
+    m
+)
+assert(opaqueFold(0) == -1 and opaqueFold(2) == 0 and opaqueFold(6) == 5)
+```
+
+```hir
+;; hir -O0 fn=opaqueFold
+fn opaqueFold (n:int) -> int {nothrow unique}
+  (def m -1:int)
+  (for-range i ..< 0:int var(n)
+    (block
+      (set m (call-fn combineMax var(m) (if (>:bool var(i) 2:int) (block var(i)) (block 0:int))))))
+  var(m)
+```
+
+```hir
+;; hir -O1 fn=opaqueFold
+fn opaqueFold (n:int) -> int {nothrow unique}
+  (def m -1:int)
+  (for-range i ..< 0:int var(n)
+    (block
+      (set m
+        (block
+          (def b (if (>:bool var(i) 2:int) var(i) 0:int))
+          (def r (if (>:bool var(m) var(b)) var(m) var(b)))
+          var(r)))))
+  var(m)
+```
+
+```hir
+;; hir -O2 fn=opaqueFold
+fn opaqueFold (n:int) -> int {nothrow unique}
+  (def m -1:int)
+  (block
+    (def $i#2 0:int)
+    (block
+      (def $licm0 (-:int var(n) 1:int))
+      (while (and (<:bool var($i#2) var(n)) (<:bool var($i#2) var($licm0)))
+        (block
+          (set m
+            (block
+              (def b#1
+                (block
+                  (def a (if (>:bool var($i#2) 2:int) var($i#2) 0:int))
+                  (def $cse0 (+:int var($i#2) 1:int))
+                  (def b#2 (if (>:bool var($cse0) 2:int) var($cse0) 0:int))
+                  (def r#2 (if (>:bool var(a) var(b#2)) var(a) var(b#2)))
+                  var(r#2)))
+              (def r#1 (if (>:bool var(m) var(b#1)) var(m) var(b#1)))
+              var(r#1)))
+          (box (set $i#2 (+:int var($i#2) 2:int))))))
+    (if (<:bool var($i#2) var(n)) (box (set m
+          (block
+            (def b#3 (if (>:bool var($i#2) 2:int) var($i#2) 0:int))
+            (def r#3 (if (>:bool var(m) var(b#3)) var(m) var(b#3)))
+            var(r#3))))))
+  var(m)
+```
+
+## Flipped map+filter push-down and long range clamp (R4b + R6)
+
+```babble
+def flippedAndLong = fn (): double -> (
+    def scores = list of double ()
+    for x in 0..100 then ( scores.add(encode(x)) )
+    var total = 0.0
+    for s in scores then ( if encode(5) >= s then ( total += s ) )
+    var lsum = 0L
+    for i in 0L..1000L then ( if i < 5L and i > 1L then ( lsum += i ) )
+    total + lsum
+)
+assert(flippedAndLong() == 189.0)
+```
+
+```hir
+;; hir -O0 fn=flippedAndLong
+fn flippedAndLong () -> double {pure unique}
+  (def scores (core-new list))
+  (for-range x .. 0:int 100:int
+    (block
+      (jcall List.add var(scores) (call-fn encode var(x)))))
+  (def total 0.0:double)
+  (for s in var(scores)
+    (block
+      (if (>=:bool (call-fn encode 5:int) var(s)) (box (block (set total += var(s)))))))
+  (def lsum 0:long)
+  (for-range i .. 0:long 1000:long
+    (block
+      (if (and (<:bool var(i) 5:long) (>:bool var(i) 1:long)) (box (block (set lsum += var(i)))))))
+  (+:double var(total) (convert[double] var(lsum)))
+```
+
+```hir
+;; hir -O1 fn=flippedAndLong
+fn flippedAndLong () -> double {pure unique}
+  (def scores (core-new list))
+  (for-range x .. 0:int 100:int
+    (block
+      (jcall List.add var(scores) (block
+          (def r (+:double (*:double (convert[double] var(x)) 10.0:double) 5.0:double))
+          var(r)))))
+  (def total 0.0:double)
+  (for s in var(scores)
+    (block
+      (if (>=:bool 55.0:double var(s)) (box (set total += var(s))))))
+  (def lsum 0:long)
+  (for-range i .. 0:long 1000:long
+    (block
+      (if (and (<:bool var(i) 5:long) (>:bool var(i) 1:long)) (box (set lsum += var(i))))))
+  (+:double var(total) (convert[double] var(lsum)))
+```
+
+```hir
+;; hir -O2 fn=flippedAndLong
+fn flippedAndLong () -> double {pure unique}
+  (def total 0.0:double)
+  (for-range x .. 0:int 5:int
+    (block
+      (def s#0
+        (block
+          (def r (+:double (*:double (convert[double] var(x)) 10.0:double) 5.0:double))
+          var(r)))
+      (set total += var(s#0))))
+  (def lsum 0:long)
+  (for-range i .. 2:long 4:long
+    (block
+      (set lsum += var(i))))
+  (+:double var(total) (convert[double] var(lsum)))
+```
+
+## Descending range monotone early exit (R7)
+
+```babble
+def descMono = fn (n: int): int -> (
+    var s = 0
+    for x in (0..n).reversed() then (
+        if stepMono(x) >= 4 then ( s += x )
+    )
+    s
+)
+assert(descMono(10) == 27 and descMono(5) == 0)
+```
+
+```hir
+;; hir -O0 fn=descMono
+fn descMono (n:int) -> int {nothrow unique}
+  (def s 0:int)
+  (for-range x .. 0:int var(n) reversed
+    (block
+      (if (>=:bool (call-fn stepMono var(x)) 4:int) (box (block (set s += var(x)))))))
+  var(s)
+```
+
+```hir
+;; hir -O1 fn=descMono
+fn descMono (n:int) -> int {nothrow unique}
+  (def s 0:int)
+  (for-range x .. 0:int var(n) reversed
+    (block
+      (if (>=:bool (block
+            (def r (//:int var(x) 2:int))
+            var(r)) 4:int) (box (set s += var(x))))))
+  var(s)
+```
+
+```hir
+;; hir -O2 fn=descMono
+fn descMono (n:int) -> int {nothrow unique}
+  (def s 0:int)
+  (for-range x .. 0:int var(n) reversed
+    (block
+      (if (>=:bool (block
+            (def r (//:int var(x) 2:int))
+            var(r)) 4:int) (box (set s += var(x))) (break))))
+  var(s)
+```
+
+
+

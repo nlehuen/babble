@@ -541,18 +541,18 @@ Every new and modified production file stays strictly within Babble's architectu
 | `ENode.java` | `org.babblelang.ir.egraph` | Modified | 297 | `Optimizer (-O1)` |
 | `EGraph.java` | `org.babblelang.ir.egraph` | Modified | 653 | `Optimizer (-O1)` |
 | `AlgebraicRules.java` | `org.babblelang.ir.egraph` | Modified | 875 | `Optimizer (-O1)` |
-| `PipelineRules.java` | `org.babblelang.ir.egraph` | **New** | 725 | **`Optimizer (-O2)`** |
+| `PipelineRules.java` | `org.babblelang.ir.egraph` | **New** | 687 | **`Optimizer (-O2)`** |
 | `EffectAstExtractors.java` | `org.babblelang.analysis` | Modified | (+2 lines) | `Shared Front-End` |
 | `EffectChecker.java` / `EffectSet.java` | `org.babblelang.analysis` | Modified | (+10 lines) | `Shared Front-End` |
-| `HirPurity.java` | `org.babblelang.opt` | Modified | 893 | `Optimizer (-O1)` |
-| `HirEGraphCodec.java` | `org.babblelang.opt.hir` | Modified | 481 | `Optimizer (-O1)` |
+| `HirPurity.java` | `org.babblelang.opt` | Modified | 871 | `Optimizer (-O1)` |
+| `HirEGraphCodec.java` | `org.babblelang.opt.hir` | Modified | 480 | `Optimizer (-O1)` |
 | `AeGraphState.java` | `org.babblelang.opt.hir` | Modified | 414 | `Optimizer (-O2)` |
 | `AeGraphExtractor.java` | `org.babblelang.opt.hir` | Modified | 703 | `Optimizer (-O2)` |
 | `AeGraphBuilder.java` | `org.babblelang.opt.hir` | Modified | 1,356 | `Optimizer (-O2)` |
-| `PipelineRewritePass.java` | `org.babblelang.opt.hir` | **New** | 258 | **`Optimizer (-O2)`** |
-| `HirPipelineLifter.java` | `org.babblelang.opt.hir` | **New** | 945 | **`Optimizer (-O2)`** |
-| `HirPipelineAnalysis.java` | `org.babblelang.opt.hir` | **New** | 447 | **`Optimizer (-O2)`** |
-| `HirPipelineLowerer.java` | `org.babblelang.opt.hir` | **New** | 992 | **`Optimizer (-O2)`** |
+| `PipelineRewritePass.java` | `org.babblelang.opt.hir` | **New** | 253 | **`Optimizer (-O2)`** |
+| `HirPipelineLifter.java` | `org.babblelang.opt.hir` | **New** | 894 | **`Optimizer (-O2)`** |
+| `HirPipelineAnalysis.java` | `org.babblelang.opt.hir` | **New** | 379 | **`Optimizer (-O2)`** |
+| `HirPipelineLowerer.java` | `org.babblelang.opt.hir` | **New** | 897 | **`Optimizer (-O2)`** |
 | `PassManager.java` | `org.babblelang.opt` | Modified | 125 | `Optimizer (-O1)` |
 | `BatestCoverageReporter.java` / `pom.xml` | test harness / build | Modified | (+5 entries / `-O2` JaCoCo scope) | test harness |
 

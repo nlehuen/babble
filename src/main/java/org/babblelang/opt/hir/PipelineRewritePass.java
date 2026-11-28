@@ -144,8 +144,7 @@ public final class PipelineRewritePass implements HirPass {
         for (int i = 0; i < arity; i++) {
             cc[i] = evaluateCost(tree.children().get(i), model);
         }
-        int total = model.cost(tree.node(), cc);
-        return (total < 0 || total > 1_000_000) ? 1_000_000 : total;
+        return Math.min(1_000_000, model.cost(tree.node(), cc));
     }
 
     private static final int[] EMPTY_COSTS = new int[0];
@@ -231,10 +230,9 @@ public final class PipelineRewritePass implements HirPass {
      * PassManager} rounds do not re-wrap the same loop ({@code BIP042} §7.3).
      */
     private static boolean isAlreadyRangeGuardedIf(HirExpr expr) {
-        if (!(expr instanceof HirExpr.If ifExpr) || ifExpr.elseBranch() != null) {
-            return false;
-        }
-        if (!(ifExpr.cond() instanceof HirExpr.Logic l)
+        if (!(expr instanceof HirExpr.If ifExpr)
+                || ifExpr.elseBranch() != null
+                || !(ifExpr.cond() instanceof HirExpr.Logic l)
                 || l.op() != HirExpr.LogicOp.AND
                 || !(l.left() instanceof HirExpr.Binary cmp)
                 || cmp.op() != HirExpr.BinaryOp.LTE
@@ -242,10 +240,7 @@ public final class PipelineRewritePass implements HirPass {
                 || !(cmp.right() instanceof HirExpr.VarRead hiVr)) {
             return false;
         }
-        HirExpr thenU = HirRewriter.unwrapTransparent(ifExpr.thenBranch());
-        while (thenU instanceof HirExpr.Convert cv && cv.targetKind() == PrimitiveKind.NONE) {
-            thenU = HirRewriter.unwrapTransparent(cv.operand());
-        }
+        HirExpr thenU = HirPipelineAnalysis.unwrapStmtConvert(ifExpr.thenBranch());
         if (!(thenU instanceof HirExpr.For f) || f.countedRange() == null) {
             return false;
         }

@@ -569,26 +569,11 @@ public final class HirPurity {
     }
 
     public static boolean isIdempotentCall(HirExpr expr, HirModule module) {
-        if (expr instanceof HirExpr.DirectBabbleCall c) {
-            if (c.externalTarget() != null) {
-                EffectSet fx = c.externalTarget().effects();
-                return !c.externalTarget().hasMutParam()
-                        && ((fx.isPure() && fx.isDeterministic() && fx.has(Effect.IDEMPOTENT))
-                                || (c.meta().isPure()
-                                        && c.meta().isDeterministic()
-                                        && c.meta().isIdempotent()));
-            }
-            HirFunction fn = module.function(c.targetFunctionId());
-            if (fn == null) return false;
-            EffectSet fx = fn.effects();
-            return (fx.isPure() && fx.isDeterministic() && fx.has(Effect.IDEMPOTENT))
-                    || (c.meta().isPure() && c.meta().isDeterministic() && c.meta().isIdempotent());
+        if (expr instanceof HirExpr.JavaMethodCall c
+                && isWhitelistedIdempotentJava(c.target().method())) {
+            return true;
         }
-        if (expr instanceof HirExpr.JavaMethodCall c) {
-            return isWhitelistedIdempotentJava(c.target().method())
-                    || (c.meta().isPure() && c.meta().isDeterministic() && c.meta().isIdempotent());
-        }
-        return false;
+        return hasAlgebraicCallEffect(expr, Effect.IDEMPOTENT, module);
     }
 
     public static boolean isMonotoneCall(HirExpr expr, HirModule module) {
@@ -607,34 +592,26 @@ public final class HirPurity {
         return hasAlgebraicCallEffect(expr, Effect.COMMUTATIVE, module);
     }
 
+    private static boolean hasPureDetProp(EffectSet fx, Effect prop) {
+        return fx != null && fx.isPure() && fx.isDeterministic() && fx.has(prop);
+    }
+
     private static boolean hasAlgebraicCallEffect(HirExpr expr, Effect prop, HirModule module) {
         if (expr instanceof HirExpr.DirectBabbleCall c) {
+            EffectSet calleeFx;
             if (c.externalTarget() != null) {
-                EffectSet fx = c.externalTarget().effects();
-                return !c.externalTarget().hasMutParam()
-                        && ((fx.isPure() && fx.isDeterministic() && fx.has(prop))
-                                || (c.meta().isPure()
-                                        && c.meta().isDeterministic()
-                                        && c.meta().effects().has(prop)));
+                if (c.externalTarget().hasMutParam()) {
+                    return false;
+                }
+                calleeFx = c.externalTarget().effects();
+            } else {
+                HirFunction fn = module.function(c.targetFunctionId());
+                if (fn == null) {
+                    return false;
+                }
+                calleeFx = fn.effects();
             }
-            HirFunction fn = module.function(c.targetFunctionId());
-            if (fn == null) {
-                return false;
-            }
-            EffectSet fx = fn.effects();
-            return (fx.isPure() && fx.isDeterministic() && fx.has(prop))
-                    || (c.meta().isPure()
-                            && c.meta().isDeterministic()
-                            && c.meta().effects().has(prop));
-        }
-        if (expr instanceof HirExpr.DirectThisMethodCall c) {
-            HirFunction fn =
-                    c.targetFunctionId() >= 0 ? module.function(c.targetFunctionId()) : null;
-            EffectSet fx = fn != null ? fn.effects() : null;
-            return (fx != null && fx.isPure() && fx.isDeterministic() && fx.has(prop))
-                    || (c.meta().isPure()
-                            && c.meta().isDeterministic()
-                            && c.meta().effects().has(prop));
+            return hasPureDetProp(calleeFx, prop) || hasPureDetProp(c.meta().effects(), prop);
         }
         if (expr instanceof HirExpr.JavaMethodCall c) {
             return c.meta().isPure() && c.meta().effects().has(prop);
