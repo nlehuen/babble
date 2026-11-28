@@ -672,24 +672,18 @@ final class HirPipelineLifter {
                 }
                 return markStringReflexive(graph.add(ENode.opaque(key, v.meta().kind())), v);
             }
-            if (expr instanceof HirExpr.Logic l
-                    && !l.rightNarrowed()
-                    && l.left().meta().kind() == PrimitiveKind.BOOL
-                    && l.right().meta().kind() == PrimitiveKind.BOOL) {
+            if (expr instanceof HirExpr.Logic l && !l.rightNarrowed()) {
                 ENode.Op op = l.op() == HirExpr.LogicOp.AND ? ENode.Op.AND : ENode.Op.OR;
                 return graph.add(
                         ENode.binary(
                                 op, PrimitiveKind.BOOL, lowerExpr(l.left()), lowerExpr(l.right())));
             }
             if (expr instanceof HirExpr.Unary u && u.operand().meta().wideningRank() < 0) {
-                if (u.op() == HirExpr.UnaryOp.NOT
-                        && u.operand().meta().kind() == PrimitiveKind.BOOL) {
+                if (u.op() == HirExpr.UnaryOp.NOT) {
                     return graph.add(
                             ENode.unary(ENode.Op.NOT, PrimitiveKind.BOOL, lowerExpr(u.operand())));
                 }
-                if (u.op() == HirExpr.UnaryOp.NEGATE
-                        && HirPurity.isIntegralKind(u.meta().kind())
-                        && u.operand().meta().kind() == u.meta().kind()) {
+                if (u.op() == HirExpr.UnaryOp.NEGATE && HirPurity.isIntegralKind(u.meta().kind())) {
                     return graph.add(
                             ENode.unary(ENode.Op.NEG, u.meta().kind(), lowerExpr(u.operand())));
                 }
@@ -697,8 +691,6 @@ final class HirPipelineLifter {
             if (expr instanceof HirExpr.Binary b) {
                 PrimitiveKind rk = b.meta().kind();
                 if (HirPurity.isIntegralKind(rk)
-                        && b.left().meta().kind() == rk
-                        && b.right().meta().kind() == rk
                         && b.left().meta().wideningRank() < 0
                         && b.right().meta().wideningRank() < 0) {
                     ENode.Op op = INTEGRAL_BINARY_OPS.get(b.op());

@@ -518,7 +518,7 @@ final class HirPipelineLowerer {
             EGraph.ExtractedTree guardTree, HirExpr loRead, HirExpr hiRead, int line) {
         // Guard shape from R7: AND(LTE(lo, hi), CMP(CALL(f, hi), lim))
         EGraph.ExtractedTree cmpTree = guardTree.children().get(1);
-        HirExpr.BinaryOp cmpOp = req(toHirBinaryOp(cmpTree.node().op()));
+        HirExpr.BinaryOp cmpOp = req(BINARY_OPS_TO_HIR.get(cmpTree.node().op()));
         EGraph.ExtractedTree callTree = cmpTree.children().get(0);
         HirExpr fHi = rebuildUnaryCall(callTree.node().symbol(), hiRead, line);
         HirExpr limExpr = lowerExpr(cmpTree.children().get(1), line, null, null);
@@ -593,10 +593,10 @@ final class HirPipelineLowerer {
                         false,
                         ExprMeta.of(line, PrimitiveKind.BOOL));
             }
-            case ADD, SUB, MUL, DIV, FLOOR_DIV, MOD, EQ, NEQ, LT, LTE, GT, GTE -> {
+            case ADD, SUB, MUL, FLOOR_DIV, MOD, EQ, NEQ, LT, LTE, GT, GTE -> {
                 HirExpr l = lowerExpr(tree.children().get(0), line, overrideBinder, overrideExpr);
                 HirExpr r = lowerExpr(tree.children().get(1), line, overrideBinder, overrideExpr);
-                yield binaryExpr(req(toHirBinaryOp(n.op())), l, r, n.kind(), line);
+                yield binaryExpr(req(BINARY_OPS_TO_HIR.get(n.op())), l, r, n.kind(), line);
             }
             case CALL -> lowerCall(tree, line, overrideBinder, overrideExpr);
             default -> throw BailOut.INSTANCE;
@@ -659,7 +659,7 @@ final class HirPipelineLowerer {
     }
 
     private HirExpr rebuildUnaryCall(String sym, HirExpr arg, int line) {
-        HirExpr tmpl = lp.callTemplates.get(sym);
+        HirExpr tmpl = req(lp.callTemplates.get(sym));
         if (tmpl instanceof HirExpr.DirectBabbleCall c) {
             return new HirExpr.DirectBabbleCall(
                     c.callee(),
@@ -669,27 +669,25 @@ final class HirPipelineLowerer {
                     c.binding(),
                     c.meta().withLine(line));
         }
-        if (tmpl instanceof HirExpr.JavaMethodCall c) {
-            if (c.target().isStatic()) {
-                return new HirExpr.JavaMethodCall(
-                        c.receiver(),
-                        c.receiverText(),
-                        c.selectorLine(),
-                        c.pureStaticReceiver(),
-                        c.target(),
-                        List.of(arg),
-                        c.meta().withLine(line));
-            }
+        HirExpr.JavaMethodCall c = (HirExpr.JavaMethodCall) tmpl;
+        if (c.target().isStatic()) {
             return new HirExpr.JavaMethodCall(
-                    arg,
+                    c.receiver(),
                     c.receiverText(),
                     c.selectorLine(),
-                    false,
+                    c.pureStaticReceiver(),
                     c.target(),
-                    c.args(),
+                    List.of(arg),
                     c.meta().withLine(line));
         }
-        throw BailOut.INSTANCE;
+        return new HirExpr.JavaMethodCall(
+                arg,
+                c.receiverText(),
+                c.selectorLine(),
+                false,
+                c.target(),
+                c.args(),
+                c.meta().withLine(line));
     }
 
     private HirExpr buildAssocCall(HirExpr callTemplate, HirExpr a, HirExpr b) {
@@ -702,17 +700,15 @@ final class HirPipelineLowerer {
                     c.binding(),
                     c.meta());
         }
-        if (callTemplate instanceof HirExpr.JavaMethodCall c) {
-            return new HirExpr.JavaMethodCall(
-                    c.receiver(),
-                    c.receiverText(),
-                    c.selectorLine(),
-                    c.pureStaticReceiver(),
-                    c.target(),
-                    List.of(a, b),
-                    c.meta());
-        }
-        throw new IllegalStateException("Unsupported associative call template : " + callTemplate);
+        HirExpr.JavaMethodCall c = (HirExpr.JavaMethodCall) callTemplate;
+        return new HirExpr.JavaMethodCall(
+                c.receiver(),
+                c.receiverText(),
+                c.selectorLine(),
+                c.pureStaticReceiver(),
+                c.target(),
+                List.of(a, b),
+                c.meta());
     }
 
     private HirExpr buildFoldAssign(HirPipelineLifter.FoldInfo fi, HirExpr elemExpr) {
@@ -831,23 +827,19 @@ final class HirPipelineLowerer {
         return new HirExpr.Binary(op, left, right, null, null, ExprMeta.of(line, resultKind));
     }
 
-    private static HirExpr.BinaryOp toHirBinaryOp(ENode.Op op) {
-        return switch (op) {
-            case ADD -> HirExpr.BinaryOp.ADD;
-            case SUB -> HirExpr.BinaryOp.SUB;
-            case MUL -> HirExpr.BinaryOp.MUL;
-            case DIV -> HirExpr.BinaryOp.DIV;
-            case FLOOR_DIV -> HirExpr.BinaryOp.FLOOR_DIV;
-            case MOD -> HirExpr.BinaryOp.MOD;
-            case EQ -> HirExpr.BinaryOp.EQ;
-            case NEQ -> HirExpr.BinaryOp.NEQ;
-            case LT -> HirExpr.BinaryOp.LT;
-            case LTE -> HirExpr.BinaryOp.LTE;
-            case GT -> HirExpr.BinaryOp.GT;
-            case GTE -> HirExpr.BinaryOp.GTE;
-            default -> null;
-        };
-    }
+    private static final Map<ENode.Op, HirExpr.BinaryOp> BINARY_OPS_TO_HIR =
+            Map.ofEntries(
+                    Map.entry(ENode.Op.ADD, HirExpr.BinaryOp.ADD),
+                    Map.entry(ENode.Op.SUB, HirExpr.BinaryOp.SUB),
+                    Map.entry(ENode.Op.MUL, HirExpr.BinaryOp.MUL),
+                    Map.entry(ENode.Op.FLOOR_DIV, HirExpr.BinaryOp.FLOOR_DIV),
+                    Map.entry(ENode.Op.MOD, HirExpr.BinaryOp.MOD),
+                    Map.entry(ENode.Op.EQ, HirExpr.BinaryOp.EQ),
+                    Map.entry(ENode.Op.NEQ, HirExpr.BinaryOp.NEQ),
+                    Map.entry(ENode.Op.LT, HirExpr.BinaryOp.LT),
+                    Map.entry(ENode.Op.LTE, HirExpr.BinaryOp.LTE),
+                    Map.entry(ENode.Op.GT, HirExpr.BinaryOp.GT),
+                    Map.entry(ENode.Op.GTE, HirExpr.BinaryOp.GTE));
 
     private List<HirExpr> substituteVarsList(List<HirExpr> list) {
         if (varSubst.isEmpty()) {

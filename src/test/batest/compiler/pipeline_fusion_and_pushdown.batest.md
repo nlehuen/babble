@@ -892,5 +892,86 @@ fn negNotPipe (n:int) -> int {pure unique}
   var(s)
 ```
 
+## Distinct push-down over filtered range with nested consumer loop (R1 + R5 + R6)
+
+```babble
+def distNest = fn (n: int): double -> (
+    def vs = list of double ()
+    for x in 0..n then ( if x < 5 then ( vs.add(encode(x)) ) )
+    def seen = set of double ()
+    var tot = 0.0
+    for y in vs then (
+        if seen.add(y) then (
+            for j in 0..1 then ( def t = y + j; tot += t )
+        )
+    )
+    tot
+)
+assert(distNest(10) == 255.0 and distNest(2) == 93.0)
+```
+
+```hir
+;; hir -O0 fn=distNest
+fn distNest (n:int) -> double {pure unique}
+  (def vs (core-new list))
+  (for-range x .. 0:int var(n)
+    (block
+      (if (<:bool var(x) 5:int) (box (block (jcall List.add var(vs) (call-fn encode var(x))))))))
+  (def seen (core-new set))
+  (def tot 0.0:double)
+  (for y in var(vs)
+    (block
+      (if (jcall Set.add var(seen) var(y))
+        (block
+          (for-range j .. 0:int 1:int
+            (block
+              (def t (+:double var(y) (convert[double] var(j))))
+              (set tot += var(t))))))))
+  var(tot)
+```
+
+```hir
+;; hir -O1 fn=distNest
+fn distNest (n:int) -> double {pure unique}
+  (def vs (core-new list))
+  (for-range x .. 0:int var(n)
+    (block
+      (if (<:bool var(x) 5:int) (box (jcall List.add var(vs) (block
+              (def r (+:double (*:double (convert[double] var(x)) 10.0:double) 5.0:double))
+              var(r)))))))
+  (def seen (core-new set))
+  (def tot 0.0:double)
+  (for y in var(vs)
+    (block
+      (if (jcall Set.add var(seen) var(y))
+        (for-range j .. 0:int 1:int
+          (block
+            (def t (+:double var(y) (convert[double] var(j))))
+            (set tot += var(t)))))))
+  var(tot)
+```
+
+```hir
+;; hir -O2 fn=distNest
+fn distNest (n:int) -> double {pure unique}
+  (def seen (core-new set))
+  (def tot 0.0:double)
+  (block
+    (def $min#1 (if (<:bool var(n) 4:int) var(n) 4:int))
+    (for-range x .. 0:int var($min#1)
+      (block
+        (if (jcall Set.add var(seen) (box var(x)))
+          (block
+            (def y#0
+              (block
+                (def r (+:double (*:double (convert[double] var(x)) 10.0:double) 5.0:double))
+                var(r)))
+            (for-range j .. 0:int 1:int
+              (block
+                (def t (+:double var(y#0) (convert[double] var(j))))
+                (set tot += var(t)))))))))
+  var(tot)
+```
+
 
 
