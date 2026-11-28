@@ -291,7 +291,7 @@ final class JvmOpEmitter {
             mv.visitJumpInsn(icmpJump(op, branchIfTrue), target);
             return;
         }
-        PrimitiveKind common = numericOrder(lk) >= numericOrder(rk) ? lk : rk;
+        PrimitiveKind common = PrimitiveKind.comparisonKind(lk, rk);
         emitLeft.accept(common);
         emitRight.accept(common);
         if (numericOrder(common) <= 2) {

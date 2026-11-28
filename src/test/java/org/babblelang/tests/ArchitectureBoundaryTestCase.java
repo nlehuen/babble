@@ -78,12 +78,8 @@ public class ArchitectureBoundaryTestCase {
     private static final Map<String, Integer> GRANDFATHERED_CEILINGS =
             Map.ofEntries(
                     Map.entry("src/main/java/org/babblelang/wasm/WasmCoreEmitter.java", 2_463),
-                    Map.entry("src/main/java/org/babblelang/analysis/EffectBodyWalker.java", 2_225),
                     Map.entry("src/main/java/org/babblelang/wasm/WasmCallEmitter.java", 2_323),
-                    Map.entry("src/main/java/org/babblelang/compiler/CallEmitter.java", 2_195),
-                    Map.entry(
-                            "src/main/java/org/babblelang/analysis/CallEffectAnalyzer.java",
-                            2_082));
+                    Map.entry("src/main/java/org/babblelang/compiler/CallEmitter.java", 2_195));
 
     private static Path classesDirectory() throws URISyntaxException {
         Path directory =

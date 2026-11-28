@@ -251,11 +251,11 @@ assert(sJoin("a", "b") == "ab")
 
 ```babble
 def d1 = fn (x : double) : double -> ( return -(-x) + 1.0 - (-2.0 * x) )
-def d2 = fn (x : double, y : double) : double -> ( x + (y * 2.0 + 1.0) )
+def d2 = fn (x : double, y : double) : double -> ( if x < y then (x) else (y) )
 def m1 : fn monotone (x : double) : double = d1
 def m2 : fn monotone (x : double, y : double) : double = d2
 assert(m1(2.0) == 7.0)
-assert(m2(1.0, 2.0) == 6.0)
+assert(m2(1.0, 2.0) == 1.0)
 ```
 
 ## Case 24

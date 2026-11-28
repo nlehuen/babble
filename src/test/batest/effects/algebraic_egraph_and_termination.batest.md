@@ -140,9 +140,9 @@ Function add declared commutative violates commutative guarantee
 ## Case 10
 
 ```babble
-def addD = fn monotone (a : double, b : double) : double -> ( a + b * 2.0 )
+def minD = fn monotone (a : double, b : double) : double -> ( if a < b * 2.0 then (a) else (b * 2.0) )
 def shiftSecond = fn monotone (tag : Box, x : double) : double -> ( x / 2.0 + 1.0 )
-assert(addD(1.0, 2.0) == 5.0)
+assert(minD(1.0, 2.0) == 1.0)
 assert(shiftSecond(Box(0), 4.0) == 3.0)
 ```
 

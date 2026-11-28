@@ -1021,7 +1021,7 @@ public final class WasmFuncEmitter {
             return;
         }
         if (lk.numericRank() >= 0 && rk.numericRank() >= 0) {
-            PrimitiveKind common = lk.numericRank() >= rk.numericRank() ? lk : rk;
+            PrimitiveKind common = PrimitiveKind.comparisonKind(lk, rk);
             if (common.numericRank() <= 2) {
                 emitAs(b.left(), PrimitiveKind.INT);
                 emitAs(b.right(), PrimitiveKind.INT);

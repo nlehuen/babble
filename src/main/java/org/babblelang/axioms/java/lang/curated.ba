@@ -52,7 +52,7 @@ axiom java.lang.Integer: class notnull (
 ) static (
     def getInteger: fn ... (nm: string!): int?
     def getInteger: fn ... (nm: string!, val: int): java.lang.Integer!
-    def getInteger: fn ... (nm: string!, val: int?): java.lang.Integer!
+    def getInteger: fn ... (nm: string!, val: int?): java.lang.Integer?
 )
 
 ;; QUESTIONABLE : assumes every Iterable.iterator implementation is pure shared nothrow view
@@ -64,7 +64,7 @@ axiom java.lang.Long: class notnull (
 ) static (
     def getLong: fn ... (nm: string!): long?
     def getLong: fn ... (nm: string!, val: long): java.lang.Long!
-    def getLong: fn ... (nm: string!, val: long?): java.lang.Long!
+    def getLong: fn ... (nm: string!, val: long?): java.lang.Long?
 )
 
 axiom java.lang.Math: class (

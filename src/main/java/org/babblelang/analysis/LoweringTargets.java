@@ -377,30 +377,42 @@ public final class LoweringTargets {
     }
 
     /**
-     * Java SAM interface (plus optional marker interfaces) for eager callable conversion ({@code
-     * BIP022-D7}).
+     * Java SAM interface (plus optional marker interfaces and inbound Babble parameter check
+     * descriptors) for eager callable conversion ({@code BIP022-D7}, {@code BIP032}).
      */
-    public record JavaSamTarget(Class<?> samInterface, Class<?>[] markers) {
+    public record JavaSamTarget(
+            Class<?> samInterface, Class<?>[] markers, String[] paramDescriptors) {
         private static final Class<?>[] NO_MARKERS = new Class<?>[0];
+        private static final String[] NO_PARAM_DESCRIPTORS = new String[0];
 
         public JavaSamTarget {
             markers = markers == null || markers.length == 0 ? NO_MARKERS : markers.clone();
+            paramDescriptors =
+                    paramDescriptors == null || paramDescriptors.length == 0
+                            ? NO_PARAM_DESCRIPTORS
+                            : paramDescriptors.clone();
         }
 
         public JavaSamTarget(Class<?> samInterface) {
-            this(samInterface, NO_MARKERS);
+            this(samInterface, NO_MARKERS, NO_PARAM_DESCRIPTORS);
+        }
+
+        public JavaSamTarget(Class<?> samInterface, Class<?>[] markers) {
+            this(samInterface, markers, NO_PARAM_DESCRIPTORS);
         }
 
         @Override
         public boolean equals(Object o) {
             return o instanceof JavaSamTarget other
                     && samInterface == other.samInterface
-                    && Arrays.equals(markers, other.markers);
+                    && Arrays.equals(markers, other.markers)
+                    && Arrays.equals(paramDescriptors, other.paramDescriptors);
         }
 
         @Override
         public int hashCode() {
-            return 31 * Objects.hashCode(samInterface) + Arrays.hashCode(markers);
+            int h = 31 * Objects.hashCode(samInterface) + Arrays.hashCode(markers);
+            return 31 * h + Arrays.hashCode(paramDescriptors);
         }
     }
 

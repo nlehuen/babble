@@ -142,7 +142,8 @@ final class ExceptionTyper {
                 joinedEnv =
                         joinedEnv == null
                                 ? branchEnvs.get(i)
-                                : TypeEnv.joinBranches(beforeTry, joinedEnv, branchEnvs.get(i));
+                                : TypeEnv.joinBranches(
+                                        beforeTry, joinedEnv, branchEnvs.get(i), checker.algebra);
             }
         }
         if (joinedEnv == null) {

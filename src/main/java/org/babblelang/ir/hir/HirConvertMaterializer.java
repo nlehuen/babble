@@ -359,7 +359,7 @@ final class HirConvertMaterializer {
                                             || (lk == PrimitiveKind.CHAR
                                                     && rk == PrimitiveKind.CHAR))
                                     ? lk
-                                    : (lk.numericRank() >= rk.numericRank() ? lk : rk);
+                                    : PrimitiveKind.comparisonKind(lk, rk);
                     if (!alwaysExits(nl)) nl = wrapConvert(nl, common);
                     if (!alwaysExits(nr)) nr = wrapConvert(nr, common);
                 } else if (b.meta().kind().isPrimitive() && lk.isNumeric() && rk.isNumeric()) {

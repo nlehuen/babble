@@ -60,6 +60,25 @@ public final class Members {
         return target != null && !isBoxedPrimitive(target) && !(target instanceof Callable);
     }
 
+    /**
+     * Whether {@code target} is a Babble instance or scope with a public member named {@code name}.
+     */
+    public static boolean hasMember(Object target, String name) {
+        if (target instanceof HasMembers members) {
+            try {
+                members.getMember(name, false);
+                return true;
+            } catch (BabbleException e) {
+                return false;
+            }
+        }
+        if (BabbleObjects.isCompiledInstance(target)) {
+            BabbleClass cls = BabbleObjects.babbleClass(target);
+            return cls != null && cls.shape().memberIndex(name) >= 0;
+        }
+        return false;
+    }
+
     /** {@code this.name} */
     public static Object selectOwn(Object thiz, String name) {
         if (thiz instanceof HasMembers members) {

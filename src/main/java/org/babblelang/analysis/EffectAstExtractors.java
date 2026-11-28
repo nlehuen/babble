@@ -742,9 +742,13 @@ final class EffectAstExtractors {
         if (last instanceof BabbleParser.ReturnExpressionContext ret && ret.expression() != null) {
             last = EffectBodyWalker.unwrapParens(ret.expression());
         }
-        // 1. Forwarding to an `idempotent` / `commutative` mut method
+        // 1. Forwarding to an `idempotent` / `commutative` mut method: only valid when the
+        // call mutates `this` (or the sole mut parameter) and every other argument is a pure,
+        // state-independent expression over the value parameters (never reading the mutated
+        // target's fields or aliasing it).
         if (last instanceof BabbleParser.CallContext call) {
-            return new AlgebraicVerifier.ForwardMutCall(calleeIntrinsicOrResolvedEffects(call));
+            return extractForwardMutCall(
+                    call, paramDecls, mutParams, mutThis, paramIndex, locals, budget);
         }
         // 2. Single-field state transition `this.field <op>= rhs` or `mutParam.field <op>= rhs`
         if (last instanceof BabbleParser.AssignExpressionContext assign
@@ -799,6 +803,109 @@ final class EffectAstExtractors {
                     nextState);
         }
         return null;
+    }
+
+    private AlgebraicVerifier.MutBody extractForwardMutCall(
+            BabbleParser.CallContext call,
+            List<BabbleParser.FnParamContext> paramDecls,
+            boolean[] mutParams,
+            boolean mutThis,
+            Map<ParserRuleContext, Integer> paramIndex,
+            Map<ParserRuleContext, AlgebraicVerifier.Term> locals,
+            int[] budget) {
+        EffectSet calleeFx = calleeIntrinsicOrResolvedEffects(call);
+        if (calleeFx == null
+                || (!calleeFx.has(Effect.IDEMPOTENT) && !calleeFx.has(Effect.COMMUTATIVE))) {
+            return null;
+        }
+        List<BabbleParser.CallParameterContext> callArgs = call.callParameters().callParameter();
+        for (BabbleParser.CallParameterContext ap : callArgs) {
+            if (ap.spread != null || ScopeAnalysis.callParamName(ap) != null) {
+                return null;
+            }
+        }
+        int mutParamIdx = -1;
+        for (int i = 0; i < mutParams.length; i++) {
+            if (mutParams[i]) {
+                if (mutParamIdx >= 0 || mutThis) {
+                    return null;
+                }
+                mutParamIdx = i;
+            }
+        }
+        BabbleParser.ExpressionContext calleeExpr =
+                EffectBodyWalker.unwrapParens(call.expression());
+        if (calleeExpr instanceof BabbleParser.TypeApplyContext ta) {
+            calleeExpr = EffectBodyWalker.unwrapParens(ta.expression());
+        }
+        int targetArgIdx = -1;
+        if (calleeExpr instanceof BabbleParser.SelectorContext sel && sel.expression() != null) {
+            BabbleParser.ExpressionContext recv = EffectBodyWalker.unwrapParens(sel.expression());
+            if (mutThis) {
+                if (!(recv instanceof BabbleParser.ThisExpressionContext)) {
+                    return null;
+                }
+            } else if (mutParamIdx >= 0) {
+                if (resolveParam(recv) != paramDecls.get(mutParamIdx)) {
+                    return null;
+                }
+            } else {
+                return null;
+            }
+        } else {
+            // Standalone function call `f(mutTarget, valueArgs...)`: find the single mut target
+            // argument matching `mutParamIdx`.
+            if (mutThis || mutParamIdx < 0) {
+                return null;
+            }
+            for (int i = 0; i < callArgs.size(); i++) {
+                BabbleParser.ExpressionContext ae =
+                        EffectBodyWalker.unwrapParens(callArgs.get(i).expression());
+                if (resolveParam(ae) == paramDecls.get(mutParamIdx)) {
+                    if (targetArgIdx >= 0) {
+                        return null;
+                    }
+                    targetArgIdx = i;
+                }
+            }
+            if (targetArgIdx < 0) {
+                return null;
+            }
+        }
+        for (int i = 0; i < callArgs.size(); i++) {
+            if (i == targetArgIdx) {
+                continue;
+            }
+            AlgebraicVerifier.Term argTerm =
+                    extractExpr(callArgs.get(i).expression(), paramIndex, locals, null, budget);
+            if (argTerm == null || termMentionsParam(argTerm, mutParamIdx)) {
+                return null;
+            }
+        }
+        return new AlgebraicVerifier.ForwardMutCall(calleeFx);
+    }
+
+    private static boolean termMentionsParam(AlgebraicVerifier.Term term, int paramIdx) {
+        if (paramIdx < 0 || term == null) {
+            return false;
+        }
+        return switch (term) {
+            case AlgebraicVerifier.Param p -> p.index() == paramIdx;
+            case AlgebraicVerifier.Const c -> false;
+            case AlgebraicVerifier.Opaque o -> false;
+            case AlgebraicVerifier.Unary u -> termMentionsParam(u.operand(), paramIdx);
+            case AlgebraicVerifier.Binary b ->
+                    termMentionsParam(b.left(), paramIdx) || termMentionsParam(b.right(), paramIdx);
+            case AlgebraicVerifier.Cast c -> termMentionsParam(c.operand(), paramIdx);
+            case AlgebraicVerifier.Ite ite ->
+                    termMentionsParam(ite.cond(), paramIdx)
+                            || termMentionsParam(ite.thenBranch(), paramIdx)
+                            || termMentionsParam(ite.elseBranch(), paramIdx);
+            case AlgebraicVerifier.Call c ->
+                    c.args().stream().anyMatch(a -> termMentionsParam(a, paramIdx));
+            case AlgebraicVerifier.Ctor c ->
+                    c.args().stream().anyMatch(a -> termMentionsParam(a, paramIdx));
+        };
     }
 
     // ---------------------------------------------------------------- callee resolution helpers
@@ -1259,8 +1366,9 @@ final class EffectAstExtractors {
                 return !treeReferencesComponent(inner);
             }
             if (ctx instanceof BabbleParser.ClassExpressionContext
+                    || ctx instanceof BabbleParser.ObjectExpressionContext
                     || ctx instanceof BabbleParser.InterfaceExpressionContext) {
-                return true;
+                return !treeReferencesComponent(ctx);
             }
             if (ctx instanceof BabbleParser.IfExpressionContext ie) {
                 return walkIf(ie.ifExpr(), env);
@@ -1286,15 +1394,37 @@ final class EffectAstExtractors {
                 // a HOF.
                 return !selectorTargetsComponent(sel);
             }
+            if (ctx instanceof BabbleParser.NegateContext neg) {
+                if (!walkExpr(neg.operand, env)) {
+                    return false;
+                }
+                return !typeOperatorMethodInComponent(
+                        ec.checker.rawTypeOf(neg.operand), Operators.NEGATE);
+            }
+            if (ctx instanceof BabbleParser.AssignExpressionContext assign) {
+                String baseOp = Operators.compound(assign.op.getText());
+                String opMethod = baseOp != null ? Operators.method(baseOp) : null;
+                if (opMethod != null
+                        && typeOperatorMethodInComponent(ec.checker.rawTypeOf(assign), opMethod)) {
+                    return false;
+                }
+            }
             if (ctx instanceof BabbleParser.BinaryOpContext bin) {
                 if (!walkExpr(bin.left, env) || !walkExpr(bin.right, env)) {
                     return false;
                 }
-                if ("+".equals(bin.op.getText()) && ec.checker.rawTypeOf(bin) == Type.STRING) {
+                String op = bin.op.getText();
+                if ("+".equals(op) && ec.checker.rawTypeOf(bin) == Type.STRING) {
                     if (typeToStringInComponent(ec.checker.rawTypeOf(bin.left))
                             || typeToStringInComponent(ec.checker.rawTypeOf(bin.right))) {
                         return false;
                     }
+                }
+                String opMethod = Operators.method(op);
+                if (opMethod != null
+                        && typeOperatorMethodInComponent(
+                                ec.checker.rawTypeOf(bin.left), opMethod)) {
+                    return false;
                 }
                 return true;
             }
@@ -1677,6 +1807,27 @@ final class EffectAstExtractors {
                         if (lit != null && compIds.containsKey(lit)) {
                             return true;
                         }
+                    }
+                }
+            }
+            return false;
+        }
+
+        private boolean typeOperatorMethodInComponent(Type type, String methodName) {
+            if (type == null || methodName == null) {
+                return false;
+            }
+            for (Type m : Type.membersOf(TypeAlgebra.unwrapFrozen(type))) {
+                if (m instanceof Type.Instance inst) {
+                    TypeNode.Member mem = ec.checker.findMemberOnNode(inst.node(), methodName);
+                    if (mem == null) {
+                        continue;
+                    }
+                    if (mem.function != null && compIds.containsKey(mem.function)) {
+                        return true;
+                    }
+                    if (typeReachesComponent(ec.checker.memberTypeForEffects(inst.node(), mem))) {
+                        return true;
                     }
                 }
             }

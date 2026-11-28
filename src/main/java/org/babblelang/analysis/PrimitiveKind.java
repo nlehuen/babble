@@ -61,6 +61,19 @@ public enum PrimitiveKind {
         };
     }
 
+    /**
+     * Common numeric kind for comparisons ({@code ==}, {@code !=}, {@code <}, {@code <=}, {@code
+     * >}, {@code >=}), matching {@code Operators.compareNumbers}: mixed {@code int}/{@code long} vs
+     * {@code float} promotes to {@code double} so integral operands are not lossily rounded to
+     * 24-bit {@code float}.
+     */
+    public static PrimitiveKind comparisonKind(PrimitiveKind a, PrimitiveKind b) {
+        if ((a == FLOAT && (b == INT || b == LONG)) || (b == FLOAT && (a == INT || a == LONG))) {
+            return DOUBLE;
+        }
+        return a.numericRank() >= b.numericRank() ? a : b;
+    }
+
     public static PrimitiveKind ofJavaClass(Class<?> cls) {
         if (cls == int.class) return INT;
         if (cls == long.class) return LONG;

@@ -105,6 +105,13 @@ axiom java.util.Comparator of T: class notnull (
     def compare: fn (o1: T, o2: T): int
 )
 
+axiom java.util.Deque of E: class notnull (
+    def peekFirst: fn (): E?
+    def peekLast: fn (): E?
+    def pollFirst: fn mut (): E?
+    def pollLast: fn mut (): E?
+)
+
 axiom java.util.HashMap of (K, V): class (
 ) static (
     def new: fn shared
@@ -118,7 +125,8 @@ axiom java.util.HashSet of E: class (
 ;; QUESTIONABLE : assumes every Iterator implementation obeys core iterator effects
 axiom java.util.Iterator of E: class notnull (
     def hasNext: fn nothrow (): bool
-    def remove: fn mut shared shallow (): void
+    def next: fn mut shallow (): E
+    def remove: fn mut shared (): void
 )
 
 axiom java.util.LinkedHashMap of (K, V): class (
@@ -155,9 +163,9 @@ axiom java.util.List of E: class notnull (
 
 ;; QUESTIONABLE : assumes every ListIterator implementation obeys core iterator effects
 axiom java.util.ListIterator of E: class notnull (
-    def add: fn mut shared shallow (shared e: E): void
+    def add: fn mut shared (shared e: E): void
     def hasPrevious: fn nothrow (): bool
-    def set: fn mut shared shallow (shared e: E): void
+    def set: fn mut shared (shared e: E): void
 )
 
 ;; QUESTIONABLE : assumes every Map implementation obeys core map effects
@@ -189,8 +197,7 @@ axiom java.util.Map of (K, V): class notnull (
     def values: fn nothrow view (): (java.util.Collection of V)!
 )
 
-;; QUESTIONABLE : assumes Map.Entry is deeply immutable despite setValue
-axiom java.util.Map.Entry of (K, V): class notnull immutable (
+axiom java.util.Map.Entry of (K, V): class notnull (
     def equals: fn (o: any?): bool
     def getKey: fn nothrow (): K
     def getValue: fn nothrow (): V
@@ -231,7 +238,7 @@ axiom java.util.NavigableSet of E: class notnull (
     def tailSet: fn view (fromElement: E, inclusive: bool): (java.util.NavigableSet of E)!
 )
 
-axiom java.util.Optional of T: class notnull (
+axiom java.util.Optional of T: class notnull immutable (
     def get: fn ... : T!
     def orElse: fn ... (other: T): T
     def orElseThrow: fn ... : T!
@@ -248,6 +255,7 @@ axiom java.util.PriorityQueue of E: class (
 axiom java.util.Queue of E: class notnull (
     def element: fn (): E
     def peek: fn (): E?
+    def poll: fn mut (): E?
 )
 
 axiom java.util.SequencedCollection of E: class notnull (

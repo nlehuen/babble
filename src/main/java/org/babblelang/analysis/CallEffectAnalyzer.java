@@ -37,15 +37,16 @@ final class CallEffectAnalyzer {
             BabbleParser.ExpressionContext calleeExpr,
             List<BabbleParser.CallParameterContext> args) {
         if (w.effectiveType(calleeExpr) instanceof Type.CoreCollection cc) {
-            return evalCoreCollectionCall(cc.kind(), call, args);
+            return CollectionEffectAnalyzer.evalCoreCollectionCall(
+                    this, ec, w, cc.kind(), call, args);
         }
         if (w.effectiveType(calleeExpr) instanceof Type.ArrayOfFactory) {
-            return evalArrayOfCall(call, args);
+            return CollectionEffectAnalyzer.evalArrayOfCall(ec, w, call, args);
         }
-        BabbleParser.ExpressionContext unwrappedCallee =
-                calleeExpr instanceof BabbleParser.TypeApplyContext ta
-                        ? ta.expression()
-                        : calleeExpr;
+        BabbleParser.ExpressionContext unwrappedCallee = EffectBodyWalker.unwrapParens(calleeExpr);
+        if (unwrappedCallee instanceof BabbleParser.TypeApplyContext ta) {
+            unwrappedCallee = EffectBodyWalker.unwrapParens(ta.expression());
+        }
         // Evaluate receiver / callee expression and arguments!
         Reachability.Origin recvOrig = Reachability.Origin.IMMUTABLE;
         BabbleParser.ExpressionContext receiverExpr = null;
@@ -61,7 +62,7 @@ final class CallEffectAnalyzer {
             Type unwrappedRecv = TypeAlgebra.unwrapFrozen(recvType);
             if (unwrappedRecv instanceof Type.Array arr) {
                 String mName = ScopeAnalysis.selectorName(sel);
-                if (isArrayProtocolMethod(mName)) {
+                if (CollectionEffectAnalyzer.isArrayProtocolMethod(mName)) {
                     arrayRecvType = recvType;
                     arrayRecv = arr;
                     arrayMethodName = mName;
@@ -72,7 +73,9 @@ final class CallEffectAnalyzer {
             }
             if (!(recvType instanceof Type.JavaPackage || recvType instanceof Type.Module)) {
                 boolean preserveSizeDet =
-                        "size".equals(arrayMethodName) && isNonReassignedBareBinding(receiverExpr);
+                        "size".equals(arrayMethodName)
+                                && CollectionEffectAnalyzer.isNonReassignedBareBinding(
+                                        ec, receiverExpr);
                 boolean detBefore = w.deterministic;
                 recvOrig = w.eval(receiverExpr);
                 if (preserveSizeDet) {
@@ -104,7 +107,9 @@ final class CallEffectAnalyzer {
 
         Type resType = ec.checker.rawTypeOf(call);
         if (arrayMethodName != null) {
-            return evalArrayMethodCall(
+            return CollectionEffectAnalyzer.evalArrayMethodCall(
+                    ec,
+                    w,
                     call,
                     receiverExpr,
                     recvOrig,
@@ -117,7 +122,8 @@ final class CallEffectAnalyzer {
                     resType);
         }
         if (rangeMethodName != null) {
-            return evalRangeMethodCall(call, rangeElemType, rangeMethodName, argExprs, resType);
+            return CollectionEffectAnalyzer.evalRangeMethodCall(
+                    ec, w, call, rangeElemType, rangeMethodName, argExprs, resType);
         }
         Type calleeType = resolveCalleeType(calleeExpr);
 
@@ -467,427 +473,6 @@ final class CallEffectAnalyzer {
         return Reachability.Origin.IMMUTABLE;
     }
 
-    private Reachability.Origin evalCoreCollectionCall(
-            String kind,
-            ParserRuleContext ccc,
-            List<BabbleParser.CallParameterContext> paramsList) {
-        BabbleParser.ExpressionContext[] argExprs =
-                new BabbleParser.ExpressionContext[paramsList.size()];
-        Reachability.Origin[] argOrigins = new Reachability.Origin[paramsList.size()];
-        for (int i = 0; i < paramsList.size(); i++) {
-            argExprs[i] = paramsList.get(i).expression();
-            argOrigins[i] = w.eval(argExprs[i]);
-        }
-        if ("entry".equals(kind)) {
-            boolean immutableEntry = true;
-            boolean uniqueEntry = true;
-            Reachability.Origin freshEntry = Reachability.Origin.ofUnique(ccc, null, false);
-            for (int i = 0; i < argExprs.length; i++) {
-                Type argType = w.effectiveType(argExprs[i]);
-                if (!ec.javaResolver.isDeeplyImmutable(argType)) {
-                    immutableEntry = false;
-                    if (!w.isUnattachedUniqueOrImmutable(argOrigins[i], argType)) {
-                        uniqueEntry = false;
-                        freshEntry = freshEntry.absorbElement(argOrigins[i]);
-                        if (argOrigins[i].unique && argOrigins[i].uniqueOwner != null) {
-                            w.demoteUniqueOwner(
-                                    argOrigins[i].uniqueOwner, Reachability.Origin.IMMUTABLE);
-                        }
-                    }
-                    w.markStoredOrigin(argOrigins[i], "entry", argExprs[i]);
-                }
-            }
-            if (!immutableEntry) {
-                w.applyEffects(
-                        EffectSet.ofInferred(
-                                EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW),
-                                false,
-                                true,
-                                false,
-                                true));
-                return uniqueEntry ? Reachability.Origin.ofUnique(ccc, null, false) : freshEntry;
-            }
-            return Reachability.Origin.IMMUTABLE;
-        }
-        if ("array".equals(kind)) {
-            w.applyEffects(
-                    EffectSet.ofInferred(
-                            EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC),
-                            false,
-                            true,
-                            false,
-                            true));
-            w.nothrow = false;
-            boolean staysUnique = true;
-            Reachability.Origin freshArr = Reachability.Origin.ofUnique(ccc, null, false);
-            for (int i = 0; i < paramsList.size(); i++) {
-                BabbleParser.CallParameterContext p = paramsList.get(i);
-                String name = p.memberName() != null ? p.memberName().getText() : null;
-                if ("from".equals(name)) {
-                    Type rawFrom = w.effectiveType(argExprs[i]);
-                    w.recordTargetRead(argOrigins[i], rawFrom);
-                    Type fromType = rawFrom instanceof Type.Frozen f ? f.of() : rawFrom;
-                    if (fromType instanceof Type.Array arr) {
-                        staysUnique = ec.javaResolver.isDeeplyImmutable(arr.element());
-                    } else if (fromType instanceof Type.JavaInstance ji) {
-                        EffectChecker.JavaCallProfile iterProf =
-                                ec.javaResolver.resolveJavaMethodProfile(
-                                        ji.type(),
-                                        "iterator",
-                                        JavaEffectResolver.lookupPublicMethod(
-                                                ji.type(), "iterator"));
-                        if (!iterProf.effects().isHermetic()) {
-                            w.terminating = false;
-                        }
-                        if (!ji.typeArguments().isEmpty()) {
-                            for (Type ta : ji.typeArguments()) {
-                                if (!ec.javaResolver.isDeeplyImmutable(ta)) {
-                                    staysUnique = false;
-                                }
-                            }
-                        } else {
-                            staysUnique = false;
-                        }
-                    } else {
-                        staysUnique = false;
-                        w.terminating = false;
-                    }
-                    if (!staysUnique) {
-                        freshArr = freshArr.absorbElement(argOrigins[i]);
-                    }
-                }
-            }
-            return staysUnique ? Reachability.Origin.ofUnique(ccc, null, false) : freshArr;
-        }
-
-        // list, set, sortedset, map, sortedmap: w.hermetic w.deterministic allocation (unique per
-        // BIP007-D6!)
-        w.applyEffects(
-                EffectSet.ofInferred(
-                        EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW),
-                        false,
-                        true,
-                        false,
-                        true));
-        boolean hasCapacity = false;
-        boolean hasFrom = false;
-        boolean hasComparator = false;
-        boolean hasElements = false;
-        boolean staysUnique = true;
-        Reachability.Origin freshCol = Reachability.Origin.ofUnique(ccc, null, false);
-        for (int i = 0; i < paramsList.size(); i++) {
-            BabbleParser.CallParameterContext p = paramsList.get(i);
-            String name = p.memberName() != null ? p.memberName().getText() : null;
-            if ("capacity".equals(name)) {
-                hasCapacity = true;
-            } else if ("from".equals(name)) {
-                hasFrom = true;
-                // `from:` reads and copies elements from the source collection; result carries
-                // elements' provenance (BIP019 §4.1, §4.3).
-                Type rawFrom = w.effectiveType(argExprs[i]);
-                w.recordTargetRead(argOrigins[i], rawFrom);
-                Type fromType = rawFrom;
-                if (fromType instanceof Type.Frozen f) {
-                    fromType = f.of();
-                }
-                boolean fromImm = true;
-                if (fromType instanceof Type.JavaInstance ji && !ji.typeArguments().isEmpty()) {
-                    for (Type ta : ji.typeArguments()) {
-                        if (!ec.javaResolver.isDeeplyImmutable(ta)) {
-                            fromImm = false;
-                        }
-                    }
-                } else {
-                    fromImm = false;
-                }
-                if (!fromImm) {
-                    staysUnique = false;
-                    freshCol = freshCol.absorbElement(argOrigins[i]);
-                }
-            } else if ("comparator".equals(name)) {
-                hasComparator = true;
-                w.markStoredOrigin(argOrigins[i], kind + " comparator", argExprs[i]);
-                Type cmpType = w.effectiveType(argExprs[i]);
-                propagateSamCallbackEffects(cmpType, java.util.Comparator.class);
-                if (!(cmpType instanceof Type.Function cmpFn)
-                        || !cmpFn.effects().isPure()
-                        || !cmpFn.effects().isDeterministic()) {
-                    staysUnique = false;
-                    freshCol = freshCol.absorbElement(argOrigins[i]);
-                }
-            } else {
-                hasElements = true;
-                Type argType = w.effectiveType(argExprs[i]);
-                if (!ec.javaResolver.isDeeplyImmutable(argType)) {
-                    if (!w.isUnattachedUniqueOrImmutable(argOrigins[i], argType)) {
-                        staysUnique = false;
-                        freshCol = freshCol.absorbElement(argOrigins[i]);
-                        if (argOrigins[i].unique && argOrigins[i].uniqueOwner != null) {
-                            w.demoteUniqueOwner(
-                                    argOrigins[i].uniqueOwner, Reachability.Origin.IMMUTABLE);
-                        }
-                    }
-                    w.markStoredOrigin(argOrigins[i], kind, argExprs[i]);
-                }
-                if ("set".equals(kind)) {
-                    w.applyEffects(ec.javaResolver.equalityProfile(argType, argType));
-                } else if ("map".equals(kind)) {
-                    if (argType instanceof Type.JavaInstance ji
-                            && java.util.Map.Entry.class.isAssignableFrom(ji.type())
-                            && !ji.typeArguments().isEmpty()) {
-                        Type keyType = ji.typeArguments().get(0);
-                        w.applyEffects(ec.javaResolver.equalityProfile(keyType, keyType));
-                    }
-                } else if ("sortedset".equals(kind) && !hasComparator) {
-                    w.applyEffects(ec.javaResolver.comparisonProfile(argType, argType));
-                } else if ("sortedmap".equals(kind) && !hasComparator) {
-                    if (argType instanceof Type.JavaInstance ji
-                            && java.util.Map.Entry.class.isAssignableFrom(ji.type())
-                            && !ji.typeArguments().isEmpty()) {
-                        Type keyType = ji.typeArguments().get(0);
-                        w.applyEffects(ec.javaResolver.comparisonProfile(keyType, keyType));
-                    }
-                }
-            }
-        }
-        if (hasCapacity
-                || ((hasFrom || hasElements)
-                        && ("sortedset".equals(kind) || "sortedmap".equals(kind)))) {
-            w.nothrow = false;
-        }
-        return staysUnique ? Reachability.Origin.ofUnique(ccc, null, false) : freshCol;
-    }
-
-    private static boolean isArrayProtocolMethod(String name) {
-        return "size".equals(name)
-                || "get".equals(name)
-                || "set".equals(name)
-                || "equals".equals(name)
-                || "hashCode".equals(name)
-                || "toString".equals(name);
-    }
-
-    private boolean isNonReassignedBareBinding(BabbleParser.ExpressionContext expr) {
-        while (expr instanceof BabbleParser.BlockExpressionContext b
-                && b.block().expression().size() == 1) {
-            expr = b.block().expression(0);
-        }
-        if (expr instanceof BabbleParser.SelectorContext rsel && rsel.expression() == null) {
-            Object resolved =
-                    ec.checker.resolveNameForEffects(
-                            rsel.ID().getText(), ec.checker.occurrenceScopeOf(rsel));
-            return resolved instanceof ParserRuleContext decl && !ec.checker.isReassigned(decl);
-        }
-        return false;
-    }
-
-    private Reachability.Origin evalArrayOfCall(
-            ParserRuleContext call, List<BabbleParser.CallParameterContext> paramsList) {
-        BabbleParser.ExpressionContext[] argExprs =
-                new BabbleParser.ExpressionContext[paramsList.size()];
-        Reachability.Origin[] argOrigins = new Reachability.Origin[paramsList.size()];
-        for (int i = 0; i < paramsList.size(); i++) {
-            argExprs[i] = paramsList.get(i).expression();
-            argOrigins[i] = w.eval(argExprs[i]);
-        }
-        w.applyEffects(
-                EffectSet.ofInferred(
-                        EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW),
-                        false,
-                        true,
-                        false,
-                        true));
-        boolean staysUnique = true;
-        Reachability.Origin freshArr = Reachability.Origin.ofUnique(call, null, false);
-        for (int i = 0; i < argExprs.length; i++) {
-            Type argType = w.effectiveType(argExprs[i]);
-            if (!ec.javaResolver.isDeeplyImmutable(argType)) {
-                if (!w.isUnattachedUniqueOrImmutable(argOrigins[i], argType)) {
-                    staysUnique = false;
-                    freshArr = freshArr.absorbElement(argOrigins[i]);
-                    if (argOrigins[i].unique && argOrigins[i].uniqueOwner != null) {
-                        w.demoteUniqueOwner(
-                                argOrigins[i].uniqueOwner, Reachability.Origin.IMMUTABLE);
-                    }
-                }
-                w.markStoredOrigin(argOrigins[i], "array", argExprs[i]);
-            }
-        }
-        return staysUnique ? Reachability.Origin.ofUnique(call, null, false) : freshArr;
-    }
-
-    private Reachability.Origin evalArrayMethodCall(
-            ParserRuleContext call,
-            BabbleParser.ExpressionContext receiverExpr,
-            Reachability.Origin recvOrig,
-            Type recvType,
-            Type.Array arr,
-            String methodName,
-            List<BabbleParser.CallParameterContext> args,
-            BabbleParser.ExpressionContext[] argExprs,
-            Reachability.Origin[] argOrigins,
-            Type resType) {
-        if (resType == Type.ERROR) {
-            return Reachability.Origin.IMMUTABLE;
-        }
-        return switch (methodName) {
-            case "size" -> Reachability.Origin.IMMUTABLE;
-            case "get" -> {
-                w.nothrow = false;
-                w.recordTargetRead(recvOrig, recvType);
-                if (ec.javaResolver.isDeeplyImmutable(resType)) {
-                    yield Reachability.Origin.IMMUTABLE;
-                }
-                yield recvOrig.deriveIndexedProjection(
-                        InitEffectAnalyzer.literalIndexSegment(argExprs), false);
-            }
-            case "set" -> {
-                w.nothrow = false;
-                if (w.containsFrozen(recvType)) {
-                    w.reportOnce("Cannot call mut method set on frozen value", call);
-                }
-                w.recordTargetMutation(recvOrig, receiverExpr, "mut method set", call, true);
-                int valIdx = -1;
-                for (int i = 0; i < args.size(); i++) {
-                    if ("value".equals(ScopeAnalysis.callParamName(args.get(i)))) {
-                        valIdx = i;
-                        break;
-                    }
-                }
-                if (valIdx < 0
-                        && args.size() >= 2
-                        && ScopeAnalysis.callParamName(args.get(1)) == null) {
-                    valIdx = 1;
-                }
-                if (valIdx >= 0 && valIdx < argExprs.length) {
-                    Reachability.Origin valOrig = argOrigins[valIdx];
-                    Type valType = w.effectiveType(argExprs[valIdx]);
-                    if (!ec.javaResolver.isDeeplyImmutable(valType)) {
-                        if (valOrig.owned() && valOrig.uniqueOwner != null) {
-                            w.demoteUniqueOwner(valOrig.uniqueOwner, Reachability.Origin.IMMUTABLE);
-                        }
-                        w.markStoredIntoTarget(
-                                recvOrig, valOrig, valType, "element", argExprs[valIdx]);
-                    }
-                }
-                yield Reachability.Origin.IMMUTABLE;
-            }
-            case "equals" -> {
-                w.applyEffects(ec.javaResolver.singleEqualityProfile(arr.element()));
-                w.recordTargetRead(recvOrig, recvType);
-                if (argExprs.length == 1) {
-                    w.recordTargetRead(argOrigins[0], w.effectiveType(argExprs[0]));
-                }
-                yield Reachability.Origin.IMMUTABLE;
-            }
-            case "hashCode" -> {
-                w.applyEffects(ec.javaResolver.singleEqualityProfile(arr.element()));
-                w.recordTargetRead(recvOrig, recvType);
-                yield Reachability.Origin.IMMUTABLE;
-            }
-            case "toString" -> {
-                w.applyEffects(ec.javaResolver.toStringProfile(arr.element()));
-                w.recordTargetRead(recvOrig, recvType);
-                yield Reachability.Origin.IMMUTABLE;
-            }
-            default -> Reachability.Origin.IMMUTABLE;
-        };
-    }
-
-    private Reachability.Origin evalRangeMethodCall(
-            ParserRuleContext call,
-            Type elemType,
-            String methodName,
-            BabbleParser.ExpressionContext[] argExprs,
-            Type resType) {
-        if (resType == Type.ERROR) {
-            return Reachability.Origin.IMMUTABLE;
-        }
-        Class<?> ownerClass = rangeRuntimeClass(elemType);
-        Class<?>[] paramTypes =
-                switch (methodName) {
-                    case "contains" -> new Class<?>[] {Object.class};
-                    case "step" -> new Class<?>[] {elemType == Type.LONG ? long.class : int.class};
-                    case "equals" -> new Class<?>[] {Object.class};
-                    default -> new Class<?>[0];
-                };
-        java.lang.reflect.Method m = null;
-        try {
-            m = ownerClass.getMethod(methodName, paramTypes);
-        } catch (NoSuchMethodException ignored) {
-            // Fall through to name-based lookup below.
-        }
-        if (m == null) {
-            m = JavaEffectResolver.lookupPublicMethod(ownerClass, methodName);
-        }
-        EffectChecker.JavaCallProfile prof =
-                ec.javaResolver.resolveJavaMethodProfile(ownerClass, methodName, m);
-        EffectSet eff = prof.effects();
-        if ("step".equals(methodName)
-                && argExprs.length == 1
-                && EffectBodyWalker.isPositiveIntegerConstant(argExprs[0])
-                && eff.isPure()
-                && eff.isHermetic()
-                && eff.isDeterministic()) {
-            eff =
-                    EffectSet.ofInferred(
-                            java.util.EnumSet.of(
-                                    org.babblelang.effects.Effect.PURE,
-                                    org.babblelang.effects.Effect.HERMETIC,
-                                    org.babblelang.effects.Effect.DETERMINISTIC,
-                                    org.babblelang.effects.Effect.NOTHROW),
-                            false,
-                            false,
-                            false,
-                            true);
-        } else if (elemType == Type.STRING
-                && ("contains".equals(methodName)
-                        || "isEmpty".equals(methodName)
-                        || "equals".equals(methodName)
-                        || "hashCode".equals(methodName)
-                        || "toString".equals(methodName))
-                && eff.isPure()
-                && eff.isHermetic()
-                && eff.isDeterministic()) {
-            // String.compareTo / equals / hashCode / toString are pure nothrow in
-            // java/lang/curated.ba.
-            EffectSet cmpEff = ec.javaResolver.comparisonProfile(Type.STRING, Type.STRING);
-            if (cmpEff.isNothrow()) {
-                eff =
-                        EffectSet.ofInferred(
-                                java.util.EnumSet.of(
-                                        org.babblelang.effects.Effect.PURE,
-                                        org.babblelang.effects.Effect.HERMETIC,
-                                        org.babblelang.effects.Effect.DETERMINISTIC,
-                                        org.babblelang.effects.Effect.NOTHROW),
-                                false,
-                                false,
-                                false,
-                                true);
-            }
-        }
-        w.applyEffects(eff);
-        return ec.javaResolver.isDeeplyImmutable(resType)
-                ? Reachability.Origin.IMMUTABLE
-                : Reachability.Origin.ofUnique(call, null, false);
-    }
-
-    private static Class<?> rangeRuntimeClass(Type elemType) {
-        if (elemType == Type.BYTE || elemType == Type.SHORT || elemType == Type.INT) {
-            return org.babblelang.runtime.IntRange.class;
-        }
-        if (elemType == Type.LONG) {
-            return org.babblelang.runtime.LongRange.class;
-        }
-        if (elemType == Type.CHAR) {
-            return org.babblelang.runtime.CharRange.class;
-        }
-        if (elemType == Type.FLOAT || elemType == Type.DOUBLE) {
-            return org.babblelang.runtime.DoubleRange.class;
-        }
-        return org.babblelang.runtime.Range.class;
-    }
-
     private Type resolveCalleeType(BabbleParser.ExpressionContext calleeExpr) {
         return ec.checker.rawTypeOf(calleeExpr);
     }
@@ -999,6 +584,12 @@ final class CallEffectAnalyzer {
         }
         boolean effectiveMutRecv =
                 profile.mutReceiver() && receiverExpr != null && recvType != Type.STRING;
+        if (profile.mutReceiver() && receiverExpr == null) {
+            // Calling a first-class bound mut Java method (e.g. `adder()("y")`) mutates its
+            // captured receiver.
+            w.hermetic = false;
+            w.stmtHasSideEffect = true;
+        }
         if (receiverExpr != null && w.containsFrozen(recvType)) {
             if (effectiveMutRecv) {
                 w.reportOnce("Cannot call mut method " + methodName + " on frozen value", call);
@@ -1120,7 +711,14 @@ final class CallEffectAnalyzer {
 
         // Static call-site mut exclusivity:
         checkCallExclusivity(
-                receiverExpr, recvOrig, effectiveMutRecv, argExprs, argOrigins, argIsMut, call);
+                receiverExpr,
+                recvOrig,
+                effectiveMutRecv,
+                profile.shallow(),
+                argExprs,
+                argOrigins,
+                argIsMut,
+                call);
 
         return JavaCallResultOrigins.of(
                 ec,
@@ -1136,7 +734,7 @@ final class CallEffectAnalyzer {
                 resType);
     }
 
-    private void propagateSamCallbackEffects(Type argType, Class<?> samClass) {
+    void propagateSamCallbackEffects(Type argType, Class<?> samClass) {
         for (Type m : Type.membersOf(argType)) {
             if (m instanceof Type.Function fn) {
                 BabbleParser.FunctionLiteralContext lit = ec.checker.literalOf(fn);
@@ -1226,6 +824,22 @@ final class CallEffectAnalyzer {
                         || calleeExpr instanceof BabbleParser.SuperExpressionContext
                         || (calleeExpr instanceof BabbleParser.SelectorContext s
                                 && s.expression() instanceof BabbleParser.SuperExpressionContext);
+        if (!isMethodCall && summary.effects().mutThis()) {
+            BabbleParser.FunctionLiteralContext lit = ec.checker.literalOf(fn);
+            if (lit != null && isLexicallyEnclosedInWalker(lit)) {
+                w.recordTargetMutation(
+                        Reachability.Origin.ofThis(Reachability.THIS_KEY, false),
+                        call,
+                        "mut closure " + calleeExpr.getText(),
+                        call,
+                        !summary.deepMutThis());
+            } else {
+                // Calling a first-class bound `mut` method (e.g. `def f = box.inc; f()`) mutates
+                // its captured receiver; unless proven frame-local, treat as external mutation.
+                w.hermetic = false;
+                w.stmtHasSideEffect = true;
+            }
+        }
         Reachability.Origin effectiveRecvOrig =
                 (calleeExpr instanceof BabbleParser.SelectorContext s
                                 && s.expression() instanceof BabbleParser.SuperExpressionContext)
@@ -1916,6 +1530,7 @@ final class CallEffectAnalyzer {
                 receiverExpr,
                 recvOrig,
                 effectiveMutRecv,
+                !deepMutRecv,
                 argExprs,
                 argOrigins,
                 argIsExclusive,
@@ -2011,20 +1626,39 @@ final class CallEffectAnalyzer {
         return out;
     }
 
+    private boolean isLexicallyEnclosedInWalker(BabbleParser.FunctionLiteralContext lit) {
+        ParserRuleContext cur = lit.getParent();
+        while (cur != null) {
+            if (cur == w.owner || w.frameChain.contains(cur)) {
+                return true;
+            }
+            if (cur instanceof BabbleParser.ClassExpressionContext
+                    || cur instanceof BabbleParser.ObjectExpressionContext
+                    || cur instanceof BabbleParser.InterfaceExpressionContext) {
+                return false;
+            }
+            cur = cur.getParent();
+        }
+        return false;
+    }
+
     private void checkCallExclusivity(
             BabbleParser.ExpressionContext receiverExpr,
             Reachability.Origin recvOrig,
             boolean mutRecv,
+            boolean mutRecvShallow,
             BabbleParser.ExpressionContext[] argExprs,
             Reachability.Origin[] argOrigins,
             boolean[] argIsMut,
             ParserRuleContext call) {
-        int total = (receiverExpr != null ? 1 : 0) + argExprs.length;
+        boolean hasImplicitThis = receiverExpr == null && recvOrig != null && recvOrig.aliasesThis;
+        int total = (receiverExpr != null || hasImplicitThis ? 1 : 0) + argExprs.length;
         if (total < 2) {
             return;
         }
         Reachability.Origin[] origins = new Reachability.Origin[total];
         boolean[] muts = new boolean[total];
+        boolean[] shallows = new boolean[total];
         ParserRuleContext[] sites = new ParserRuleContext[total];
         String[] labels = new String[total];
         int offset = 0;
@@ -2034,8 +1668,16 @@ final class CallEffectAnalyzer {
                             ? Reachability.Origin.IMMUTABLE
                             : recvOrig;
             muts[0] = mutRecv;
+            shallows[0] = mutRecvShallow;
             sites[0] = receiverExpr;
             labels[0] = receiverExpr.getText();
+            offset = 1;
+        } else if (hasImplicitThis) {
+            origins[0] = recvOrig;
+            muts[0] = mutRecv;
+            shallows[0] = mutRecvShallow;
+            sites[0] = call;
+            labels[0] = "this";
             offset = 1;
         }
         for (int i = 0; i < argExprs.length; i++) {
@@ -2044,6 +1686,7 @@ final class CallEffectAnalyzer {
                             ? Reachability.Origin.IMMUTABLE
                             : argOrigins[i];
             muts[offset + i] = argIsMut[i];
+            shallows[offset + i] = false;
             sites[offset + i] = argExprs[i];
             labels[offset + i] = argExprs[i].getText();
         }
@@ -2055,7 +1698,7 @@ final class CallEffectAnalyzer {
                 if (i == j) {
                     continue;
                 }
-                if (Reachability.staticallySameObject(origins[i], origins[j])) {
+                if (Reachability.staticallyAliases(origins[i], shallows[i], origins[j], false)) {
                     w.reportOnce(
                             "Exclusivity error : mut target "
                                     + labels[i]

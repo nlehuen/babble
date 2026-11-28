@@ -34,6 +34,17 @@ final class JavaCallResultOrigins {
             return freshResultOrigin(ec, w, call, profile, argExprs, argOrigins);
         }
         if (receiverExpr != null && profile.view()) {
+            if ("iterator".equals(methodName) || "listIterator".equals(methodName)) {
+                // An iterator is a fresh local cursor shell whose elements and backing collection
+                // come from the receiver : shallow cursor advances (`next`) stay local to the
+                // iterator, while deep mutations (`remove`) and yielded elements still carry the
+                // receiver's provenance.
+                Reachability.Origin freshIter = Reachability.Origin.ofUnique(call, null, false);
+                if (recvOrig != Reachability.Origin.IMMUTABLE) {
+                    freshIter = freshIter.absorbElement(recvOrig);
+                }
+                return freshIter;
+            }
             // A view is part of its receiver, and may also be a non-immutable argument returned as
             // is (Optional.orElse(other)) : then it is not unique.
             Reachability.Origin view = recvOrig.deriveProjection(false);

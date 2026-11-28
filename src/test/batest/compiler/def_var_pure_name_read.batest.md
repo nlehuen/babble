@@ -166,13 +166,13 @@ Name used before definition : afterStatic
 
 ```hir
 ;; hir -O0,-O1 fn=boom
-fn boom () -> int {nothrow unique}
+fn boom () -> int {pure unique}
   name(afterStatic)
 ```
 
 ```hir
 ;; hir -O2 fn=boom
-fn boom () -> int {nothrow unique}
+fn boom () -> int {pure unique}
   name(afterStatic)
 ```
 

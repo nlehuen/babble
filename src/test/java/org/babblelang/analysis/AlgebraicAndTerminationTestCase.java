@@ -70,26 +70,37 @@ public class AlgebraicAndTerminationTestCase {
 
     @Test
     public void testRelSignDomainMultiParamMonotoneAndTriangularInjective() {
-        // Multi-param monotone: (a: double, b: double) -> a + b * 2.0
+        // Multi-param IEEE-754 double addition `a + b * 2.0` is NOT monotone because
+        // `(-Inf) + (+Inf) = NaN > +Inf = 0.0 + (+Inf)` under Double.compare total order.
         AlgebraicVerifier.Term da =
                 new AlgebraicVerifier.Param(0, Type.DOUBLE, PrimitiveKind.DOUBLE);
         AlgebraicVerifier.Term db =
                 new AlgebraicVerifier.Param(1, Type.DOUBLE, PrimitiveKind.DOUBLE);
         AlgebraicVerifier.Term two =
                 new AlgebraicVerifier.Const(2.0, Type.DOUBLE, PrimitiveKind.DOUBLE);
+        AlgebraicVerifier.Term scaledB =
+                new AlgebraicVerifier.Binary(
+                        ENode.Op.MUL, db, two, Type.DOUBLE, PrimitiveKind.DOUBLE);
         AlgebraicVerifier.Term addScaled =
                 new AlgebraicVerifier.Binary(
-                        ENode.Op.ADD,
-                        da,
-                        new AlgebraicVerifier.Binary(
-                                ENode.Op.MUL, db, two, Type.DOUBLE, PrimitiveKind.DOUBLE),
-                        Type.DOUBLE,
-                        PrimitiveKind.DOUBLE);
+                        ENode.Op.ADD, da, scaledB, Type.DOUBLE, PrimitiveKind.DOUBLE);
         List<Type.Parameter> twoDoubles =
                 List.of(
                         new Type.Parameter("a", Type.DOUBLE, false),
                         new Type.Parameter("b", Type.DOUBLE, false));
-        Assertions.assertTrue(AlgebraicVerifier.isMonotone(addScaled, twoDoubles, Type.DOUBLE));
+        Assertions.assertFalse(AlgebraicVerifier.isMonotone(addScaled, twoDoubles, Type.DOUBLE));
+
+        // Multi-param monotone min: `if a < b * 2.0 then (a) else (b * 2.0)` IS monotone on all
+        // IEEE-754 doubles including +/-Inf and NaN.
+        AlgebraicVerifier.Term minScaled =
+                new AlgebraicVerifier.Ite(
+                        new AlgebraicVerifier.Binary(
+                                ENode.Op.LT, da, scaledB, Type.BOOL, PrimitiveKind.BOOL),
+                        da,
+                        scaledB,
+                        Type.DOUBLE,
+                        PrimitiveKind.DOUBLE);
+        Assertions.assertTrue(AlgebraicVerifier.isMonotone(minScaled, twoDoubles, Type.DOUBLE));
 
         // Anti-monotone in second param: a - b is NOT jointly monotone.
         AlgebraicVerifier.Term subD =

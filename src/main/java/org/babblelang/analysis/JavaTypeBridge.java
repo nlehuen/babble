@@ -1069,8 +1069,42 @@ final class JavaTypeBridge {
         record Valid(Type.JavaInstance samType, Method samMethod, List<Class<?>> markers)
                 implements JavaSamResolution {
             LoweringTargets.JavaSamTarget toTarget() {
+                Type.Function samFn = samFunctionType(samType, null);
+                String[] paramDescs = null;
+                if (samFn != null && !samFn.parameters().isEmpty()) {
+                    java.lang.reflect.Type[] genericParams = samMethod.getGenericParameterTypes();
+                    String[] descs = new String[samFn.parameters().size()];
+                    boolean any = false;
+                    for (int i = 0; i < descs.length; i++) {
+                        Type pt = samFn.parameters().get(i).type();
+                        String d;
+                        if (pt == null || pt == Type.ERROR || pt == Type.NULLABLE_ANY) {
+                            d = null;
+                        } else if (i < genericParams.length
+                                && genericParams[i] instanceof java.lang.reflect.GenericArrayType) {
+                            // Generic array parameters (`T[]`) erase to `Object[]` at the JVM
+                            // boundary (e.g. generic varargs `T...`), so only check non-null array.
+                            d =
+                                    Type.containsNull(pt)
+                                            ? null
+                                            : LoweringAnalyzer.descriptor(
+                                                    new Type.Array(Type.NULLABLE_ANY));
+                        } else {
+                            d = LoweringAnalyzer.descriptor(pt);
+                        }
+                        if (d != null) {
+                            descs[i] = d;
+                            any = true;
+                        } else {
+                            descs[i] = "";
+                        }
+                    }
+                    if (any) {
+                        paramDescs = descs;
+                    }
+                }
                 return new LoweringTargets.JavaSamTarget(
-                        samType.type(), markers.toArray(Class<?>[]::new));
+                        samType.type(), markers.toArray(Class<?>[]::new), paramDescs);
             }
         }
 

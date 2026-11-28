@@ -490,13 +490,13 @@ assert(d1 == 10.0 and d2 == 1.5 and toD(2L, 0.5f) == 2.5)
 
 ```hir
 ;; hir -O0,-O1 fn=toD
-fn toD (a:double, b:double) -> double {nothrow commutative monotone unique}
+fn toD (a:double, b:double) -> double {nothrow commutative unique}
   (+:double var(a) var(b))
 ```
 
 ```hir
 ;; hir -O2 fn=toD
-fn toD (a:double, b:double) -> double {nothrow commutative monotone unique}
+fn toD (a:double, b:double) -> double {nothrow commutative unique}
   (+:double var(a) var(b))
 ```
 

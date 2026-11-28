@@ -1,7 +1,7 @@
 # Deep immutability by mode crossing : one cached modal kind per record, shared by the type
 
 checker and the effect checker. A record crosses what its fields' types cross ; a generic
-record, or a Java class the axioms call immutable (Map.Entry), what its type arguments cross.
+record, or a Java class the axioms call immutable (Optional), what its type arguments cross.
 References : BIP027-I5 (ModalKindTable, docs/design/bip027_tackling-complexity-in-the-compiler.md §3.3), BIP016, BIP019
 
 ```babble
@@ -43,21 +43,21 @@ assert((hh.x as Node).next!.v == 2)
 ## The effect checker reads an immutable Java class's type arguments too.
 
 ```babble
-def f = fn (e : java.util.Map.Entry of (string, Box)) : int -> (
-    e.getValue().v = 1
+def f = fn (o : java.util.Optional of Box) : int -> (
+    o.get().v = 1
     1
 )
 ```
 
 ```error
-Cannot mutate parameter e (field assignment .v) : mark parameter as mut e
+Cannot mutate parameter o (field assignment .v) : mark parameter as mut o
 ```
 
 ## Case 5
 
 ```babble
-def keep = fn (mut h : Holder, e : java.util.Map.Entry of (string, int)) -> ( h.x = e )
+def keep = fn (mut h : Holder, o : java.util.Optional of int) -> ( h.x = o )
 def hh = Holder(null)
-keep(hh, java.util.Map.entry("k", 1))
+keep(hh, java.util.Optional.of(1))
 assert(hh.x != null)
 ```

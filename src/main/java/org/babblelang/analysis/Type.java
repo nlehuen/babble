@@ -549,6 +549,17 @@ sealed interface Type {
                     newCaptured);
         }
 
+        /** This type with a different return type (and the same everything else). */
+        Function withResult(Type newResult) {
+            return new Function(
+                    typeParameters,
+                    parameters,
+                    newResult,
+                    effects,
+                    forwardedEffectParams,
+                    capturedCallings);
+        }
+
         /**
          * The names of the enclosing function's parameters that {@code type} (a result) forwards.
          */

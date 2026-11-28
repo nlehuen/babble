@@ -441,6 +441,7 @@ final class TailCalls {
     private static BabbleParser.DefExpressionContext methodDef(
             BabbleParser.FunctionLiteralContext function) {
         if (!(function.getParent() instanceof BabbleParser.DefExpressionContext def)
+                || ScopeAnalysis.isVar(def)
                 || def.value != function
                 || !(def.getParent() instanceof BabbleParser.BlockContext body)) {
             return null;

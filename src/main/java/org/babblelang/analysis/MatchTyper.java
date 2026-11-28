@@ -251,7 +251,8 @@ final class MatchTyper {
                 joinedEnv =
                         joinedEnv == null
                                 ? branchEnvs.get(i)
-                                : TypeEnv.joinBranches(baseEnv, joinedEnv, branchEnvs.get(i));
+                                : TypeEnv.joinBranches(
+                                        baseEnv, joinedEnv, branchEnvs.get(i), checker.algebra());
             }
         }
         checker.setEnv(joinedEnv != null ? joinedEnv : baseEnv);
@@ -1379,7 +1380,7 @@ final class MatchTyper {
             }
         }
         Type target = checker.annotator().groupAnnotation(parts, scope, true);
-        if (!validateIsTargetType(target, at)) {
+        if (!validateIsTargetType(target, at, hasArgs)) {
             return Type.ERROR;
         }
         recordBuiltinIfSimple(owner, singleSimple);
@@ -1402,7 +1403,7 @@ final class MatchTyper {
             }
         }
         Type target = checker.annotator().annotation(typeCtx, scope, true);
-        if (!validateIsTargetType(target, typeCtx)) {
+        if (!validateIsTargetType(target, typeCtx, hasArgs)) {
             return Type.ERROR;
         }
         recordBuiltinIfSimple(owner, singleSimple);
@@ -1431,7 +1432,7 @@ final class MatchTyper {
         return true;
     }
 
-    private boolean validateIsTargetType(Type target, ParserRuleContext at) {
+    private boolean validateIsTargetType(Type target, ParserRuleContext at, boolean hasArgs) {
         if (target == Type.ERROR) {
             return false;
         }
@@ -1446,6 +1447,17 @@ final class MatchTyper {
         if (TypeAlgebra.containsFunction(target)) {
             checker.warn("Cannot test a function type with 'is'", at);
             return false;
+        }
+        if (!hasArgs) {
+            String erasedGeneric = TypeCheckDiagnostics.findErasedGenericName(target);
+            if (erasedGeneric != null) {
+                checker.warn(
+                        "Cannot test erased type arguments with 'is' : use 'is "
+                                + erasedGeneric
+                                + "'",
+                        at);
+                return false;
+            }
         }
         return true;
     }

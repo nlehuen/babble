@@ -375,6 +375,56 @@ public final class CoreCollections {
         };
     }
 
+    /**
+     * Converts any runtime iterable or iterator (Java {@link Iterable}, Java {@link Iterator}, or
+     * Babble custom {@code iterator()}/{@code hasNext()}/{@code next()} object) to a {@link
+     * Iterator} for {@code DYNAMIC_UNION} {@code for} loops ({@code BIP032}).
+     */
+    public static java.util.Iterator<?> toJavaIterator(
+            Object iterable, ScriptRuntime rt, CallSite site) {
+        Object raw = Values.unwrap(iterable);
+        if (BabbleObjects.isInstance(raw)) {
+            Object face = BabbleObjects.face(raw);
+            if (face instanceof java.util.Iterator<?> it) {
+                return it;
+            }
+            if (face instanceof Iterable<?> it) {
+                return it.iterator();
+            }
+        }
+        if (raw instanceof java.util.Iterator<?> it) {
+            return it;
+        }
+        if (raw instanceof Iterable<?> it) {
+            return it.iterator();
+        }
+        Object iterObj = iterable;
+        if (Members.hasMember(iterable, "iterator")) {
+            Callable iterFn =
+                    Calls.callable(Members.select(iterable, "iterator", "iterator"), site);
+            iterObj = iterFn.call(rt, Arguments.NONE, null, site);
+            Object unwrapped = Values.unwrap(iterObj);
+            if (unwrapped instanceof java.util.Iterator<?> it) {
+                return it;
+            }
+        }
+        final Object babbleIter = iterObj;
+        return new java.util.Iterator<>() {
+            @Override
+            public boolean hasNext() {
+                Callable fn =
+                        Calls.callable(Members.select(babbleIter, "hasNext", "hasNext"), site);
+                return Truth.test(fn.call(rt, Arguments.NONE, null, site));
+            }
+
+            @Override
+            public Object next() {
+                Callable fn = Calls.callable(Members.select(babbleIter, "next", "next"), site);
+                return fn.call(rt, Arguments.NONE, null, site);
+            }
+        };
+    }
+
     private static Iterable<?> toIterable(Object obj) {
         Object u = Values.unwrap(obj);
         if (BabbleObjects.isInstance(u)) {

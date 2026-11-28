@@ -128,6 +128,13 @@ final class TypedProgram {
         return checker.forIterableInfo(ctx);
     }
 
+    TypeChecker.ForIterableInfo resolveForIterableInfoForEffects(Type iterType) {
+        if (iterType == null || iterType == Type.ERROR || iterType == Type.NOTHING) {
+            return null;
+        }
+        return checker.members().resolveNonNullIterable(Type.withoutNull(iterType));
+    }
+
     MatchTyper.RecordDestructureInfo matchRecordDestructure(ParserRuleContext owner) {
         return checker.matchTyper().recordDestructures().get(owner);
     }

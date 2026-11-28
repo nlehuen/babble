@@ -108,9 +108,10 @@ final class CallSolver {
      */
     Type call(Type callee, BabbleParser.CallContext ctx, Type expected, boolean recordTarget) {
         Type result = callInner(callee, ctx, expected, recordTarget);
+        BabbleParser.ExpressionContext unwrapped = EffectBodyWalker.unwrapParens(ctx.expression());
         if (result != Type.ERROR
                 && result != Type.NOTHING
-                && ctx.expression() instanceof BabbleParser.SelectorContext sel
+                && unwrapped instanceof BabbleParser.SelectorContext sel
                 && sel.expression() != null) {
             Type recv = checker.types().get(sel.expression());
             if (recv != null && Type.withoutNull(recv) instanceof Type.Frozen) {

@@ -163,7 +163,7 @@ final class HirConstFolder {
                     && rc.value() instanceof Character rch) {
                 cmp = Character.compare(lch, rch);
             } else if (lc.value() instanceof Number ln && rc.value() instanceof Number rn) {
-                PrimitiveKind common = lk.numericRank() >= rk.numericRank() ? lk : rk;
+                PrimitiveKind common = PrimitiveKind.comparisonKind(lk, rk);
                 cmp =
                         switch (common) {
                             case BYTE, SHORT, INT -> Integer.compare(ln.intValue(), rn.intValue());
@@ -482,8 +482,7 @@ final class HirConstFolder {
         if (c.args().size() == 1
                 && ("containsInt".equals(name)
                         || "containsLong".equals(name)
-                        || "containsChar".equals(name)
-                        || "containsDouble".equals(name))) {
+                        || "containsChar".equals(name))) {
             HirExpr x = HirRewriter.unwrapTransparent(c.args().get(0));
             if (x.meta().kind() != ek
                     || x.meta().wideningRank() >= 0

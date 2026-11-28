@@ -8,7 +8,6 @@ import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Collections;
 import java.util.Deque;
-import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -655,8 +654,19 @@ final class EffectBodyWalker {
             Reachability.Origin opOrig = eval(neg.operand);
             Type opType = effectiveType(neg.operand);
             if (opType != Type.ERROR && !hasPriorDiagnostic(neg)) {
-                applyOperatorMethodEffects(
-                        neg, Operators.NEGATE, neg.operand, opOrig, opType, null, null);
+                Reachability.Origin opRes =
+                        OperatorAndLoopEffectAnalyzer.applyOperatorMethodEffects(
+                                this,
+                                neg,
+                                Operators.NEGATE,
+                                neg.operand,
+                                opOrig,
+                                opType,
+                                null,
+                                null);
+                if (opRes != null) {
+                    return opRes;
+                }
             }
             return Reachability.Origin.IMMUTABLE;
         }
@@ -978,14 +988,16 @@ final class EffectBodyWalker {
         BabbleParser.ExpressionContext recv = ScopeAnalysis.assignReceiver(assign);
         if (opMethod != null
                 && lhsType != null
-                && applyOperatorMethodEffects(
-                        assign,
-                        opMethod,
-                        recv != null ? recv : assign,
-                        lhsOrig,
-                        lhsType,
-                        assign.value,
-                        rhsOrig)) {
+                && OperatorAndLoopEffectAnalyzer.applyOperatorMethodEffects(
+                                this,
+                                assign,
+                                opMethod,
+                                recv != null ? recv : assign,
+                                lhsOrig,
+                                lhsType,
+                                assign.value,
+                                rhsOrig)
+                        != null) {
             return;
         }
         if ("+".equals(op) && resType == Type.STRING) {
@@ -1050,6 +1062,15 @@ final class EffectBodyWalker {
                 // Outer / top-level / package binding read:
                 if (ec.checker.isReassigned(decl) || !isImmutableOuterBinding(decl, declType)) {
                     deterministic = false;
+                }
+                // Forward reference to a non-function `def` declared later in the file can throw
+                // `Name used before definition` (TDZ) if called before that `def` executes.
+                if (decl instanceof BabbleParser.DefExpressionContext defDecl
+                        && !(defDecl.value instanceof BabbleParser.FunctionLiteralContext)
+                        && defDecl.getStart() != null
+                        && sel.getStart() != null
+                        && defDecl.getStart().getStartIndex() > sel.getStart().getStartIndex()) {
+                    nothrow = false;
                 }
                 return Reachability.Origin.ofExternal(decl, imm);
             }
@@ -1119,10 +1140,98 @@ final class EffectBodyWalker {
         if (isFunctionType) {
             boundMethodReceivers.put(sel, recvOrig);
         }
+        // Reading a non-header field of a class whose inline/init initializers use `this` before
+        // all fields are defined can throw `Member used before definition` (TDZ).
+        if (!isFunctionType && mayThrowFieldTdz(recvType, fieldName)) {
+            nothrow = false;
+        }
+        // Selecting a `mut` method as a first-class bound method value (`def f = obj.inc`,
+        // `apply(fb.inc)`) captures `recv` for mutation; forbid on `frozen` or non-`mut` params.
+        if (isMutBoundMethodSelection(recvType, fieldName, resType)) {
+            if (containsFrozen(recvType)) {
+                reportOnce("Cannot call mut method on frozen value", sel);
+            } else if (!recvOrig.params.isEmpty()) {
+                for (int p = recvOrig.params.nextSetBit(0);
+                        p >= 0;
+                        p = recvOrig.params.nextSetBit(p + 1)) {
+                    if (p < params.size() && p < mutParams.length && !mutParams[p]) {
+                        String pName = ScopeAnalysis.paramId(params.get(p)).getText();
+                        reportOnce(
+                                "Cannot mutate parameter "
+                                        + pName
+                                        + " (bound mut method "
+                                        + fieldName
+                                        + ") : mark parameter as mut "
+                                        + pName,
+                                sel);
+                    }
+                }
+            }
+        }
         if (readsMutableBabbleMember(recvType, fieldName, isFunctionType)) {
             recordTargetRead(recvOrig, recvType);
         }
         return recvOrig.deriveMember(fieldName, immRes);
+    }
+
+    private boolean mayThrowFieldTdz(Type recvType, String fieldName) {
+        if (recvType == null || fieldName == null) {
+            return false;
+        }
+        for (Type m : Type.membersOf(TypeAlgebra.unwrapFrozen(Type.withoutNull(recvType)))) {
+            if (m instanceof Type.Instance inst
+                    && inst.node().ctx instanceof BabbleParser.ClassExpressionContext clsCtx
+                    && ec.checker.inFile(clsCtx)
+                    && FieldInitAnalysis.classMayThrowFieldTdz(inst.node(), clsCtx)) {
+                TypeNode.Member member = inst.node().members.get(fieldName);
+                if (member != null
+                        && !member.isMethod()
+                        && !member.hasFunction
+                        && !inst.node().parameterMembers.contains(member.index)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean isMutBoundMethodSelection(Type recvType, String fieldName, Type resType) {
+        if (resType instanceof Type.Function tf) {
+            if (tf.effects().mutThis()) {
+                return true;
+            }
+            BabbleParser.FunctionLiteralContext lit = ec.checker.literalOf(tf);
+            if (lit != null) {
+                EffectChecker.CallableSummary sum = ec.summaries.get(lit);
+                if (sum != null && sum.effects().mutThis()) {
+                    return true;
+                }
+            }
+        } else if (resType instanceof Type.Overloaded ov) {
+            for (Type.Function alt : ov.alternatives()) {
+                if (isMutBoundMethodSelection(recvType, fieldName, alt)) {
+                    return true;
+                }
+            }
+        } else if (resType instanceof Type.JavaMethod jm) {
+            EffectChecker.JavaCallProfile prof =
+                    ec.javaResolver.resolveJavaMethodProfile(jm.owner(), jm.name(), null);
+            return prof.mutReceiver();
+        }
+        if (recvType != null && fieldName != null) {
+            for (Type m : Type.membersOf(TypeAlgebra.unwrapFrozen(Type.withoutNull(recvType)))) {
+                if (m instanceof Type.Instance inst) {
+                    TypeNode.Member member = ec.checker.findMemberOnNode(inst.node(), fieldName);
+                    if (member != null && member.function != null) {
+                        EffectChecker.CallableSummary sum = ec.summaries.get(member.function);
+                        if (sum != null && sum.effects().mutThis()) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     boolean readsMutableBabbleMember(Type recvType, String fieldName, boolean isFunctionType) {
@@ -1541,195 +1650,7 @@ final class EffectBodyWalker {
     }
 
     Reachability.Origin evalFor(BabbleParser.ForExpressionContext ctx) {
-        Reachability.Origin iterOrig = eval(ctx.iterable);
-        Type iterType = effectiveType(ctx.iterable);
-        TypeChecker.ForIterableInfo info = ec.checker.forIterableInfo(ctx);
-        boolean trackConcurrentMut = false;
-        boolean curatedFinite = false;
-        boolean isArrayLoop = false;
-        if (info != null) {
-            recordTargetRead(iterOrig, iterType);
-            switch (info.kind()) {
-                case ARRAY, COUNTED_RANGE -> {
-                    // Indexed array or counted discrete range loop : @HERMETIC @NOTHROW,
-                    // terminates.
-                    isArrayLoop = true;
-                }
-                case JAVA_ITERABLE -> {
-                    boolean curatedNothrow = false;
-                    Type unwrapped = iterType instanceof Type.Frozen f ? f.of() : iterType;
-                    if (unwrapped instanceof Type.JavaInstance ji) {
-                        if (ji.type() == org.babblelang.runtime.Range.class) {
-                            curatedFinite = true;
-                            curatedNothrow = true;
-                        } else {
-                            EffectChecker.JavaCallProfile iterProf =
-                                    ec.javaResolver.resolveJavaMethodProfile(
-                                            ji.type(),
-                                            "iterator",
-                                            JavaEffectResolver.lookupPublicMethod(
-                                                    ji.type(), "iterator"));
-                            applyEffects(iterProf.effects());
-                            if (iterProf.mutReceiver()) {
-                                recordTargetMutation(
-                                        iterOrig, ctx.iterable, "iterator", ctx.iterable, false);
-                            }
-                            if (iterProf.view()) {
-                                trackConcurrentMut = true;
-                                if (iterProf.effects().isHermetic()
-                                        && iterProf.effects().terminating()) {
-                                    curatedFinite = true;
-                                    curatedNothrow = iterProf.effects().isNothrow();
-                                }
-                            }
-                        }
-                    }
-                    if (!curatedFinite) {
-                        terminating = false;
-                    }
-                    if (!curatedNothrow) {
-                        nothrow = false;
-                    }
-                }
-                case JAVA_ITERATOR -> {
-                    terminating = false;
-                    nothrow = false;
-                    recordTargetMutation(
-                            iterOrig, ctx.iterable, "iterator.next", ctx.iterable, true);
-                }
-                case BABBLE_TO_JAVA_ITERABLE -> {
-                    terminating = false;
-                    nothrow = false;
-                    if (info.iteratorFn() != null) {
-                        applyEffects(info.iteratorFn().effects());
-                        if (info.iteratorFn().effects().mutThis()) {
-                            recordTargetMutation(
-                                    iterOrig, ctx.iterable, "iterator", ctx.iterable, false);
-                        }
-                    }
-                }
-                case BABBLE_ITERABLE -> {
-                    terminating = false;
-                    if (info.iteratorFn() != null) {
-                        applyEffects(info.iteratorFn().effects());
-                        if (info.iteratorFn().effects().mutThis()) {
-                            recordTargetMutation(
-                                    iterOrig, ctx.iterable, "iterator", ctx.iterable, false);
-                        }
-                    }
-                    if (info.hasNextFn() != null) {
-                        applyEffects(info.hasNextFn().effects());
-                    }
-                    if (info.nextFn() != null) {
-                        applyEffects(info.nextFn().effects());
-                    }
-                }
-                case BABBLE_ITERATOR -> {
-                    terminating = false;
-                    if (info.hasNextFn() != null) {
-                        applyEffects(info.hasNextFn().effects());
-                        if (info.hasNextFn().effects().mutThis()) {
-                            recordTargetMutation(
-                                    iterOrig, ctx.iterable, "hasNext", ctx.iterable, false);
-                        }
-                    }
-                    if (info.nextFn() != null) {
-                        applyEffects(info.nextFn().effects());
-                        if (info.nextFn().effects().mutThis()) {
-                            recordTargetMutation(
-                                    iterOrig, ctx.iterable, "next", ctx.iterable, false);
-                        }
-                    }
-                }
-                case DYNAMIC_UNION -> {
-                    terminating = false;
-                    nothrow = false;
-                }
-            }
-        }
-        Type loopVarType = ec.checker.typeOfDeclarationForEffects(ctx);
-        Reachability.Origin elemOrig;
-        if (loopVarType == null || ec.javaResolver.isDeeplyImmutable(loopVarType)) {
-            elemOrig = Reachability.Origin.IMMUTABLE;
-        } else {
-            Reachability.Origin flat = iterOrig.flattenElements();
-            elemOrig =
-                    new Reachability.Origin(
-                            flat.params,
-                            flat.aliasesThis,
-                            flat.external,
-                            false,
-                            null,
-                            false,
-                            null,
-                            Set.of(ctx),
-                            new Reachability.PathKey(ctx, List.of()));
-        }
-        Reachability.Origin[] breakAcc = new Reachability.Origin[1];
-        loopBreakOrigins.push(breakAcc);
-        ActiveForLoop activeLoop = trackConcurrentMut ? new ActiveForLoop(iterOrig) : null;
-        if (activeLoop != null) {
-            activeForIterables.add(activeLoop);
-        }
-        boolean outerHermetic = hermetic;
-        boolean outerNothrow = nothrow;
-        boolean outerTerminating = terminating;
-        hermetic = true;
-        nothrow = true;
-        terminating = true;
-        Reachability.Origin bodyOrig = Reachability.Origin.IMMUTABLE;
-        try {
-            int iter = 0;
-            while (true) {
-                Map<ParserRuleContext, Reachability.Origin> before = new IdentityHashMap<>(env);
-                env.put(ctx, elemOrig);
-                bodyOrig = eval(ctx.forBlock);
-                env.remove(ctx);
-                Map<ParserRuleContext, Reachability.Origin> merged =
-                        iter++ < 2 ? mergeEnvs(before, env) : widenEnvs(before, env);
-                if (envsEqual(merged, before)) {
-                    env = merged;
-                    break;
-                }
-                env = merged;
-            }
-        } finally {
-            boolean bodyHermetic = hermetic;
-            boolean bodyNothrow = nothrow;
-            boolean bodyTerminating = terminating;
-            hermetic = outerHermetic && bodyHermetic;
-            nothrow = outerNothrow && bodyNothrow;
-            terminating = outerTerminating && bodyTerminating;
-            boolean loopMutated = activeLoop != null && activeLoop.mutated;
-            if (activeLoop != null) {
-                activeForIterables.remove(activeForIterables.size() - 1);
-                if (curatedFinite && (loopMutated || !bodyHermetic)) {
-                    terminating = false;
-                    nothrow = false;
-                }
-            }
-            if (emitDiagnostics) {
-                boolean loopFinite = isArrayLoop || (curatedFinite && !loopMutated && bodyHermetic);
-                boolean loopNothrowOk = loopFinite && bodyNothrow && (isArrayLoop || outerNothrow);
-                EnumSet<Effect> fx = EnumSet.noneOf(Effect.class);
-                if (bodyHermetic) {
-                    fx.add(Effect.PURE);
-                    fx.add(Effect.HERMETIC);
-                }
-                if (loopNothrowOk) {
-                    fx.add(Effect.NOTHROW);
-                }
-                ec.pass
-                        .analysis
-                        .effects()
-                        .setForEffects(
-                                ctx,
-                                EffectSet.ofInferred(
-                                        fx, false, false, false, loopFinite && bodyTerminating));
-            }
-            loopBreakOrigins.pop();
-        }
-        return breakAcc[0] != null ? bodyOrig.join(breakAcc[0]) : bodyOrig;
+        return OperatorAndLoopEffectAnalyzer.evalFor(this, ctx);
     }
 
     Reachability.Origin evalThrow(BabbleParser.ThrowExpressionContext ctx) {
@@ -1749,206 +1670,11 @@ final class EffectBodyWalker {
     }
 
     Reachability.Origin evalBinaryOp(BabbleParser.BinaryOpContext bin) {
-        Reachability.Origin leftOrig = eval(bin.left);
-        Reachability.Origin rightOrig = eval(bin.right);
-        String op = bin.op.getText();
-        Type lt = effectiveType(bin.left);
-        Type rt = effectiveType(bin.right);
-        Type res = ec.checker.rawTypeOf(bin);
-        if (res == Type.ERROR || lt == Type.ERROR || rt == Type.ERROR || hasPriorDiagnostic(bin)) {
-            return Reachability.Origin.IMMUTABLE;
-        }
-        String opMethod = Operators.method(op);
-        if (opMethod != null
-                && applyOperatorMethodEffects(
-                        bin, opMethod, bin.left, leftOrig, lt, bin.right, rightOrig)) {
-            return Reachability.Origin.IMMUTABLE;
-        }
-        switch (op) {
-            case "+" -> {
-                if (res == Type.STRING && (lt == Type.STRING || rt == Type.STRING)) {
-                    if (lt != Type.STRING) {
-                        applyEffects(ec.javaResolver.toStringProfile(lt));
-                        if (lt instanceof Type.Array) {
-                            recordTargetRead(leftOrig, lt);
-                        }
-                    }
-                    if (rt != Type.STRING) {
-                        applyEffects(ec.javaResolver.toStringProfile(rt));
-                        if (rt instanceof Type.Array) {
-                            recordTargetRead(rightOrig, rt);
-                        }
-                    }
-                }
-            }
-            case "==", "!=", "<>" -> {
-                applyEffects(ec.javaResolver.equalityProfile(lt, rt));
-                if (lt instanceof Type.Array) {
-                    recordTargetRead(leftOrig, lt);
-                }
-                if (rt instanceof Type.Array) {
-                    recordTargetRead(rightOrig, rt);
-                }
-            }
-            case "<", "<=", ">", ">=" -> applyEffects(ec.javaResolver.comparisonProfile(lt, rt));
-            case "mod", "//" -> {
-                if (!(lt instanceof Type.Instance) && !isNonZeroIntegerConstant(bin.right)) {
-                    nothrow = false;
-                }
-            }
-            default -> {
-                // -, *, / on numbers are pure deterministic nothrow (1 / 0 == Infinity).
-            }
-        }
-        return Reachability.Origin.IMMUTABLE;
-    }
-
-    private boolean applyOperatorMethodEffects(
-            ParserRuleContext at,
-            String methodName,
-            BabbleParser.ExpressionContext recvExpr,
-            Reachability.Origin recvOrig,
-            Type recvType,
-            BabbleParser.ExpressionContext argExpr,
-            Reachability.Origin argOrig) {
-        Type unwrapped = TypeAlgebra.unwrapFrozen(recvType);
-        List<Type.Instance> insts = new ArrayList<>();
-        for (Type m : Type.membersOf(unwrapped)) {
-            if (!(m instanceof Type.Instance inst)) {
-                return false;
-            }
-            insts.add(inst);
-        }
-        if (insts.isEmpty()) {
-            return false;
-        }
-        TypeChecker.ResolvedOverloadCall roc = ec.checker.resolvedOverloadCalls().get(at);
-        if (roc != null && !roc.isSplit() && roc.altType() != null) {
-            boolean iface = insts.size() == 1 && insts.get(0).node().isInterface();
-            applyOperatorFnEffects(
-                    at,
-                    methodName,
-                    roc.altType(),
-                    iface ? null : roc.directTarget(),
-                    recvExpr,
-                    recvOrig,
-                    recvType,
-                    argExpr,
-                    argOrig);
-            return true;
-        }
-        for (Type.Instance inst : insts) {
-            TypeNode.Member member = ec.checker.findMemberOnNode(inst.node(), methodName);
-            if (member == null) {
-                continue;
-            }
-            boolean iface = inst.node().isInterface();
-            Type mt = ec.checker.memberTypeForEffects(inst.node(), member);
-            if (mt instanceof Type.Function tf) {
-                BabbleParser.FunctionLiteralContext lit =
-                        iface
-                                ? null
-                                : (member.function != null
-                                        ? member.function
-                                        : ec.checker.literalOf(tf));
-                applyOperatorFnEffects(
-                        at, methodName, tf, lit, recvExpr, recvOrig, recvType, argExpr, argOrig);
-            } else if (mt instanceof Type.Overloaded ov) {
-                for (Type.Function tf : ov.alternatives()) {
-                    BabbleParser.FunctionLiteralContext lit =
-                            iface ? null : ec.checker.literalOf(tf);
-                    applyOperatorFnEffects(
-                            at,
-                            methodName,
-                            tf,
-                            lit,
-                            recvExpr,
-                            recvOrig,
-                            recvType,
-                            argExpr,
-                            argOrig);
-                }
-            }
-        }
-        return true;
-    }
-
-    private void applyOperatorFnEffects(
-            ParserRuleContext at,
-            String methodName,
-            Type.Function tf,
-            BabbleParser.FunctionLiteralContext lit,
-            BabbleParser.ExpressionContext recvExpr,
-            Reachability.Origin recvOrig,
-            Type recvType,
-            BabbleParser.ExpressionContext argExpr,
-            Reachability.Origin argOrig) {
-        EffectChecker.CallableSummary sum = lit != null ? ec.summaries.get(lit) : null;
-        EffectSet eff = sum != null ? sum.effects() : tf.effects();
-        if (sum != null) {
-            applyCallableSummaryEffects(sum);
-        } else {
-            applyEffects(eff);
-            if (!eff.isNothrow()) {
-                throwsJavaError = true;
-            }
-        }
-        if (eff.mutThis()) {
-            if (containsFrozen(recvType)) {
-                reportOnce("Cannot call mut method " + methodName + " on frozen value", at);
-            }
-            recordTargetMutation(
-                    recvOrig,
-                    recvExpr,
-                    "operator method " + methodName,
-                    at,
-                    sum == null || !sum.deepMutThis());
-        }
-        if (sum != null && sum.readsThis()) {
-            recordTargetRead(recvOrig, recvType);
-        }
-        if (!eff.borrowThis()) {
-            markStoredOrigin(recvOrig, "operator method " + methodName, at);
-        }
-        if (argExpr != null && !tf.parameters().isEmpty()) {
-            boolean mutP =
-                    sum != null
-                            ? (sum.mutParams().length > 0 && sum.mutParams()[0])
-                            : tf.parameters().get(0).mut();
-            boolean borrowP =
-                    sum != null
-                            ? (sum.borrowParams().length > 0 && sum.borrowParams()[0])
-                            : tf.parameters().get(0).borrow();
-            boolean readP = sum != null && sum.readParams().length > 0 && sum.readParams()[0];
-            if (mutP) {
-                recordTargetMutation(argOrig, argExpr, "operator method " + methodName, at, false);
-            }
-            if (readP) {
-                recordTargetRead(argOrig, effectiveType(argExpr));
-            }
-            if (!borrowP) {
-                markStoredOrigin(argOrig, "operator method " + methodName, at);
-            }
-        }
+        return OperatorAndLoopEffectAnalyzer.evalBinaryOp(this, bin);
     }
 
     Reachability.Origin evalRange(BabbleParser.RangeExpressionContext range) {
-        eval(range.left);
-        eval(range.right);
-        Type res = ec.checker.rawTypeOf(range);
-        if (res == Type.ERROR || hasPriorDiagnostic(range)) {
-            return Reachability.Origin.IMMUTABLE;
-        }
-        Type elem = Type.rangeElement(res);
-        if (elem != null
-                && !Type.isNumericScalar(elem)
-                && elem != Type.CHAR
-                && elem != Type.STRING) {
-            applyEffects(ec.javaResolver.comparisonProfile(elem, elem));
-        }
-        return ec.javaResolver.isDeeplyImmutable(res)
-                ? Reachability.Origin.IMMUTABLE
-                : Reachability.Origin.ofUnique(range, null, false);
+        return OperatorAndLoopEffectAnalyzer.evalRange(this, range);
     }
 
     static Long tryEvalIntegerConstant(BabbleParser.ExpressionContext expr) {
@@ -2009,7 +1735,7 @@ final class EffectBodyWalker {
         return out;
     }
 
-    private static boolean envsEqual(
+    static boolean envsEqual(
             Map<ParserRuleContext, Reachability.Origin> a,
             Map<ParserRuleContext, Reachability.Origin> b) {
         if (a.size() != b.size()) {

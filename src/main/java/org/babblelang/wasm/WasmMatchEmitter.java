@@ -687,7 +687,7 @@ final class WasmMatchEmitter {
             }
         } else if (v instanceof Number num && valKind.numericRank() >= 0) {
             PrimitiveKind ck = numericKindOf(num);
-            PrimitiveKind common = valKind.numericRank() >= ck.numericRank() ? valKind : ck;
+            PrimitiveKind common = PrimitiveKind.comparisonKind(valKind, ck);
             if (common.numericRank() <= 2) {
                 c.localGet(valLocal);
                 fe.convertRawValue(valKind, PrimitiveKind.INT, cst.line());
@@ -750,7 +750,7 @@ final class WasmMatchEmitter {
             return;
         }
         if (valKind.numericRank() >= 0 && rk.numericRank() >= 0) {
-            PrimitiveKind common = valKind.numericRank() >= rk.numericRank() ? valKind : rk;
+            PrimitiveKind common = PrimitiveKind.comparisonKind(valKind, rk);
             if (common.numericRank() <= 2) {
                 c.localGet(valLocal);
                 fe.convertRawValue(valKind, PrimitiveKind.INT, line);
@@ -824,7 +824,7 @@ final class WasmMatchEmitter {
             return;
         }
         if (valKind.numericRank() >= 0 && rk.numericRank() >= 0) {
-            PrimitiveKind common = valKind.numericRank() >= rk.numericRank() ? valKind : rk;
+            PrimitiveKind common = PrimitiveKind.comparisonKind(valKind, rk);
             if (common.numericRank() <= 2) {
                 c.localGet(valLocal);
                 fe.convertRawValue(valKind, PrimitiveKind.INT, rel.line());
