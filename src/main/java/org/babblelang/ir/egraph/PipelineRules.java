@@ -54,6 +54,14 @@ public final class PipelineRules {
     private static final Set<ENode.Op> ORDER_OPS =
             java.util.EnumSet.of(ENode.Op.LT, ENode.Op.LTE, ENode.Op.GT, ENode.Op.GTE);
 
+    private static final Set<ENode.Op> STREAM_PASSTHROUGH_OPS =
+            java.util.EnumSet.of(
+                    ENode.Op.PIPE_MATERIALIZE,
+                    ENode.Op.PIPE_FILTER,
+                    ENode.Op.PIPE_DISTINCT,
+                    ENode.Op.PIPE_TAKE_WHILE,
+                    ENode.Op.PIPE_GUARD_RANGE);
+
     /**
      * Joint rule set combining {@link AlgebraicRules#optimizerRules()} and {@code R1}–{@code R8}.
      */
@@ -415,12 +423,8 @@ public final class PipelineRules {
                 continue;
             }
             boolean asc = isAscendingRange(r.symbol());
-            boolean desc = isDescendingRange(r.symbol());
             boolean incl = isInclusiveRange(r.symbol());
             String binder = rangeBinder(r.symbol());
-            if (binder == null || (!asc && !desc)) {
-                continue;
-            }
             int lo = r.child(0);
             int hi = r.child(1);
 
@@ -431,8 +435,7 @@ public final class PipelineRules {
                 int lhs = p.child(0);
                 int rhs = p.child(1);
                 tryMonotonePredicate(
-                        g, id, stream, pred, lo, hi, asc, desc, incl, binder, p.op(), lhs, rhs,
-                        out);
+                        g, id, stream, pred, lo, hi, asc, incl, binder, p.op(), lhs, rhs, out);
                 tryMonotonePredicate(
                         g,
                         id,
@@ -441,7 +444,6 @@ public final class PipelineRules {
                         lo,
                         hi,
                         asc,
-                        desc,
                         incl,
                         binder,
                         flipOrderOp(p.op()),
@@ -460,7 +462,6 @@ public final class PipelineRules {
             int lo,
             int hi,
             boolean asc,
-            boolean desc,
             boolean incl,
             String binder,
             ENode.Op normOp,
@@ -480,14 +481,14 @@ public final class PipelineRules {
             if (!isBinderClass(g, call.child(0), binder)) {
                 continue;
             }
+            boolean isUpper = normOp == ENode.Op.LTE || normOp == ENode.Op.LT;
             // Early exit (PIPE_TAKE_WHILE): ascending <= / < or descending >= / >
-            if ((asc && (normOp == ENode.Op.LTE || normOp == ENode.Op.LT))
-                    || (desc && (normOp == ENode.Op.GTE || normOp == ENode.Op.GT))) {
+            if (asc == isUpper) {
                 out.addAndUnion(filterClassId, ENode.pipeTakeWhile(rangeClassId, predClassId));
                 return;
             }
             // O(1) whole-range guard (PIPE_GUARD_RANGE): ascending inclusive >= / >
-            if (asc && incl && (normOp == ENode.Op.GTE || normOp == ENode.Op.GT)) {
+            if (asc && incl) {
                 int nonEmpty = g.add(ENode.binary(ENode.Op.LTE, PrimitiveKind.BOOL, lo, hi));
                 int fHi = g.add(ENode.call(call.symbol(), call.kind(), hi));
                 int boundCheck = g.add(ENode.binary(normOp, PrimitiveKind.BOOL, fHi, limSide));
@@ -509,7 +510,7 @@ public final class PipelineRules {
             return;
         }
         String opSym = foldOpSymbol(n.symbol());
-        if (opSym == null || !g.callProps(opSym).associative()) {
+        if (!g.callProps(opSym).associative()) {
             return;
         }
         int stream = n.child(0);
@@ -583,27 +584,21 @@ public final class PipelineRules {
         }
         try {
             for (ENode node : g.nodesIn(root)) {
-                switch (node.op()) {
-                    case PIPE_MAP -> {
-                        return node.symbol();
+                ENode.Op op = node.op();
+                if (op == ENode.Op.PIPE_MAP) {
+                    return node.symbol();
+                }
+                if (op == ENode.Op.PIPE_RANGE) {
+                    return rangeBinder(node.symbol());
+                }
+                if (op == ENode.Op.PIPE_SRC) {
+                    return srcBinder(node.symbol());
+                }
+                if (STREAM_PASSTHROUGH_OPS.contains(op)) {
+                    String b = streamBinder(g, node.child(0), visiting);
+                    if (b != null) {
+                        return b;
                     }
-                    case PIPE_RANGE -> {
-                        return rangeBinder(node.symbol());
-                    }
-                    case PIPE_SRC -> {
-                        return srcBinder(node.symbol());
-                    }
-                    case PIPE_MATERIALIZE,
-                            PIPE_FILTER,
-                            PIPE_DISTINCT,
-                            PIPE_TAKE_WHILE,
-                            PIPE_GUARD_RANGE -> {
-                        String b = streamBinder(g, node.child(0), visiting);
-                        if (b != null) {
-                            return b;
-                        }
-                    }
-                    default -> {}
                 }
             }
             return null;
