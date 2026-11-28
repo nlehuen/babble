@@ -91,6 +91,7 @@ It handles single references, sub-phases, ranges (splitting them when only part 
 | BIP | Title | Date | Status | Summary |
 |---|---|---|---|---|
 | **BIP044** | [Babble hierarchies — data types, reference capabilities, and function effects](bip044_babble-hierarchies.md) | 2026-11-28 | Active (Reference) | Authoritative conceptual map and terminology guide unifying Babble's three static hierarchies (Data Types, Reference Capabilities, Function Effects), Layer 1 internals vs. Layer 2 syntax, variance, `ModalKindTable` mode crossing, cross-hierarchy bridges, conceptual seams, and how draft `BIP043` extends all three without adding a fourth. |
+| **BIP045** | [The Optimization Zoo](bip045_the-optimization-zoo.md) | 2026-11-28 | Active (Reference) | Complete Babble-level field guide to all 47 currently implemented optimizations across the HIR Nanopass optimizer (`-O1`, `-O2`), E-graph algebraic & pipeline rewrites, `record` SROA & FBIP reuse, lowering, JVM & WebAssembly 3.0 backends, and `babblec` AOT tree-shaking, each illustrated with a tiny equivalent Before/After Babble pair and its soundness boundary. |
 
 ## Milestones done
 
