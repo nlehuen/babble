@@ -204,6 +204,17 @@ def runTests = fn () -> (
     assert(math.abs(sdfOct.distance(Vec3(1.0, 0.0, 0.0))) < 0.0000001, "SdfOctahedron vertex failed")
     assert(sdfOct.distance(Vec3.zero) < 0.0, "SdfOctahedron inside failed")
 
+    def sdfEll = core.SdfEllipsoid(Vec3(2.0, 1.0, 0.5))
+    assert(math.abs(sdfEll.distance(Vec3(2.0, 0.0, 0.0))) < 0.0000001, "SdfEllipsoid X surface failed")
+    assert(math.abs(sdfEll.distance(Vec3(0.0, 1.0, 0.0))) < 0.0000001, "SdfEllipsoid Y surface failed")
+    assert(math.abs(sdfEll.distance(Vec3(0.0, 0.0, 0.5))) < 0.0000001, "SdfEllipsoid Z surface failed")
+    assert(sdfEll.distance(Vec3.zero) < 0.0 and sdfEll.distance(Vec3(3.0, 0.0, 0.0)) > 0.5, "SdfEllipsoid inside/outside failed")
+
+    def sdfRC = core.SdfRoundCone(Vec3(0.0, 0.0, 0.0), Vec3(0.0, 2.0, 0.0), 0.5, 0.25)
+    assert(math.abs(sdfRC.distance(Vec3(0.0, -0.5, 0.0))) < 0.0000001, "SdfRoundCone bottom cap failed")
+    assert(math.abs(sdfRC.distance(Vec3(0.0, 2.25, 0.0))) < 0.0000001, "SdfRoundCone top cap failed")
+    assert(sdfRC.distance(Vec3(0.0, 1.0, 0.0)) < -0.3 and sdfRC.distance(Vec3(1.0, 0.0, 0.0)) > 0.4, "SdfRoundCone inside/outside failed")
+
     ;; CSG Boolean subtraction + smooth union + transforms
     def carved = core.SdfSubtraction(sdfBox, core.SdfSphere(Vec3.zero, 0.6))
     assert(carved.distance(Vec3.zero) > 0.5, "SdfSubtraction hollow center failed")
@@ -245,6 +256,22 @@ def runTests = fn () -> (
 
     ;; Bounding-box miss fast-path
     assert(marchedSphere.hit(Ray(Vec3(5.0, 0.0, 0.0), Vec3(0.0, 0.0, -1.0)), 0.001, math.infinity) == null, "RaymarchedSdf miss failed")
+
+    ;; View-independent 3D cartoon silhouette outlining on RaymarchedSdf
+    def outlineInk = core.Emissive(Vec3(0.1, 0.05, 0.2))
+    def outlinedSphere: core.RaymarchedSdf = core.RaymarchedSdf(
+        core.SdfSphere(Vec3(0.0, 0.0, -3.0), 1.0),
+        sdfLamMat,
+        outlineMat: outlineInk,
+        outlineWidth: 0.05
+    )
+    def directHit: core.HitRecord? = outlinedSphere.hit(Ray(Vec3.zero, Vec3(0.0, 0.0, -1.0)), 0.001, math.infinity)
+    assert(directHit != null and directHit.mat is core.Lambertian, "RaymarchedSdf direct hit should use primary material")
+    def grazeHit: core.HitRecord? = outlinedSphere.hit(Ray(Vec3(1.025, 0.0, 0.0), Vec3(0.0, 0.0, -1.0)), 0.001, math.infinity)
+    assert(grazeHit != null and grazeHit.mat is core.Emissive and math.abs(grazeHit.t - 3.0) < 0.1, "RaymarchedSdf grazing silhouette hit failed")
+    assert(outlinedSphere.hit(Ray(Vec3(1.20, 0.0, 0.0), Vec3(0.0, 0.0, -1.0)), 0.001, math.infinity) == null, "RaymarchedSdf far miss should not outline")
+    ;; Secondary AO bounce originating on the surface (d0 <= outlineWidth) must not self-outline
+    assert(outlinedSphere.hit(Ray(Vec3(0.0, 0.0, -1.999), Vec3(0.0, 1.0, 0.0)), 0.001, math.infinity) == null, "RaymarchedSdf surface bounce falsely self-outlined")
 
     ;; Sculpted CSG Cube demo scene via registry
     def sdfScene: core.Scene = registry.buildScene("sdf-cube", imageWidth: 16, samplesPerPixel: 2, maxDepth: 4)

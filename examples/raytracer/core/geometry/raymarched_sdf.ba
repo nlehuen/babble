@@ -33,12 +33,19 @@ export def RaymarchedSdf = record (
     hitEps: double = 0.0005,
     normalEps: double = 0.00025,
     stepScale: double = 1.0,
-    bboxPadding: double = 0.01
+    bboxPadding: double = 0.01,
+    outlineMat: Material? = null,
+    outlineWidth: double = 0.0
 ) implements Hittable, Describable (
     private def bbox: AABB
 
     init (
-        this.bbox = AABB.copy(this.sdf.boundingBox()).expand(math.max(0.0, this.bboxPadding))
+        def outPad: double = if this.outlineMat != null and this.outlineWidth > 0.0 then (
+            this.outlineWidth * 1.5
+        ) else (
+            0.0
+        )
+        this.bbox = AABB.copy(this.sdf.boundingBox()).expand(math.max(0.0, this.bboxPadding) + outPad)
     )
 
     def boundingBox = fn (): AABB -> (this.bbox)
@@ -100,6 +107,16 @@ export def RaymarchedSdf = record (
             )
         )
 
+        ;; Track closest grazing approach for 3D view-independent cartoon silhouette outlining
+        ;; (only enabled on exterior rays that enter strictly outside the outline shell, so
+        ;; secondary AO bounce rays originating on the surface never falsely self-outline).
+        def outMat: Material? = this.outlineMat
+        def outlineEnabled: bool = outMat != null and this.outlineWidth > 0.0 and
+            mediumSign > 0.0 and d0 > this.outlineWidth
+        var minD: double = math.infinity
+        var minS: double = sStart
+        var enteredOutline: bool = false
+
         ;; Main sphere-tracing loop
         for step in 0..<this.maxSteps then (
             def signedD: double = mediumSign * this.sdf.distance(ro + rd * s)
@@ -141,9 +158,30 @@ export def RaymarchedSdf = record (
                 )
                 return HitRecord.create(r, hitP, outward, worldT, resolvedMat)
             )
+            if outlineEnabled then (
+                if signedD < minD then (
+                    minD = signedD
+                    minS = s
+                    if signedD <= this.outlineWidth then (
+                        enteredOutline = true
+                    )
+                ) else if enteredOutline and signedD > minD + 0.002 then (
+                    ;; Passed a foreground grazing silhouette (self-overlap): ink at closest approach
+                    def outWorldT: double = minS * invDirLen
+                    if outWorldT > tmin and outWorldT < tmax and outMat != null then (
+                        return HitRecord.create(r, ro + rd * minS, -rd, outWorldT, outMat)
+                    )
+                )
+            )
             prevS = s
             s += signedD * this.stepScale
-            if s > sEnd then (return null)
+            if s > sEnd then (break)
+        )
+        if outlineEnabled and enteredOutline and outMat != null then (
+            def outWorldT: double = minS * invDirLen
+            if outWorldT > tmin and outWorldT < tmax then (
+                return HitRecord.create(r, ro + rd * minS, -rd, outWorldT, outMat)
+            )
         )
         null
     )

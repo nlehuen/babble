@@ -1,21 +1,33 @@
-;; Baby Triceratops 3D scene — 100% pure Babble (zero IO, zero java.*, zero wasm.*).
+;; Baby Triceratops — 100% pure-Babble 360°-solid Toon SDF scene (`WASM_BARE`-clean).
 ;;
-;; Composed from core 3D primitives (Sphere, oriented Ellipsoid, tapered RoundCone,
-;; quadratic 3D Bezier tubes, and Fourier-contoured 3D SculptedLobe cushions) accelerated
-;; by BVHNode and shaded with inset 3D outline shells, directional Toon cel lighting,
-;; and Emissive ink details over a SolidBackground white studio backdrop.
+;; Sculpted entirely from true 3D Signed Distance Fields (`SdfEllipsoid`, `SdfRoundCone`,
+;; `SdfSphere`, `SdfTorus`, custom curved scalloped frill `Sdf`, and smooth/exact CSG) with
+;; view-independent 3D cartoon inking:
+;;   - Near-miss grazing silhouette outlines (`RaymarchedSdf.outlineMat` / `outlineWidth`)
+;;   - Procedural 3D CSG seam & crease inking (`MaterialField`)
+;;   - Directional two-band `Toon` cel shading over a crisp white studio backdrop
 
 def math = import("../core/math.ba")
 def Vec3 = import("../core/vec3.ba").Vec3
+def AABB = import("../core/aabb.ba").AABB
 def Material = import("../core/interfaces.ba").Material
 def Emissive = import("../core/materials.ba").Emissive
 def Toon = import("../core/materials.ba").Toon
-def Sphere = import("../core/geometry/sphere.ba").Sphere
-def Ellipsoid = import("../core/geometry/ellipsoid.ba").Ellipsoid
-def roundCone = import("../core/geometry/round_cone.ba")
-def RoundCone = roundCone.RoundCone
-def addQuadraticBezierTube = roundCone.addQuadraticBezierTube
-def SculptedLobe = import("../core/geometry/sculpted_lobe.ba").SculptedLobe
+def Sdf = import("../core/geometry/sdf.ba").Sdf
+def SdfSphere = import("../core/geometry/sdf.ba").SdfSphere
+def SdfEllipsoid = import("../core/geometry/sdf.ba").SdfEllipsoid
+def SdfRoundCone = import("../core/geometry/sdf.ba").SdfRoundCone
+def SdfTorus = import("../core/geometry/sdf.ba").SdfTorus
+def SdfBox = import("../core/geometry/sdf.ba").SdfBox
+def SdfUnion = import("../core/geometry/sdf_ops.ba").SdfUnion
+def SdfSmoothUnion = import("../core/geometry/sdf_ops.ba").SdfSmoothUnion
+def SdfSmoothSubtraction = import("../core/geometry/sdf_ops.ba").SdfSmoothSubtraction
+def SdfTranslate = import("../core/geometry/sdf_ops.ba").SdfTranslate
+def SdfRotateX = import("../core/geometry/sdf_ops.ba").SdfRotateX
+def SdfRotateY = import("../core/geometry/sdf_ops.ba").SdfRotateY
+def SdfRotateZ = import("../core/geometry/sdf_ops.ba").SdfRotateZ
+def MaterialField = import("../core/geometry/raymarched_sdf.ba").MaterialField
+def RaymarchedSdf = import("../core/geometry/raymarched_sdf.ba").RaymarchedSdf
 def HittableList = import("../core/geometry/hittable_list.ba").HittableList
 def BVHNode = import("../core/geometry/bvh.ba").BVHNode
 def SolidBackground = import("../core/background.ba").SolidBackground
@@ -27,388 +39,672 @@ def Scene = import("../core/scene.ba").Scene
 def srgb = Vec3.srgb
 
 def colOutline: Vec3 = srgb(58, 18, 80)
-def colBody: Vec3 = srgb(164, 68, 135)
-def colBodyShadow: Vec3 = srgb(132, 46, 117)
-def colBodyDeep: Vec3 = srgb(104, 36, 106)
-def colFrill: Vec3 = srgb(213, 145, 230)
-def colFrillShadow: Vec3 = srgb(196, 126, 210)
-def colFrillRim: Vec3 = srgb(242, 196, 255)
-def colBelly: Vec3 = srgb(229, 176, 246)
-def colBellyShadow: Vec3 = srgb(190, 132, 208)
+def colBody: Vec3 = srgb(162, 66, 134)
+def colBodyShadow: Vec3 = srgb(126, 44, 112)
+def colFrill: Vec3 = srgb(206, 134, 224)
+def colFrillShadow: Vec3 = srgb(176, 104, 198)
+def colFrillRim: Vec3 = srgb(234, 184, 248)
+def colBelly: Vec3 = srgb(228, 174, 245)
+def colBellyShadow: Vec3 = srgb(186, 128, 206)
 def colHorn: Vec3 = srgb(255, 232, 174)
-def colHornShadow: Vec3 = srgb(240, 194, 120)
+def colHornShadow: Vec3 = srgb(236, 188, 114)
 def colCream: Vec3 = srgb(246, 222, 212)
-def colCreamShadow: Vec3 = srgb(224, 194, 186)
+def colCreamShadow: Vec3 = srgb(220, 190, 182)
 def colCheek: Vec3 = srgb(234, 103, 112)
 def colPacifier: Vec3 = srgb(180, 248, 58)
 def colPacifierShadow: Vec3 = srgb(142, 214, 42)
 def colPacifierDark: Vec3 = srgb(104, 182, 24)
 def colWhite: Vec3 = Vec3.one
-def colEyeDark: Vec3 = srgb(54, 24, 90)
+def colEyeWhite: Vec3 = srgb(242, 238, 246)
+def colEyeDark: Vec3 = srgb(48, 20, 82)
+def colSoftCrease: Vec3 = srgb(112, 42, 126)
 
-;; ---------------------------------------------------------------- Light Directions
+;; ---------------------------------------------------------------- Shared Head-Frame Transform Helpers
 
-def lightBody: Vec3 = Vec3(0.20, 0.63, 0.87)
-def lightHead: Vec3 = Vec3(0.05, 0.72, 0.69)
-def lightBelly: Vec3 = Vec3(0.00, 0.88, 0.47)
-def lightLowerBelly: Vec3 = Vec3(0.00, 0.78, 0.62)
-def lightBackLeftLeg: Vec3 = Vec3(-0.68, 0.25, 0.69)
-def lightFrontLeftLeg: Vec3 = Vec3(0.66, 0.24, 0.71)
-def lightFrontRightLeg: Vec3 = Vec3(0.68, 0.25, 0.69)
-def lightHorn: Vec3 = Vec3(-0.55, 0.50, 0.67)
-def lightFrill: Vec3 = Vec3(-0.15, 0.40, 0.90)
+;; Head local frame: +Z forward (snout), +Y up, +X dino's left side.
+;; Body stands in 3/4 view while the baby dino turns and playfully tilts its head toward the viewer.
+def headCenter: Vec3 = Vec3(0.352, 0.072, 0.155)
+def headYawDeg: double = 31.0
+def headPitchDeg: double = 2.5
+def headRollDeg: double = 8.5
 
-;; ---------------------------------------------------------------- Scene Construction Helpers
+def headYawRad: double = math.degreesToRadians(headYawDeg)
+def headPitchRad: double = math.degreesToRadians(headPitchDeg)
+def headRollRad: double = math.degreesToRadians(headRollDeg)
+def hCosY: double = math.cos(headYawRad)
+def hSinY: double = math.sin(headYawRad)
+def hCosX: double = math.cos(headPitchRad)
+def hSinX: double = math.sin(headPitchRad)
+def hCosZ: double = math.cos(headRollRad)
+def hSinZ: double = math.sin(headRollRad)
 
-;; Maps desired screen position (sx, sy) in [-1, 1]^2 at 3D depth z into world coordinates
-;; for a camera at (0, 0, 10) with half-height 1.0 at z = 0.
-def pt = fn (sx: double, sy: double, z: double): Vec3 -> (
-    def k: double = (10.0 - z) / 10.0
-    Vec3(sx * k, sy * k, z)
+;; Maps a world-space point into head-local coordinates (inverse of Translate -> RotateY -> RotateX -> RotateZ).
+def worldToHead = fn (p: Vec3): Vec3 -> (
+    def d: Vec3 = p - headCenter
+    def rx: double = hCosY * d.x - hSinY * d.z
+    def rz: double = hSinY * d.x + hCosY * d.z
+    def py: double = hCosX * d.y + hSinX * rz
+    def pz: double = -hSinX * d.y + hCosX * rz
+    Vec3(hCosZ * rx + hSinZ * py, -hSinZ * rx + hCosZ * py, pz)
 )
 
-def sc = fn (r: double, z: double): double -> (
-    r * (10.0 - z) / 10.0
-)
-
-def addEll = fn (
-    mut world: HittableList,
-    sx: double, sy: double, z: double,
-    rx: double, ry: double, rz: double,
-    deg: double,
-    shared mat: Material,
-    shared ink: Material,
-    border: double,
-    zBack: double = 0.04
-): null -> (
-    def irx: double = math.max(0.004, rx - border)
-    def iry: double = math.max(0.004, ry - border)
-    world.add(Ellipsoid.rotatedZ(pt(sx, sy, z), sc(irx, z), sc(iry, z), rz, deg, mat))
-    if border > 0.0 then (
-        def zb: double = z - zBack
-        world.add(Ellipsoid.rotatedZ(pt(sx, sy, zb), sc(rx, zb), sc(ry, zb), rz, deg, ink))
+;; Places a head-local SDF into world space.
+def placeInHead = fn (inner: frozen Sdf): SdfTranslate -> (
+    SdfTranslate(
+        SdfRotateY(SdfRotateX(SdfRotateZ(inner, headRollDeg), headPitchDeg), headYawDeg),
+        headCenter
     )
-    null
 )
 
-def addCone = fn (
-    mut world: HittableList,
-    sx1: double, sy1: double, z1: double,
-    sx2: double, sy2: double, z2: double,
-    r1: double, r2: double,
-    shared mat: Material,
-    shared ink: Material,
-    border: double,
-    zBack: double = 0.04
-): null -> (
-    def ir1: double = math.max(0.004, r1 - border)
-    def ir2: double = math.max(0.004, r2 - border)
-    world.add(RoundCone(pt(sx1, sy1, z1), pt(sx2, sy2, z2), sc(ir1, z1), sc(ir2, z2), mat))
-    if border > 0.0 then (
-        def zb1: double = z1 - zBack
-        def zb2: double = z2 - zBack
-        world.add(RoundCone(pt(sx1, sy1, zb1), pt(sx2, sy2, zb2), sc(r1, zb1), sc(r2, zb2), ink))
-    )
-    null
-)
+;; ---------------------------------------------------------------- True 3D Curved Scalloped Frill SDF
 
-def addBezier = fn (
-    mut world: HittableList,
-    x0: double, y0: double, z0: double, r0: double,
-    x1: double, y1: double, z1: double, r1: double,
-    x2: double, y2: double, z2: double, r2: double,
-    segs: int,
-    shared mat: Material,
-    shared ink: Material,
-    border: double,
-    zBack: double = 0.04
-): null -> (
-    def ir0: double = math.max(0.004, r0 - border)
-    def ir1: double = math.max(0.004, r1 - border)
-    def ir2: double = math.max(0.004, r2 - border)
-    addQuadraticBezierTube(
-        world,
-        pt(x0, y0, z0), sc(ir0, z0),
-        pt(x1, y1, z1), sc(ir1, z1),
-        pt(x2, y2, z2), sc(ir2, z2),
-        segs, mat
+;; Broad curved 3D scalloped shield in frill-local coordinates (x, y in fan plane, z normal).
+;; Uses angle-addition recurrence (zero trig calls per step) for a wide 5-lobe scalloped crest
+;; with gentle parabolic cup curvature.
+def FrillShieldSdf = record (
+    rx: double,
+    ry: double,
+    lobeAmp: double,
+    halfThick: double,
+    edgeRadius: double,
+    cupCurvature: double
+) implements Sdf (
+    private def bbox: AABB
+
+    init (
+        def maxX: double = this.rx + this.lobeAmp + this.edgeRadius + 0.08
+        def maxY: double = this.ry + this.lobeAmp + this.edgeRadius + 0.08
+        def maxR: double = math.max(maxX, maxY)
+        def maxZ: double = this.halfThick + this.edgeRadius + this.cupCurvature * maxR * maxR + 0.06
+        this.bbox = AABB(-maxX, maxX, -maxY, maxY, -maxZ, maxZ)
     )
-    if border > 0.0 then (
-        def zb0: double = z0 - zBack
-        def zb1: double = z1 - zBack
-        def zb2: double = z2 - zBack
-        addQuadraticBezierTube(
-            world,
-            pt(x0, y0, zb0), sc(r0, zb0),
-            pt(x1, y1, zb1), sc(r1, zb1),
-            pt(x2, y2, zb2), sc(r2, zb2),
-            segs, ink
+
+    ;; Evaluates the scalloped outer radius along unit direction (c1, s1) in fan coordinates.
+    def evalScallopRadius = fn (c1: double, s1: double): double -> (
+        def c2: double = c1 * c1 - s1 * s1
+        def s2: double = 2.0 * s1 * c1
+        def c3: double = c2 * c1 - s2 * s1
+        def s3: double = s2 * c1 + c2 * s1
+        def c4: double = c3 * c1 - s3 * s1
+        def s4: double = s3 * c1 + c3 * s1
+        def c5: double = c4 * c1 - s4 * s1
+        def s5: double = s4 * c1 + c4 * s1
+        def base: double = 0.5 * (this.rx + this.ry) + 0.5 * (this.rx - this.ry) * c2
+        def shoulders: double = 0.028 * s2 * s2
+        def crown: double = 0.014 * s1
+        def scallops: double = this.lobeAmp * s5
+        math.max(0.14, base + shoulders + crown + scallops)
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        def rad: double = math.sqrt(p.x * p.x + p.y * p.y)
+        def rEdge: double = if rad < 0.000001 then (
+            0.5 * (this.rx + this.ry)
+        ) else (
+            this.evalScallopRadius(p.x / rad, p.y / rad)
         )
+        def zCurved: double = p.z - this.cupCurvature * rad * rad
+        def dRad: double = rad - rEdge
+        def dZ: double = math.abs(zCurved) - this.halfThick
+        def ox: double = math.max(dRad, 0.0)
+        def oy: double = math.max(dZ, 0.0)
+        math.sqrt(ox * ox + oy * oy) + math.min(math.max(dRad, dZ), 0.0) - this.edgeRadius
     )
-    null
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("frill_shield_sdf")
+)
+
+;; ---------------------------------------------------------------- 3D MaterialFields (Zero-Allocation Per-Hit)
+
+;; Shades the body + tail + 4 legs + 12 toes:
+;; purple cel body, pale-lavender chest/belly/under-tail with crisp 3D seam ink, leg fold seams,
+;; and 12 cream toes with dark ink borders.
+def BodyMaterialField = record (
+    torsoAndTail: frozen Sdf,
+    legs: frozen Sdf,
+    toes: frozen Sdf,
+    bellyRegion: frozen Sdf,
+    matBody: Toon,
+    matBelly: Toon,
+    matCream: Toon,
+    matInk: Emissive
+) implements MaterialField (
+    def sample = fn (p: Vec3, normal: Vec3): Material -> (
+        def dToes: double = this.toes.distance(p)
+        def dLegs: double = this.legs.distance(p)
+        if dToes <= 0.004 then (
+            if math.abs(dToes - dLegs) < 0.010 then (
+                return this.matInk
+            )
+            return this.matCream
+        )
+        if dToes < 0.014 and dLegs <= 0.008 then (
+            return this.matInk
+        )
+
+        def dBelly: double = this.bellyRegion.distance(p)
+        def dTorso: double = this.torsoAndTail.distance(p)
+
+        ;; Crisp 3D ink crease where the legs tuck into the torso flank
+        if dLegs < 0.013 and dTorso < 0.013 and p.y < -0.16 and p.y > -0.52 then (
+            if math.abs(dLegs - dTorso) < 0.009 then (
+                return this.matInk
+            )
+        )
+
+        ;; Pale-lavender chest, lower belly & tail underside with clean hand-drawn seam line
+        if dLegs > 0.014 then (
+            def seamW: double = if p.x < -0.42 then (0.007) else (0.011)
+            if math.abs(dBelly) < seamW and p.x < 0.05 then (
+                return this.matInk
+            )
+            if dBelly < 0.0 then (
+                return this.matBelly
+            )
+        )
+
+        this.matBody
+    )
+)
+
+;; Shades the curved 3D frill + 9 cream osteoderm scallops + pastel inner rim + 5 radial creases.
+def FrillMaterialField = record (
+    shield: FrillShieldSdf,
+    osteoderms: frozen Sdf,
+    frillOffset: Vec3,
+    frillYawRelDeg: double,
+    frillPitchDeg: double,
+    matFrill: Toon,
+    matFrillRim: Emissive,
+    matCream: Toon,
+    matSoftCrease: Emissive,
+    matInk: Emissive
+) implements MaterialField (
+    private def fCosY: double
+    private def fSinY: double
+    private def fCosX: double
+    private def fSinX: double
+
+    init (
+        def ry: double = math.degreesToRadians(this.frillYawRelDeg)
+        def rx: double = math.degreesToRadians(this.frillPitchDeg)
+        this.fCosY = math.cos(ry)
+        this.fSinY = math.sin(ry)
+        this.fCosX = math.cos(rx)
+        this.fSinX = math.sin(rx)
+    )
+
+    def sample = fn (p: Vec3, normal: Vec3): Material -> (
+        def dOst: double = this.osteoderms.distance(p)
+        if dOst <= 0.005 then (
+            return this.matCream
+        )
+        if dOst < 0.016 then (
+            return this.matInk
+        )
+
+        def h: Vec3 = worldToHead(p)
+        def d: Vec3 = h - this.frillOffset
+        def rx: double = this.fCosY * d.x - this.fSinY * d.z
+        def rz: double = this.fSinY * d.x + this.fCosY * d.z
+        def fl: Vec3 = Vec3(rx, this.fCosX * d.y + this.fSinX * rz, -this.fSinX * d.y + this.fCosX * rz)
+        def rad: double = math.sqrt(fl.x * fl.x + fl.y * fl.y)
+        def c1: double = if rad > 0.000001 then (fl.x / rad) else (1.0)
+        def s1: double = if rad > 0.000001 then (fl.y / rad) else (0.0)
+        def rEdge: double = this.shield.evalScallopRadius(c1, s1)
+        def distFromRim: double = rEdge - rad
+
+        ;; 4 radial fold creases aligned with the scallop valleys (198, 126, 54, -18 deg)
+        if fl.z > 0.0 and rad > 0.25 and rad < rEdge - 0.040 then (
+            def d1: double = math.abs(fl.x * 0.309 - fl.y * 0.951)
+            def d2: double = math.abs(fl.x * 0.809 + fl.y * 0.588)
+            def d3: double = math.abs(fl.x * 0.809 - fl.y * 0.588)
+            def d4: double = math.abs(fl.x * 0.309 + fl.y * 0.951)
+            if (c1 < -0.5 and d1 < 0.0075) or
+                (c1 < -0.1 and s1 > 0.3 and d2 < 0.0075) or
+                (c1 > 0.1 and s1 > 0.3 and d3 < 0.0075) or
+                (c1 > 0.5 and d4 < 0.0075) then (
+                return this.matSoftCrease
+            )
+        )
+
+        ;; Pastel inner highlight band near the rim on the front face
+        if fl.z > -0.01 and distFromRim < 0.028 and distFromRim > -0.020 then (
+            return this.matFrillRim
+        )
+
+        this.matFrill
+    )
+)
+
+;; Shades the 3D head in head-local coordinates: eyes (sclera, dark iris, catchlight, rim),
+;; arched eyebrows, rosy cheeks, nostrils, and happy smile line—all flush on the 3D surface!
+def HeadMaterialField = record (
+    matHead: Toon,
+    matCheek: Emissive,
+    matWhite: Emissive,
+    matEyeDark: Emissive,
+    matInk: Emissive
+) implements MaterialField (
+    def sample = fn (p: Vec3, normal: Vec3): Material -> (
+        def h: Vec3 = worldToHead(p)
+
+        if h.z > 0.06 then (
+            def ax: double = math.abs(h.x)
+
+            ;; 1. Symmetric big expressive cartoon eyes looking directly at the front camera
+            def ex: double = (ax - 0.130) / 0.050
+            def ey: double = (h.y - 0.090) / 0.062
+            def eyeR2: double = ex * ex + ey * ey
+            if eyeR2 <= 1.24 then (
+                if eyeR2 > 0.95 then (
+                    return this.matInk
+                )
+                def cx: double = (h.x - (if h.x >= 0.0 then (0.102) else (-0.152))) / 0.014
+                def cy: double = (h.y - 0.106) / 0.014
+                if cx * cx + cy * cy <= 1.0 then (
+                    return this.matWhite
+                )
+                def px: double = (h.x - (if h.x >= 0.0 then (0.108) else (-0.146))) / 0.036
+                def py: double = (h.y - 0.086) / 0.047
+                if px * px + py * py <= 1.0 then (
+                    return this.matEyeDark
+                )
+                return this.matWhite
+            )
+
+            ;; 2. Symmetric cute arched eyebrows above the eyes
+            def bx: double = ax - 0.130
+            if math.abs(bx) < 0.038 then (
+                def browY: double = 0.194 - 5.5 * bx * bx
+                if math.abs(h.y - browY) < 0.0085 then (
+                    return this.matInk
+                )
+            )
+
+            ;; 3. Symmetric rosy pink cheek ovals
+            def rcx: double = (ax - 0.192) / 0.044
+            def rcy: double = (h.y - 0.000) / 0.022
+            if rcx * rcx + rcy * rcy <= 1.0 then (
+                return this.matCheek
+            )
+
+            ;; 4. Symmetric nostrils on the snout tip
+            if h.z > 0.22 then (
+                def nx: double = (ax - 0.052) / 0.013
+                def ny: double = (h.y + 0.046) / 0.010
+                if nx * nx + ny * ny <= 1.0 then (
+                    return this.matInk
+                )
+            )
+
+            ;; 5. Happy curved smile line + corner dimple
+            if h.z > 0.13 and ax < 0.184 then (
+                def smileY: double = -0.146 + 2.35 * ax * ax
+                if math.abs(h.y - smileY) < 0.0095 then (
+                    return this.matInk
+                )
+                if ax > 0.162 and ax < 0.190 and math.abs(h.y - (-0.074 + 0.4 * (ax - 0.176))) < 0.0085 then (
+                    return this.matInk
+                )
+            )
+        )
+
+        this.matHead
+    )
+)
+
+;; Shades the bright lime-green pacifier (shield, darker inner recess, center button, pull ring).
+def PacifierMaterialField = record (
+    ringSdf: frozen Sdf,
+    buttonSdf: frozen Sdf,
+    matPacifier: Toon,
+    matPacifierDark: Emissive,
+    matInk: Emissive
+) implements MaterialField (
+    def sample = fn (p: Vec3, normal: Vec3): Material -> (
+        def dRing: double = this.ringSdf.distance(p)
+        def dBtn: double = this.buttonSdf.distance(p)
+        if dRing <= 0.006 and dBtn <= 0.014 then (
+            return this.matInk
+        )
+        if dBtn <= 0.005 then (
+            return this.matPacifier
+        )
+        if dBtn < 0.015 and dRing > 0.012 then (
+            return this.matInk
+        )
+        if dRing > 0.008 and dBtn < 0.045 and normal.y < -0.25 then (
+            return this.matPacifierDark
+        )
+        this.matPacifier
+    )
+)
+
+;; ---------------------------------------------------------------- Helper: Curved 3D Horn Builder
+
+def makeCurvedHorn = fn (
+    p0: Vec3, r0: double,
+    p1: Vec3, r1: double,
+    p2: Vec3, r2: double
+): SdfSmoothUnion -> (
+    SdfSmoothUnion(
+        SdfRoundCone(p0, p1, r0, r1),
+        SdfRoundCone(p1, p2, r1, r2),
+        0.028
+    )
 )
 
 ;; ---------------------------------------------------------------- Scene Builder
 
 export def buildList = fn (): unique HittableList -> (
-    def matBody = Toon(colBody, srgb(154, 58, 132), lightBody, 0.05, -0.15, 0.55)
-    def matBackLeftLeg = Toon(colBody, colBodyShadow, lightBackLeftLeg, 0.04, 0.22, 0.58)
-    def matFrontLeftLeg = Toon(colBody, colBodyShadow, lightFrontLeftLeg, 0.04, 0.02, 0.54)
-    def matFrontRightLeg = Toon(colBody, colBodyShadow, lightFrontRightLeg, 0.04, 0.22, 0.58)
-    def matHead = Toon(colBody, colBodyShadow, lightHead, 0.04, 0.25, 0.58)
-    def matBodyDark = Toon(colBodyDeep, colBodyDeep, lightBody, 0.08)
-    def matFrill = Toon(colFrill, colFrillShadow, lightFrill, 0.04)
+    def lightBody: Vec3 = Vec3(0.16, 0.70, 0.69)
+    def lightHead: Vec3 = Vec3(0.08, 0.68, 0.72)
+    def lightFrill: Vec3 = Vec3(-0.10, 0.50, 0.86)
+    def lightHorn: Vec3 = Vec3(-0.40, 0.55, 0.72)
+
+    def matBody = Toon(colBody, colBodyShadow, lightBody, 0.03, -0.12, 0.42)
+    def matHead = Toon(colBody, colBodyShadow, lightHead, 0.03, -0.12, 0.45)
+    def matBelly = Toon(colBelly, colBellyShadow, Vec3(0.05, 0.82, 0.56), 0.02, -0.08, 0.45)
+    def matFrill = Toon(colFrill, colFrillShadow, lightFrill, 0.02, -0.18, 0.35)
     def matFrillRim = Emissive(colFrillRim)
-    def matSoftCrease = Emissive(srgb(96, 30, 102))
-    def matBelly = Toon(colBelly, colBellyShadow, lightBelly, 0.03, 0.16, 0.52)
-    def matBellyShadow = Emissive(colBellyShadow)
-    def matLowerBelly = Toon(colBelly, colBellyShadow, lightLowerBelly, 0.03, 0.22, 0.62)
-    def matHorn = Toon(colHorn, colHornShadow, lightHorn, 0.04, 0.22, 0.62)
-    def matCream = Toon(colCream, colCreamShadow, lightHorn, 0.05)
-    def matPacifier = Toon(colPacifier, colPacifierShadow, lightHorn, 0.05)
+    def matSoftCrease = Emissive(colSoftCrease)
+    def matHorn = Toon(colHorn, colHornShadow, lightHorn, 0.02, 0.05, 0.55)
+    def matCream = Toon(colCream, colCreamShadow, lightHorn, 0.03, -0.15, 0.40)
+    def matPacifier = Toon(colPacifier, colPacifierShadow, lightHorn, 0.03, -0.10, 0.50)
     def matPacifierDark = Emissive(colPacifierDark)
     def matCheek = Emissive(colCheek)
-    def matWhite = Emissive(colWhite)
+    def matWhite = Emissive(colEyeWhite)
     def matEyeDark = Emissive(colEyeDark)
     def matInk = Emissive(colOutline)
 
     def world: HittableList = HittableList()
-    def B: double = 0.023
 
-    ;; --- 1. Smooth Tapered 3D Tail ---
-    addBezier(
-        world,
-        -0.388, -0.099, -0.15, 0.161,
-        -0.592, -0.398, -0.22, 0.075,
-        -0.746, -0.316, -0.27, 0.047,
-        6, matBody, matInk, B, 0.05
+    ;; ================================================================
+    ;; 1. PLUMP 3D TORSO + CURVED TAIL + 4 CHUBBY LEGS + 12 DOME TOES
+    ;; ================================================================
+    def torsoCore = SdfRoundCone(
+        Vec3(-0.34, -0.12, -0.14),
+        Vec3(0.16, -0.16, 0.05),
+        0.252,
+        0.322
     )
-    addBezier(
-        world,
-        -0.498, -0.378, -0.18, 0.054,
-        -0.586, -0.424, -0.23, 0.034,
-        -0.703, -0.388, -0.28, 0.016,
-        5, matLowerBelly, matInk, 0.020, 0.04
+    def backArch = SdfTranslate(
+        SdfRotateZ(SdfEllipsoid(Vec3(0.31, 0.255, 0.255)), 26.0),
+        Vec3(-0.10, 0.025, -0.07)
     )
-
-    ;; --- 2. Torso & Smooth Curved Back ---
-    addBezier(
-        world,
-        -0.129, 0.068, -0.13, 0.222,
-        -0.320, 0.096, -0.14, 0.165,
-        -0.440, -0.165, -0.16, 0.130,
-        6, matBody, matInk, B, 0.06
+    def neckJoin = SdfRoundCone(
+        Vec3(0.15, -0.04, 0.05),
+        Vec3(0.32, 0.04, 0.13),
+        0.22,
+        0.19
     )
-    addEll(world, -0.07, -0.14, -0.12, 0.38, 0.325, 0.14, 14.0, matBody, matInk, B, 0.06)
+    def torso = SdfSmoothUnion(SdfSmoothUnion(torsoCore, backArch, 0.12), neckJoin, 0.08)
 
-    ;; --- 3. Four Sculpted 3D Legs + Flush Dome Toes ---
-    def backRightLegCoeffs: array of double = (array of double).of(
-        0.07211,
-        -0.00106, -0.00795,
-        -0.03061, 0.00192,
-        -0.00829, 0.00487,
-        0.00632, -0.00496
-    )
-    world.add(SculptedLobe(pt(-0.147, -0.515, -0.08), 0.06, sc(1.0, -0.08), move(backRightLegCoeffs), 0.16, matBodyDark, matInk, 0.021, openTop: 0.08))
+    ;; Sleek sweeping upturned 3D tapered tail
+    def tail1 = SdfRoundCone(Vec3(-0.35, -0.13, -0.14), Vec3(-0.55, -0.325, -0.21), 0.166, 0.080)
+    def tail2 = SdfRoundCone(Vec3(-0.55, -0.325, -0.21), Vec3(-0.69, -0.355, -0.25), 0.080, 0.040)
+    def tail3 = SdfRoundCone(Vec3(-0.69, -0.355, -0.25), Vec3(-0.76, -0.295, -0.26), 0.040, 0.020)
+    def tail = SdfSmoothUnion(tail1, SdfSmoothUnion(tail2, tail3, 0.045), 0.065)
+    def torsoAndTail = SdfSmoothUnion(torso, tail, 0.085)
 
-    def backLeftLegCoeffs: array of double = (array of double).of(
-        0.15850,
-        -0.01615, -0.01669,
-        -0.03714, -0.02285,
-        0.02669, -0.00387,
-        -0.00475, 0.02004,
-        -0.00513, -0.00039,
-        0.01390, -0.00451,
-        0.00169, 0.00481,
-        -0.00164, -0.00248
-    )
-    world.add(SculptedLobe(pt(-0.357, -0.475, 0.08), 0.08, sc(1.0, 0.08), move(backLeftLegCoeffs), 0.30, matBackLeftLeg, matInk, 0.023, openTop: 0.14))
-    addBezier(world, -0.518, -0.10, 0.18, 0.009, -0.516, -0.23, 0.18, 0.009, -0.506, -0.35, 0.18, 0.009, 3, matInk, matInk, 0.0, 0.0)
-    addBezier(world, -0.410, -0.14, 0.18, 0.009, -0.404, -0.25, 0.18, 0.009, -0.376, -0.35, 0.18, 0.009, 3, matInk, matInk, 0.0, 0.0)
-    addEll(world, -0.401, -0.626, 0.17, 0.034, 0.033, 0.028, 0.0, matCream, matInk, 0.016, 0.022)
-    addEll(world, -0.337, -0.626, 0.18, 0.038, 0.036, 0.028, 0.0, matCream, matInk, 0.016, 0.022)
-    addEll(world, -0.284, -0.625, 0.17, 0.033, 0.033, 0.028, 0.0, matCream, matInk, 0.016, 0.022)
+    ;; Four sturdy chubby 3D legs anchored symmetrically across pelvis & shoulders
+    def legFL = SdfRoundCone(Vec3(0.005, -0.23, 0.17), Vec3(0.010, -0.618, 0.20), 0.138, 0.120)
+    def legFR = SdfRoundCone(Vec3(0.395, -0.24, -0.02), Vec3(0.425, -0.600, -0.02), 0.128, 0.112)
+    def legBL = SdfRoundCone(Vec3(-0.350, -0.23, 0.09), Vec3(-0.345, -0.565, 0.12), 0.132, 0.112)
+    def legBR = SdfRoundCone(Vec3(-0.30, -0.22, -0.21), Vec3(-0.30, -0.50, -0.21), 0.116, 0.100)
 
-    def frontRightLegCoeffs: array of double = (array of double).of(
-        0.17512,
-        0.00074, -0.02255,
-        -0.06071, 0.03172,
-        -0.03235, -0.02639,
-        0.01010, -0.00565,
-        0.00466, 0.01265,
-        0.00342, 0.00378
-    )
-    world.add(SculptedLobe(pt(0.425, -0.467, 0.02), 0.07, sc(1.0, 0.02), move(frontRightLegCoeffs), 0.31, matFrontRightLeg, matInk, 0.023, openTop: 0.24))
-    addEll(world, 0.407, -0.652, 0.10, 0.035, 0.034, 0.028, 0.0, matCream, matInk, 0.016, 0.022)
-    addEll(world, 0.469, -0.650, 0.11, 0.038, 0.036, 0.028, 0.0, matCream, matInk, 0.016, 0.022)
-    addEll(world, 0.528, -0.637, 0.10, 0.033, 0.033, 0.028, 0.0, matCream, matInk, 0.016, 0.022)
-
-    ;; Chest, chin cast shadow, shoulder bridge & ink contour
-    addEll(world, 0.185, -0.282, 0.11, 0.325, 0.245, 0.065, 23.0, matBelly, matInk, 0.023, 0.035)
-    world.add(Ellipsoid.rotatedZ(pt(0.32, -0.205, 0.182), sc(0.165, 0.182), sc(0.064, 0.182), 0.022, -6.0, matBellyShadow))
-    world.add(Ellipsoid.rotatedZ(pt(-0.015, -0.20, 0.195), sc(0.195, 0.195), sc(0.17, 0.195), 0.055, 12.0, matBody))
-    addBezier(world, 0.178, -0.215, 0.28, 0.010, 0.158, -0.300, 0.28, 0.010, 0.132, -0.400, 0.28, 0.010, 3, matInk, matInk, 0.0, 0.0)
-
-    ;; Lower belly crescent
-    addBezier(
-        world,
-        -0.365, -0.308, 0.03, 0.014,
-        -0.295, -0.416, 0.04, 0.052,
-        -0.130, -0.448, 0.04, 0.070,
-        5, matLowerBelly, matInk, 0.021, 0.03
+    def rawLegs = SdfUnion(SdfUnion(legFL, legFR), SdfUnion(legBL, legBR))
+    def groundClipFL = SdfTranslate(SdfBox(Vec3(0.30, 0.15, 0.30)), Vec3(0.010, -0.858, 0.20))
+    def groundClipFR = SdfTranslate(SdfBox(Vec3(0.30, 0.15, 0.30)), Vec3(0.425, -0.830, -0.02))
+    def groundClipBL = SdfTranslate(SdfBox(Vec3(0.30, 0.15, 0.30)), Vec3(-0.345, -0.805, 0.12))
+    def groundClipBR = SdfTranslate(SdfBox(Vec3(0.30, 0.15, 0.30)), Vec3(-0.30, -0.74, -0.21))
+    def legsFlat = SdfSmoothSubtraction(
+        rawLegs,
+        SdfUnion(SdfUnion(groundClipFL, groundClipFR), SdfUnion(groundClipBL, groundClipBR)),
+        0.024
     )
 
-    ;; Front-left leg
-    def frontLeftLegCoeffs: array of double = (array of double).of(
-        0.21150,
-        -0.01508, 0.01839,
-        -0.06797, -0.01352,
-        -0.01272, -0.00037,
-        -0.01398, 0.00190,
-        0.00297, -0.00658,
-        0.01774, 0.00519,
-        0.00288, 0.00480,
-        -0.00176, -0.00241
-    )
-    world.add(SculptedLobe(pt(0.005, -0.495, 0.20), 0.10, sc(1.0, 0.20), move(frontLeftLegCoeffs), 0.34, matFrontLeftLeg, matInk, 0.02, openTop: 0.19))
-    addBezier(world, -0.144, -0.27, 0.32, 0.009, -0.145, -0.36, 0.32, 0.009, -0.136, -0.46, 0.32, 0.009, 2, matInk, matInk, 0.0, 0.0)
-    addEll(world, 0.001, -0.695, 0.31, 0.036, 0.035, 0.028, 0.0, matCream, matInk, 0.016, 0.022)
-    addEll(world, 0.072, -0.694, 0.32, 0.040, 0.038, 0.028, 0.0, matCream, matInk, 0.016, 0.022)
-    addEll(world, 0.136, -0.680, 0.31, 0.034, 0.034, 0.028, 0.0, matCream, matInk, 0.016, 0.022)
-
-    ;; --- 4. Scalloped Lavender Frill ---
-    def frillCoeffs: array of double = (array of double).of(
-        0.43578,
-        0.00969, 0.01561,
-        0.02936, -0.00796,
-        -0.00715, -0.00313,
-        0.00708, 0.00412,
-        0.00572, -0.00608,
-        -0.00439, 0.00286,
-        0.00604, -0.00299,
-        0.00052, -0.00338,
-        -0.00100, 0.00591,
-        -0.00169, -0.00923,
-        0.00151, -0.00097,
-        0.00270, -0.00299
-    )
-    world.add(SculptedLobe(pt(0.28, 0.254, 0.07), 0.06, sc(1.0, 0.07), move(frillCoeffs), 0.52, matFrill, matInk, 0.0215, 0.018, matFrillRim))
-    addEll(world, -0.082, 0.068, 0.066, 0.064, 0.062, 0.042, 0.0, matFrill, matInk, 0.022, 0.03)
-
-    ;; 9 cream osteoderm scallops
-    addEll(world, -0.155, 0.042, 0.055, 0.034, 0.032, 0.035, 72.0, matCream, matInk, 0.017, 0.025)
-    addEll(world, -0.184, 0.221, 0.055, 0.039, 0.030, 0.035, 85.0, matCream, matInk, 0.017, 0.025)
-    addEll(world, -0.166, 0.404, 0.055, 0.046, 0.031, 0.035, 68.0, matCream, matInk, 0.017, 0.025)
-    addEll(world, -0.033, 0.596, 0.055, 0.042, 0.030, 0.035, 36.0, matCream, matInk, 0.017, 0.025)
-    addEll(world, 0.242, 0.707, 0.055, 0.044, 0.031, 0.035, -2.0, matCream, matInk, 0.018, 0.025)
-    addEll(world, 0.496, 0.654, 0.055, 0.042, 0.029, 0.035, -34.0, matCream, matInk, 0.017, 0.025)
-    addEll(world, 0.647, 0.524, 0.055, 0.040, 0.029, 0.035, -52.0, matCream, matInk, 0.017, 0.025)
-    addEll(world, 0.737, 0.377, 0.055, 0.038, 0.029, 0.035, -72.0, matCream, matInk, 0.017, 0.025)
-    addEll(world, 0.752, 0.160, 0.055, 0.034, 0.026, 0.035, -76.0, matCream, matInk, 0.017, 0.025)
-
-    ;; Radial frill fold creases
-    addBezier(world, -0.10, 0.166, 0.14, 0.008, -0.02, 0.165, 0.14, 0.008, 0.04, 0.166, 0.14, 0.007, 2, matInk, matInk, 0.0, 0.0)
-    addBezier(world, -0.065, 0.362, 0.14, 0.008, 0.005, 0.324, 0.14, 0.008, 0.075, 0.286, 0.14, 0.007, 2, matInk, matInk, 0.0, 0.0)
-    addBezier(world, 0.135, 0.560, 0.14, 0.008, 0.165, 0.490, 0.14, 0.008, 0.195, 0.430, 0.14, 0.007, 2, matSoftCrease, matInk, 0.0, 0.0)
-    addBezier(world, 0.402, 0.575, 0.13, 0.008, 0.390, 0.485, 0.13, 0.008, 0.382, 0.405, 0.13, 0.007, 2, matSoftCrease, matInk, 0.0, 0.0)
-    addBezier(world, 0.648, 0.355, 0.13, 0.008, 0.590, 0.322, 0.13, 0.008, 0.530, 0.290, 0.13, 0.007, 2, matSoftCrease, matInk, 0.0, 0.0)
-
-    ;; --- 5. Pear-Shaped Head & Snout ---
-    def headCoeffs: array of double = (array of double).of(
-        0.32691,
-        -0.00854, -0.00060,
-        0.00648, -0.01054,
-        -0.00478, -0.01992,
-        0.00096, -0.01066,
-        0.00853, -0.00113,
-        -0.00010, -0.00901,
-        0.00367, 0.00045
-    )
-    world.add(SculptedLobe(pt(0.37, 0.08, 0.25), 0.14, sc(1.0, 0.25), move(headCoeffs), 0.40, matHead, matInk, 0.022))
-    addBezier(world, 0.630, 0.032, 0.45, 0.009, 0.648, -0.035, 0.45, 0.009, 0.644, -0.108, 0.45, 0.009, 3, matInk, matInk, 0.0, 0.0)
-
-    ;; --- 6. Three Cream-Yellow Horns ---
-    def leftHornCoeffs: array of double = (array of double).of(
-        0.08650,
-        -0.00603, -0.00549,
-        -0.01938, 0.01834,
-        -0.00115, -0.01042,
-        0.00684, -0.00324,
-        0.00650, 0.00434,
-        -0.00261, 0.00314
-    )
-    world.add(SculptedLobe(pt(0.222, 0.372, 0.36), 0.07, sc(1.0, 0.36), move(leftHornCoeffs), 0.17, matHorn, matInk, 0.020))
-
-    def rightHornCoeffs: array of double = (array of double).of(
-        0.08050,
-        -0.01162, -0.00682,
-        -0.01256, 0.02124,
-        -0.00260, -0.00880,
-        0.00061, -0.00576,
-        0.00504, 0.00007,
-        -0.00174, 0.00627
-    )
-    world.add(SculptedLobe(pt(0.548, 0.402, 0.35), 0.07, sc(1.0, 0.35), move(rightHornCoeffs), 0.16, matHorn, matInk, 0.020))
-
-    def noseHornCoeffs: array of double = (array of double).of(
-        0.07050,
-        -0.00306, -0.01220,
-        -0.00956, 0.01138,
-        -0.00290, -0.00512,
-        0.00197, -0.00001,
-        0.00089, -0.00090,
-        -0.00012, 0.00200
-    )
-    world.add(SculptedLobe(pt(0.550, 0.100, 0.48), 0.06, sc(1.0, 0.48), move(noseHornCoeffs), 0.13, matHorn, matInk, 0.019))
-
-    ;; --- 7. Eyes, Eyebrows, Cheeks, Nose Bridge, Nostrils, Smile ---
-    world.add(Ellipsoid.rotatedZ(pt(0.292, 0.130, 0.42), sc(0.052, 0.42), sc(0.069, 0.42), 0.03, -6.0, matInk))
-    world.add(Ellipsoid.rotatedZ(pt(0.292, 0.130, 0.44), sc(0.048, 0.44), sc(0.055, 0.44), 0.025, -6.0, matWhite))
-    world.add(Ellipsoid.rotatedZ(pt(0.285, 0.118, 0.465), sc(0.035, 0.465), sc(0.043, 0.465), 0.020, -6.0, matEyeDark))
-    world.add(Sphere(pt(0.300, 0.142, 0.488), sc(0.014, 0.488), matWhite))
-
-    world.add(Ellipsoid.rotatedZ(pt(0.506, 0.156, 0.40), sc(0.042, 0.40), sc(0.055, 0.40), 0.028, -4.0, matInk))
-    world.add(Ellipsoid.rotatedZ(pt(0.512, 0.156, 0.42), sc(0.033, 0.42), sc(0.046, 0.42), 0.024, -4.0, matWhite))
-    world.add(Ellipsoid.rotatedZ(pt(0.499, 0.146, 0.442), sc(0.026, 0.442), sc(0.031, 0.442), 0.018, -4.0, matEyeDark))
-    world.add(Sphere(pt(0.512, 0.168, 0.465), sc(0.011, 0.465), matWhite))
-
-    addBezier(world, 0.395, 0.112, 0.44, 0.008, 0.440, 0.132, 0.44, 0.008, 0.482, 0.130, 0.44, 0.008, 2, matSoftCrease, matInk, 0.0, 0.0)
-    addBezier(world, 0.240, 0.232, 0.44, 0.012, 0.282, 0.256, 0.45, 0.012, 0.316, 0.248, 0.45, 0.011, 2, matInk, matInk, 0.0, 0.0)
-    addBezier(world, 0.486, 0.268, 0.42, 0.011, 0.514, 0.282, 0.42, 0.011, 0.542, 0.274, 0.42, 0.010, 2, matInk, matInk, 0.0, 0.0)
-
-    world.add(Ellipsoid.rotatedZ(pt(0.232, 0.034, 0.46), sc(0.052, 0.46), sc(0.026, 0.46), 0.02, -4.0, matCheek))
-    world.add(Ellipsoid.rotatedZ(pt(0.640, 0.082, 0.43), sc(0.034, 0.43), sc(0.022, 0.43), 0.02, 10.0, matCheek))
-
-    world.add(Ellipsoid.rotatedZ(pt(0.462, -0.006, 0.49), sc(0.015, 0.49), sc(0.011, 0.49), 0.012, -25.0, matInk))
-    world.add(Ellipsoid.rotatedZ(pt(0.585, 0.004, 0.47), sc(0.013, 0.47), sc(0.010, 0.47), 0.012, 20.0, matInk))
-
-    addBezier(world, 0.292, -0.052, 0.48, 0.010, 0.354, -0.108, 0.49, 0.010, 0.442, -0.124, 0.50, 0.010, 3, matInk, matInk, 0.0, 0.0)
-    addBezier(world, 0.268, -0.062, 0.48, 0.009, 0.292, -0.052, 0.48, 0.009, 0.312, -0.032, 0.48, 0.008, 2, matInk, matInk, 0.0, 0.0)
-
-    ;; --- 8. Bright Lime-Green Pacifier ---
-    addEll(world, 0.482, -0.118, 0.52, 0.072, 0.07, 0.032, -14.0, matPacifier, matInk, 0.020, 0.035)
-    addEll(world, 0.598, -0.105, 0.52, 0.068, 0.072, 0.032, 14.0, matPacifier, matInk, 0.020, 0.035)
-    addEll(world, 0.544, -0.124, 0.525, 0.056, 0.042, 0.030, 0.0, matPacifier, matInk, 0.019, 0.035)
-    addEll(world, 0.562, -0.172, 0.54, 0.038, 0.028, 0.024, 0.0, matPacifierDark, matInk, 0.015, 0.025)
-    world.add(Ellipsoid.rotatedZ(pt(0.562, -0.205, 0.50), sc(0.044, 0.50), sc(0.030, 0.50), 0.02, 0.0, matBodyDark))
-    addEll(world, 0.562, -0.126, 0.57, 0.033, 0.035, 0.030, 0.0, matPacifier, matInk, 0.015, 0.03)
-
-    def ringCx: double = 0.562
-    def ringCy: double = -0.194
-    def ringZ: double = 0.58
-    def ringR: double = 0.058
-    def ringTube: double = 0.023
-    def ringSegs: int = 16
-    for ri in 0..<ringSegs then (
-        def a0: double = math.degreesToRadians(ri * 360.0 / ringSegs)
-        def a1: double = math.degreesToRadians((ri + 1) * 360.0 / ringSegs)
-        addCone(
-            world,
-            ringCx + ringR * math.cos(a0), ringCy + ringR * math.sin(a0), ringZ,
-            ringCx + ringR * math.cos(a1), ringCy + ringR * math.sin(a1), ringZ,
-            ringTube, ringTube, matPacifier, matInk, 0.0145, 0.03
+    ;; 12 cute cream dome toes (3 seated cleanly on the front rim of each foot)
+    def toesFL = SdfUnion(
+        SdfSphere(Vec3(-0.050, -0.678, 0.285), 0.032),
+        SdfUnion(
+            SdfSphere(Vec3(0.015, -0.678, 0.302), 0.035),
+            SdfSphere(Vec3(0.075, -0.668, 0.278), 0.031)
         )
     )
+    def toesFR = SdfUnion(
+        SdfSphere(Vec3(0.365, -0.650, 0.085), 0.032),
+        SdfUnion(
+            SdfSphere(Vec3(0.430, -0.650, 0.090), 0.035),
+            SdfSphere(Vec3(0.490, -0.640, 0.060), 0.031)
+        )
+    )
+    def toesBL = SdfUnion(
+        SdfSphere(Vec3(-0.405, -0.625, 0.198), 0.031),
+        SdfUnion(
+            SdfSphere(Vec3(-0.345, -0.625, 0.218), 0.034),
+            SdfSphere(Vec3(-0.285, -0.625, 0.198), 0.030)
+        )
+    )
+    def toesBR = SdfUnion(
+        SdfSphere(Vec3(-0.34, -0.56, -0.115), 0.028),
+        SdfUnion(
+            SdfSphere(Vec3(-0.28, -0.56, -0.105), 0.031),
+            SdfSphere(Vec3(-0.23, -0.56, -0.135), 0.028)
+        )
+    )
+    def allToes = SdfUnion(SdfUnion(toesFL, toesFR), SdfUnion(toesBL, toesBR))
+
+    def bodyShape = SdfUnion(SdfSmoothUnion(torsoAndTail, legsFlat, 0.06), allToes)
+
+    ;; 3D pale-lavender chest, lower belly crescent, and under-tail mask
+    def chestBellyMask = SdfTranslate(
+        SdfRotateZ(SdfEllipsoid(Vec3(0.24, 0.26, 0.25)), 12.0),
+        Vec3(0.31, -0.36, 0.12)
+    )
+    def lowerBellyMask = SdfRoundCone(
+        Vec3(-0.30, -0.37, 0.14),
+        Vec3(0.01, -0.43, 0.20),
+        0.148,
+        0.178
+    )
+    def tailBellyMask = SdfRoundCone(
+        Vec3(-0.44, -0.36, -0.14),
+        Vec3(-0.73, -0.35, -0.21),
+        0.092,
+        0.046
+    )
+    def bellyRegion = SdfSmoothUnion(
+        chestBellyMask,
+        SdfSmoothUnion(lowerBellyMask, tailBellyMask, 0.06),
+        0.08
+    )
+
+    def bodyField = BodyMaterialField(
+        torsoAndTail,
+        legsFlat,
+        allToes,
+        bellyRegion,
+        matBody,
+        matBelly,
+        matCream,
+        matInk
+    )
+    world.add(RaymarchedSdf(
+        bodyShape,
+        matBody,
+        materialField: bodyField,
+        maxSteps: 110,
+        stepScale: 0.9,
+        outlineMat: matInk,
+        outlineWidth: 0.020
+    ))
+
+    ;; ================================================================
+    ;; 2. CURVED 3D SCALLOPED FRILL + 9 OSTEODERM STUDS (HEAD-ANCHORED)
+    ;; ================================================================
+    def frillOffset: Vec3 = Vec3(0.012, 0.130, -0.112)
+    def frillYawRelDeg: double = -19.0
+    def frillPitchDeg: double = -12.0
+    def frillShield = FrillShieldSdf(0.425, 0.412, 0.024, 0.023, 0.022, 0.13)
+
+    ;; 9 cream osteoderm studs seated along the curved outer rim of the frill
+    def placeOst = fn (angleDeg: double, rx: double, ry: double): SdfTranslate -> (
+        def a: double = math.degreesToRadians(angleDeg)
+        def ca: double = math.cos(a)
+        def sa: double = math.sin(a)
+        def rEdge: double = frillShield.evalScallopRadius(ca, sa) + 0.020
+        def ox: double = ca * rEdge
+        def oy: double = sa * rEdge
+        def oz: double = frillShield.cupCurvature * rEdge * rEdge
+        SdfTranslate(
+            SdfRotateZ(SdfEllipsoid(Vec3(rx, ry, 0.028)), angleDeg - 90.0),
+            Vec3(ox, oy, oz)
+        )
+    )
+    def ost1 = placeOst(206.0, 0.032, 0.035)
+    def ost2 = placeOst(170.0, 0.036, 0.038)
+    def ost3 = placeOst(135.0, 0.042, 0.042)
+    def ost4 = placeOst(110.0, 0.038, 0.038)
+    def ost5 = placeOst(86.0, 0.042, 0.040)
+    def ost6 = placeOst(56.0, 0.040, 0.040)
+    def ost7 = placeOst(32.0, 0.035, 0.035)
+    def ost8 = placeOst(10.0, 0.033, 0.033)
+    def ost9 = placeOst(-16.0, 0.029, 0.031)
+    def ostLocal = SdfUnion(
+        SdfUnion(SdfUnion(ost1, ost2), SdfUnion(ost3, ost4)),
+        SdfUnion(SdfUnion(ost5, ost6), SdfUnion(ost7, SdfUnion(ost8, ost9)))
+    )
+
+    def frillLocal = SdfUnion(frillShield, ostLocal)
+    def frillInHead = SdfTranslate(
+        SdfRotateY(SdfRotateX(frillLocal, frillPitchDeg), frillYawRelDeg),
+        frillOffset
+    )
+    def ostInHead = SdfTranslate(
+        SdfRotateY(SdfRotateX(ostLocal, frillPitchDeg), frillYawRelDeg),
+        frillOffset
+    )
+    def frillWorld = placeInHead(frillInHead)
+    def ostWorld = placeInHead(ostInHead)
+
+    def frillField = FrillMaterialField(
+        frillShield,
+        ostWorld,
+        frillOffset,
+        frillYawRelDeg,
+        frillPitchDeg,
+        matFrill,
+        matFrillRim,
+        matCream,
+        matSoftCrease,
+        matInk
+    )
+    world.add(RaymarchedSdf(
+        frillWorld,
+        matFrill,
+        materialField: frillField,
+        maxSteps: 110,
+        stepScale: 0.85,
+        outlineMat: matInk,
+        outlineWidth: 0.020
+    ))
+
+    ;; ================================================================
+    ;; 3. PLUMP 3D HEAD + CHUBBY CHEEKS + SNOUT + FLUSH FACIAL DETAILS
+    ;; ================================================================
+    def cranium = SdfEllipsoid(Vec3(0.268, 0.252, 0.258))
+    def cheekL = SdfSphere(Vec3(-0.165, -0.072, 0.070), 0.155)
+    def cheekR = SdfSphere(Vec3(0.165, -0.072, 0.070), 0.155)
+    def snout = SdfTranslate(SdfEllipsoid(Vec3(0.180, 0.138, 0.195)), Vec3(0.0, -0.068, 0.175))
+    def chin = SdfSphere(Vec3(0.0, -0.145, 0.115), 0.135)
+
+    def headLocal = SdfSmoothUnion(
+        SdfSmoothUnion(cranium, SdfUnion(cheekL, cheekR), 0.10),
+        SdfSmoothUnion(snout, chin, 0.08),
+        0.10
+    )
+    def headWorld = placeInHead(headLocal)
+    def headField = HeadMaterialField(matHead, matCheek, matWhite, matEyeDark, matInk)
+    world.add(RaymarchedSdf(
+        headWorld,
+        matHead,
+        materialField: headField,
+        maxSteps: 100,
+        stepScale: 0.85,
+        outlineMat: matInk,
+        outlineWidth: 0.019
+    ))
+
+    ;; ================================================================
+    ;; 4. THREE CURVED 3D CREAM-YELLOW HORNS (BILATERALLY SYMMETRIC)
+    ;; ================================================================
+    def hornLeft = makeCurvedHorn(
+        Vec3(-0.145, 0.218, 0.060), 0.052,
+        Vec3(-0.150, 0.295, 0.130), 0.036,
+        Vec3(-0.136, 0.360, 0.185), 0.017
+    )
+    def hornRight = makeCurvedHorn(
+        Vec3(0.145, 0.218, 0.060), 0.052,
+        Vec3(0.150, 0.295, 0.130), 0.036,
+        Vec3(0.136, 0.360, 0.185), 0.017
+    )
+    def hornNose = makeCurvedHorn(
+        Vec3(0.0, -0.015, 0.280), 0.048,
+        Vec3(0.0, 0.048, 0.335), 0.031,
+        Vec3(0.0, 0.110, 0.362), 0.015
+    )
+    def hornsWorld = placeInHead(SdfUnion(hornNose, SdfUnion(hornLeft, hornRight)))
+    world.add(RaymarchedSdf(
+        hornsWorld,
+        matHorn,
+        maxSteps: 96,
+        stepScale: 0.9,
+        outlineMat: matInk,
+        outlineWidth: 0.017
+    ))
+
+    ;; ================================================================
+    ;; 5. TRUE 3D BRIGHT LIME-GREEN PACIFIER (WITH REAL SdfTorus RING)
+    ;; ================================================================
+    def pacLobeL = SdfTranslate(
+        SdfRotateZ(SdfEllipsoid(Vec3(0.070, 0.062, 0.030)), -16.0),
+        Vec3(-0.052, -0.155, 0.330)
+    )
+    def pacLobeR = SdfTranslate(
+        SdfRotateZ(SdfEllipsoid(Vec3(0.070, 0.062, 0.030)), 16.0),
+        Vec3(0.052, -0.155, 0.330)
+    )
+    def pacBridge = SdfTranslate(
+        SdfEllipsoid(Vec3(0.054, 0.042, 0.032)),
+        Vec3(0.0, -0.159, 0.330)
+    )
+    def pacShield = SdfSmoothUnion(SdfUnion(pacLobeL, pacLobeR), pacBridge, 0.026)
+    def pacButtonLocal = SdfTranslate(
+        SdfEllipsoid(Vec3(0.036, 0.036, 0.030)),
+        Vec3(0.0, -0.161, 0.367)
+    )
+    def pacRingLocal = SdfTranslate(
+        SdfRotateX(SdfTorus(0.054, 0.017), 78.0),
+        Vec3(0.0, -0.219, 0.381)
+    )
+    def pacWorld = placeInHead(SdfUnion(SdfUnion(pacShield, pacButtonLocal), pacRingLocal))
+    def pacButtonWorld = placeInHead(pacButtonLocal)
+    def pacRingWorld = placeInHead(pacRingLocal)
+
+    def pacField = PacifierMaterialField(pacRingWorld, pacButtonWorld, matPacifier, matPacifierDark, matInk)
+    world.add(RaymarchedSdf(
+        pacWorld,
+        matPacifier,
+        materialField: pacField,
+        maxSteps: 96,
+        stepScale: 0.9,
+        outlineMat: matInk,
+        outlineWidth: 0.015
+    ))
 
     world
 )
