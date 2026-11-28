@@ -35,8 +35,8 @@ final class JavaDefaultCall implements Callable {
     @Override
     public Object call(ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
         Method method = Overloads.resolve(methods, description, args);
-        Object[] java = Values.toJava(args, method.getParameterTypes(), rt);
-        Object face = BabbleObjects.face(instance);
+        Object[] java = Faces.toJava(args, method.getParameterTypes(), rt);
+        Object face = Faces.face(instance);
         Object result;
         try {
             if (face instanceof Proxy) {

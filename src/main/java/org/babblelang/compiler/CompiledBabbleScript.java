@@ -2,6 +2,7 @@ package org.babblelang.compiler;
 
 import java.lang.invoke.MethodHandle;
 import java.util.Map;
+import java.util.Set;
 import javax.script.ScriptException;
 import org.babblelang.engine.BabbleScript;
 import org.babblelang.engine.BabbleScriptEngine;
@@ -13,6 +14,20 @@ import org.babblelang.runtime.ScriptRuntime;
  * each one gets fresh namespaces and its own ScriptRuntime.
  */
 public final class CompiledBabbleScript extends BabbleScript {
+    /**
+     * Static summary of root implicit and {@code import} usage observed in the final compiled HIR,
+     * used by {@link Babblec} to generate a minimal {@code babble/$Implicits} and tree-shake unused
+     * runtime classes.
+     */
+    public record AotUsage(
+            boolean hasDynamicImport, boolean hasJavaImport, Set<String> usedImplicits) {
+        public static final AotUsage EMPTY = new AotUsage(false, false, Set.of());
+
+        public AotUsage {
+            usedImplicits = usedImplicits != null ? Set.copyOf(usedImplicits) : Set.of();
+        }
+    }
+
     private final Class<?> scriptClass;
     private final Map<String, byte[]> classes;
     private final MethodHandle run;
@@ -24,6 +39,7 @@ public final class CompiledBabbleScript extends BabbleScript {
     private final Map<String, org.babblelang.analysis.LoweringTargets.ExportedFunctionTarget>
             exportedFunctions;
     private final Map<String, org.babblelang.ir.hir.HirFunction> crossModuleInlineExports;
+    private final AotUsage aotUsage;
 
     CompiledBabbleScript(
             BabbleScriptEngine engine,
@@ -107,6 +123,35 @@ public final class CompiledBabbleScript extends BabbleScript {
             Map<String, org.babblelang.analysis.LoweringTargets.ExportedFunctionTarget>
                     exportedFunctions,
             Map<String, org.babblelang.ir.hir.HirFunction> crossModuleInlineExports) {
+        this(
+                engine,
+                scriptClass,
+                classes,
+                run,
+                sourceName,
+                firstLine,
+                exports,
+                interfaceJvmNames,
+                classJvmNames,
+                exportedFunctions,
+                crossModuleInlineExports,
+                AotUsage.EMPTY);
+    }
+
+    CompiledBabbleScript(
+            BabbleScriptEngine engine,
+            Class<?> scriptClass,
+            Map<String, byte[]> classes,
+            MethodHandle run,
+            String sourceName,
+            int firstLine,
+            String[] exports,
+            Map<String, String> interfaceJvmNames,
+            Map<String, String> classJvmNames,
+            Map<String, org.babblelang.analysis.LoweringTargets.ExportedFunctionTarget>
+                    exportedFunctions,
+            Map<String, org.babblelang.ir.hir.HirFunction> crossModuleInlineExports,
+            AotUsage aotUsage) {
         super(engine);
         this.exports = exports;
         this.scriptClass = scriptClass;
@@ -121,6 +166,12 @@ public final class CompiledBabbleScript extends BabbleScript {
                 exportedFunctions != null ? Map.copyOf(exportedFunctions) : Map.of();
         this.crossModuleInlineExports =
                 crossModuleInlineExports != null ? Map.copyOf(crossModuleInlineExports) : Map.of();
+        this.aotUsage = aotUsage != null ? aotUsage : AotUsage.EMPTY;
+    }
+
+    /** Static implicit and import usage recorded from the compiled HIR for AOT jar trimming. */
+    public AotUsage aotUsage() {
+        return aotUsage;
     }
 
     /** The generated class, for tests and debugging. */

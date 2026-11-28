@@ -17,7 +17,6 @@ import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import org.babblelang.engine.impl.natives.java.JavaObject;
 
 /**
  * The main class of a program {@code babblec} compiled into a jar
@@ -46,7 +45,7 @@ public final class Launcher {
     private final Path location;
 
     private final JarModules modules;
-    private final Namespace implicits = Implicits.create();
+    private final Namespace implicits;
     private final Writer out;
     private final Object args;
 
@@ -54,8 +53,22 @@ public final class Launcher {
         this.index = index;
         this.location = location;
         this.modules = new JarModules();
+        this.implicits = createImplicits(index.implicitsClass());
         this.out = out;
-        this.args = JavaObject.of(new ArrayList<>(args));
+        this.args = new ArrayList<>(args);
+    }
+
+    private static Namespace createImplicits(String className) {
+        String target = className != null ? className : "org.babblelang.runtime.Implicits";
+        try {
+            Class<?> cls = Class.forName(target, true, Launcher.class.getClassLoader());
+            MethodHandle create =
+                    MethodHandles.lookup()
+                            .findStatic(cls, "create", MethodType.methodType(Namespace.class));
+            return (Namespace) create.invokeExact();
+        } catch (Throwable t) {
+            throw new IllegalStateException("Cannot initialize implicits from " + target, t);
+        }
     }
 
     public static void main(String[] args) {
@@ -152,7 +165,10 @@ public final class Launcher {
      * a script's bindings.
      */
     private Namespace newRoot() {
-        Namespace root = Implicits.withOutput(implicits, out).enter();
+        Namespace output = implicits.enter();
+        output.define("STDOUT", true)
+                .set(out == null || out instanceof PrintWriter ? out : new PrintWriter(out));
+        Namespace root = output.enter();
         root.define("args", false).set(args);
         return root;
     }
@@ -182,13 +198,13 @@ public final class Launcher {
         if (t instanceof BabbleException) {
             message = t.getMessage();
         } else if (t instanceof ThrownException te) {
-            message = ArraySupport.format(te.value());
+            message = ErrorFormat.format(te.value());
         } else if (t instanceof ArrayStoreException
                 || t instanceof ArrayIndexOutOfBoundsException
                 || t instanceof NegativeArraySizeException) {
-            message = ArraySupport.formatThrowable(t);
+            message = ErrorFormat.formatThrowable(t);
         } else {
-            message = ArraySupport.formatJavaException(t);
+            message = ErrorFormat.formatJavaException(t);
         }
         for (StackTraceElement frame : t.getStackTrace()) {
             if (frame.getLineNumber() >= 0 && isProgramClass(frame.getClassName())) {

@@ -486,7 +486,7 @@ public final class Types {
                     Map.entry(Character.class, "char?"),
                     Map.entry(String.class, "string"),
                     Map.entry(Object.class, "any"),
-                    Map.entry(InterpretedInstance.class, "any"));
+                    Map.entry(DynamicInstance.class, "any"));
 
     private static String describeArray(Class<?> arrayClass) {
         Class<?> comp = arrayClass.getComponentType();

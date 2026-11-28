@@ -1049,7 +1049,7 @@ public class OptimizerTestCase {
                     sumSteppedCalls.stream()
                             .noneMatch(c ->
                                     c.contains("IntRange")
-                                            || c.contains("Range.of")
+                                            || c.contains("Ranges.of")
                                             || c.contains("Iterator")),
                     "-O"
                             + opt

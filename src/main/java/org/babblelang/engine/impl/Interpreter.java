@@ -24,6 +24,7 @@ import org.babblelang.runtime.Calls;
 import org.babblelang.runtime.ClassBody;
 import org.babblelang.runtime.ClassShape;
 import org.babblelang.runtime.Classes;
+import org.babblelang.runtime.Faces;
 import org.babblelang.runtime.InterpretedInstance;
 import org.babblelang.runtime.Members;
 import org.babblelang.runtime.Namespace;
@@ -163,7 +164,14 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                             interfaces,
                             InterpretedInstance::new);
         } else {
-            babbleClass = Classes.newClass(shape, namespace, body, interfaces);
+            babbleClass =
+                    Classes.newClass(
+                            shape,
+                            namespace,
+                            Arguments.NONE,
+                            body,
+                            interfaces,
+                            InterpretedInstance::new);
         }
         if (ctx.staticBlock != null) {
             runIn(Classes.staticScope(namespace, babbleClass), ctx.staticBlock.expression());
@@ -181,8 +189,10 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                 BabbleClass.object(
                         scopes.hierarchy().shape(ctx),
                         namespace,
+                        Arguments.NONE,
                         new InterpretedClassBody(ctx),
                         interfaces,
+                        InterpretedInstance::new,
                         runtime);
         last = ctx;
         return object;
@@ -349,7 +359,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                             scopes.lowering().javaSamTarget(paramDecl);
                     if (paramSam != null) {
                         value =
-                                Values.toJavaSam(
+                                Faces.toJavaSam(
                                         value, paramSam.samInterface(), paramSam.markers(), rt);
                     }
                     value = Types.check(value, scopes.lowering().checkedType(paramDecl));
@@ -490,7 +500,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         last = ctx;
         LoweringTargets.JavaSamTarget sam = scopes.lowering().asSamTarget(ctx);
         if (sam != null) {
-            value = Values.toJavaSam(value, sam.samInterface(), sam.markers(), runtime);
+            value = Faces.toJavaSam(value, sam.samInterface(), sam.markers(), runtime);
         }
         return Types.check(value, scopes.lowering().checkedType(ctx));
     }
@@ -1011,42 +1021,42 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         if (target != null && left != null && right != null) {
             return switch (target.elemKind()) {
                 case BYTE ->
-                        org.babblelang.runtime.Range.ofByte(
+                        org.babblelang.runtime.Ranges.ofByte(
                                 ((Number) left).byteValue(),
                                 ((Number) right).byteValue(),
                                 inclusive);
                 case SHORT ->
-                        org.babblelang.runtime.Range.ofShort(
+                        org.babblelang.runtime.Ranges.ofShort(
                                 ((Number) left).shortValue(),
                                 ((Number) right).shortValue(),
                                 inclusive);
                 case INT ->
-                        org.babblelang.runtime.Range.ofInt(
+                        org.babblelang.runtime.Ranges.ofInt(
                                 ((Number) left).intValue(), ((Number) right).intValue(), inclusive);
                 case LONG ->
-                        org.babblelang.runtime.Range.ofLong(
+                        org.babblelang.runtime.Ranges.ofLong(
                                 ((Number) left).longValue(),
                                 ((Number) right).longValue(),
                                 inclusive);
                 case CHAR ->
-                        org.babblelang.runtime.Range.ofChar(
+                        org.babblelang.runtime.Ranges.ofChar(
                                 (Character) left, (Character) right, inclusive);
                 case FLOAT ->
-                        org.babblelang.runtime.Range.ofFloat(
+                        org.babblelang.runtime.Ranges.ofFloat(
                                 ((Number) left).floatValue(),
                                 ((Number) right).floatValue(),
                                 inclusive);
                 case DOUBLE ->
-                        org.babblelang.runtime.Range.ofDouble(
+                        org.babblelang.runtime.Ranges.ofDouble(
                                 ((Number) left).doubleValue(),
                                 ((Number) right).doubleValue(),
                                 inclusive);
                 default ->
-                        org.babblelang.runtime.Range.ofComparable(
+                        org.babblelang.runtime.Ranges.ofComparable(
                                 (Comparable<Object>) left, (Comparable<Object>) right, inclusive);
             };
         }
-        return org.babblelang.runtime.Range.of(
+        return org.babblelang.runtime.Ranges.of(
                 left, right, inclusive, ctx.left.getText(), ctx.right.getText());
     }
 
@@ -1218,7 +1228,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                         || target.kind() == LoweringTargets.ForKind.JAVA_ITERABLE
                         || target.kind() == LoweringTargets.ForKind.JAVA_ITERATOR
                         || target.kind() == LoweringTargets.ForKind.DYNAMIC_UNION)) {
-            Object face = BabbleObjects.face(rawIter);
+            Object face = Faces.face(rawIter);
             if (face instanceof java.lang.Iterable<?> || face instanceof java.util.Iterator<?>) {
                 rawIter = face;
             }
@@ -1285,7 +1295,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         if (BabbleObjects.isInstance(unwrappedIter)
                 && target != null
                 && target.kind() == LoweringTargets.ForKind.BABBLE_TO_JAVA_ITERABLE) {
-            unwrappedIter = BabbleObjects.face(unwrappedIter);
+            unwrappedIter = Faces.face(unwrappedIter);
         }
         if (unwrappedIter instanceof java.util.Iterator<?> it) {
             while (it.hasNext()) {
@@ -1332,7 +1342,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         }
         LoweringTargets.JavaSamTarget elemSam = scopes.lowering().forElemSamTarget(ctx);
         if (elemSam != null) {
-            elem = Values.toJavaSam(elem, elemSam.samInterface(), elemSam.markers(), runtime);
+            elem = Faces.toJavaSam(elem, elemSam.samInterface(), elemSam.markers(), runtime);
         }
         int elemRank = scopes.lowering().numericWideningRank(ctx);
         if (elemRank >= 0) {
@@ -1626,7 +1636,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             BabbleParser.ExpressionContext receiverExpr = selector.expression();
             Object receiver = visit(receiverExpr);
             last = selector;
-            Object target = Values.toJava(receiver, javaCall.method().getDeclaringClass(), runtime);
+            Object target = Faces.toJava(receiver, javaCall.method().getDeclaringClass(), runtime);
             Object callee =
                     Types.check(
                             Members.select(
@@ -1827,7 +1837,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     private Object adaptJavaSam(ParserRuleContext ctx, Object value) {
         LoweringTargets.JavaSamTarget sam = scopes.lowering().javaSamTarget(ctx);
         return sam != null
-                ? Values.toJavaSam(value, sam.samInterface(), sam.markers(), runtime)
+                ? Faces.toJavaSam(value, sam.samInterface(), sam.markers(), runtime)
                 : value;
     }
 
@@ -1874,7 +1884,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                             : org.babblelang.runtime.Spreads.asArray(
                                     value, adapt.arrayComponentType(), runtime);
             case TO_SAM ->
-                    samCls != null ? Values.toJavaSam(value, samCls, markers, runtime) : value;
+                    samCls != null ? Faces.toJavaSam(value, samCls, markers, runtime) : value;
         };
     }
 

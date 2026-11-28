@@ -1,10 +1,10 @@
 package org.babblelang.engine.impl.natives;
 
 import java.io.IOException;
-import org.babblelang.runtime.ArraySupport;
 import org.babblelang.runtime.BabbleException;
 import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.Callable;
+import org.babblelang.runtime.ErrorFormat;
 import org.babblelang.runtime.ScriptRuntime;
 import org.babblelang.runtime.Throwables;
 import org.babblelang.runtime.Values;
@@ -30,7 +30,7 @@ public class PrintFunction implements Callable {
             Appendable out = resolveOutput(rt, redirected, redirected ? args[1] : null);
             try {
                 for (Object v : pr.iterable()) {
-                    out.append(ArraySupport.format(v));
+                    out.append(ErrorFormat.format(v));
                 }
                 if (newLine) {
                     out.append(System.lineSeparator());
@@ -56,7 +56,7 @@ public class PrintFunction implements Callable {
         try {
             for (int i = 0; i < args.length; i++) {
                 if (names == null || !"to".equals(names[i])) {
-                    out.append(ArraySupport.format(args[i]));
+                    out.append(ErrorFormat.format(args[i]));
                 }
             }
             if (newLine) {

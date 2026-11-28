@@ -20,7 +20,7 @@ public final class Spreads {
     public static Iterable<?> asIterable(Object source) {
         Object unwrapped = Values.unwrap(source);
         if (BabbleObjects.isInstance(unwrapped)) {
-            unwrapped = BabbleObjects.face(unwrapped);
+            unwrapped = Faces.face(unwrapped);
         }
         if (unwrapped instanceof ArgumentsView
                 || unwrapped instanceof UnmodifiableIterable
@@ -80,7 +80,7 @@ public final class Spreads {
             ScriptRuntime rt) {
         Object unwrapped = Values.unwrap(source);
         if (BabbleObjects.isInstance(unwrapped)) {
-            unwrapped = BabbleObjects.face(unwrapped);
+            unwrapped = Faces.face(unwrapped);
         }
         if (samInterface == null) {
             if (borrowed && unwrapped instanceof List<?> list) {
@@ -146,7 +146,7 @@ public final class Spreads {
             ScriptRuntime rt) {
         Object unwrapped = Values.unwrap(source);
         if (BabbleObjects.isInstance(unwrapped)) {
-            unwrapped = BabbleObjects.face(unwrapped);
+            unwrapped = Faces.face(unwrapped);
         }
         if (samInterface == null && unwrapped != null && unwrapped.getClass().isArray()) {
             Class<?> srcComp = unwrapped.getClass().getComponentType();
@@ -180,7 +180,7 @@ public final class Spreads {
             if (samInterface != null) {
                 val = adaptSamElem(elems.get(i), samInterface, markers, rt);
             } else {
-                val = Values.toJava(elems.get(i), componentType, rt);
+                val = Faces.toJava(elems.get(i), componentType, rt);
                 if (val != null && JavaTypes.isWidening(val.getClass(), box)) {
                     val = JavaTypes.widen(val, box);
                 }
@@ -218,9 +218,9 @@ public final class Spreads {
             Object elem, Class<?> samInterface, Class<?>[] markers, ScriptRuntime rt) {
         Object unwrapped = Values.unwrap(elem);
         if (BabbleObjects.isInstance(unwrapped)) {
-            unwrapped = BabbleObjects.face(unwrapped);
+            unwrapped = Faces.face(unwrapped);
         }
-        return Values.toJavaSam(unwrapped, samInterface, markers, rt);
+        return Faces.toJavaSam(unwrapped, samInterface, markers, rt);
     }
 
     private static Class<?> loadClass(String name) {

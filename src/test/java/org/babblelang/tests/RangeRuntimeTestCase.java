@@ -14,6 +14,7 @@ import org.babblelang.runtime.LongRange;
 import org.babblelang.runtime.OpSite;
 import org.babblelang.runtime.Operators;
 import org.babblelang.runtime.Range;
+import org.babblelang.runtime.Ranges;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -34,7 +35,7 @@ public class RangeRuntimeTestCase {
 
     @Test
     public void testIntRangeBasicsSteppedReversedAndOverflowSafe() {
-        IntRange<Integer> r = Range.ofInt(3, 10, false).step(5);
+        IntRange<Integer> r = Ranges.ofInt(3, 10, false).step(5);
         Assertions.assertEquals(3, r.start());
         Assertions.assertEquals(10, r.end());
         Assertions.assertFalse(r.inclusive());
@@ -60,41 +61,41 @@ public class RangeRuntimeTestCase {
         Assertions.assertEquals(r.hashCode(), rev.reversed().hashCode());
 
         // Structural equality: 0..<10 != 0..9.
-        Assertions.assertNotEquals(Range.ofInt(0, 10, false), Range.ofInt(0, 9, true));
-        Assertions.assertEquals("0..<10", Range.ofInt(0, 10, false).toString());
-        Assertions.assertEquals("1..10", Range.ofInt(1, 10, true).toString());
+        Assertions.assertNotEquals(Ranges.ofInt(0, 10, false), Ranges.ofInt(0, 9, true));
+        Assertions.assertEquals("0..<10", Ranges.ofInt(0, 10, false).toString());
+        Assertions.assertEquals("1..10", Ranges.ofInt(1, 10, true).toString());
         Assertions.assertEquals(
-                "(0..<5).reversed()", Range.ofInt(0, 5, false).reversed().toString());
+                "(0..<5).reversed()", Ranges.ofInt(0, 5, false).reversed().toString());
 
         // Overflow-safe stepping near MAX_VALUE and full MIN_VALUE..MAX_VALUE containment.
-        IntRange<Integer> bigStep = Range.ofInt(0, Integer.MAX_VALUE, false).step(1_000_000_000);
+        IntRange<Integer> bigStep = Ranges.ofInt(0, Integer.MAX_VALUE, false).step(1_000_000_000);
         Assertions.assertEquals(List.of(0, 1_000_000_000, 2_000_000_000), collect(bigStep));
         Assertions.assertEquals(
                 List.of(2_000_000_000, 1_000_000_000, 0), collect(bigStep.reversed()));
 
-        IntRange<Integer> maxEnd = Range.ofInt(Integer.MAX_VALUE - 1, Integer.MAX_VALUE, true);
+        IntRange<Integer> maxEnd = Ranges.ofInt(Integer.MAX_VALUE - 1, Integer.MAX_VALUE, true);
         Assertions.assertEquals(List.of(Integer.MAX_VALUE - 1, Integer.MAX_VALUE), collect(maxEnd));
 
         IntRange<Integer> fullStep3 =
-                Range.ofInt(Integer.MIN_VALUE, Integer.MAX_VALUE, true).step(3);
+                Ranges.ofInt(Integer.MIN_VALUE, Integer.MAX_VALUE, true).step(3);
         Assertions.assertTrue(fullStep3.containsInt(Integer.MIN_VALUE));
         Assertions.assertTrue(fullStep3.containsInt(Integer.MAX_VALUE));
         Assertions.assertFalse(fullStep3.containsInt(Integer.MAX_VALUE - 1));
 
         // Empty range and byte/short boxing.
-        IntRange<Integer> empty = Range.ofInt(5, 5, false);
+        IntRange<Integer> empty = Ranges.ofInt(5, 5, false);
         Assertions.assertTrue(empty.isEmpty());
         Assertions.assertEquals(List.of(), collect(empty));
         Iterator<Integer> emptyIt = empty.iterator();
         Assertions.assertFalse(emptyIt.hasNext());
         Assertions.assertThrows(NoSuchElementException.class, emptyIt::next);
 
-        IntRange<Byte> byteRange = Range.ofByte((byte) 1, (byte) 3, true);
+        IntRange<Byte> byteRange = Ranges.ofByte((byte) 1, (byte) 3, true);
         Assertions.assertEquals(List.of((byte) 1, (byte) 2, (byte) 3), collect(byteRange));
         Assertions.assertTrue(byteRange.contains((byte) 2));
         Assertions.assertFalse(byteRange.contains(2));
 
-        IntRange<Short> shortRange = Range.ofShort((short) 10, (short) 12, false);
+        IntRange<Short> shortRange = Ranges.ofShort((short) 10, (short) 12, false);
         Assertions.assertEquals(List.of((short) 10, (short) 11), collect(shortRange));
         Assertions.assertTrue(shortRange.contains((short) 10));
         Assertions.assertFalse(shortRange.contains(10));
@@ -102,23 +103,23 @@ public class RangeRuntimeTestCase {
         // Non-positive step throws BabbleException.
         BabbleException ex0 =
                 Assertions.assertThrows(
-                        BabbleException.class, () -> Range.ofInt(0, 10, false).step(0));
+                        BabbleException.class, () -> Ranges.ofInt(0, 10, false).step(0));
         Assertions.assertEquals("Range step must be positive : 0", ex0.getMessage());
         BabbleException exNeg =
                 Assertions.assertThrows(
-                        BabbleException.class, () -> Range.ofInt(0, 10, false).step(-2));
+                        BabbleException.class, () -> Ranges.ofInt(0, 10, false).step(-2));
         Assertions.assertEquals("Range step must be positive : -2", exNeg.getMessage());
     }
 
     @Test
     public void testLongRangeAndCharRange() {
-        LongRange lr = Range.ofLong(Long.MIN_VALUE, Long.MAX_VALUE, true).step(3L);
+        LongRange lr = Ranges.ofLong(Long.MIN_VALUE, Long.MAX_VALUE, true).step(3L);
         Assertions.assertTrue(lr.containsLong(Long.MIN_VALUE));
         Assertions.assertTrue(lr.containsLong(Long.MAX_VALUE));
         Assertions.assertFalse(lr.containsLong(Long.MAX_VALUE - 1L));
         Assertions.assertFalse(lr.contains(0));
 
-        LongRange tail = Range.ofLong(Long.MAX_VALUE - 2L, Long.MAX_VALUE, true);
+        LongRange tail = Ranges.ofLong(Long.MAX_VALUE - 2L, Long.MAX_VALUE, true);
         Assertions.assertEquals(
                 List.of(Long.MAX_VALUE - 2L, Long.MAX_VALUE - 1L, Long.MAX_VALUE), collect(tail));
         Assertions.assertEquals(
@@ -126,7 +127,7 @@ public class RangeRuntimeTestCase {
                 collect(tail.reversed()));
 
         LongRange stepped =
-                Range.ofLong(0L, Long.MAX_VALUE, false).step(3_000_000_000_000_000_000L);
+                Ranges.ofLong(0L, Long.MAX_VALUE, false).step(3_000_000_000_000_000_000L);
         Assertions.assertEquals(
                 List.of(
                         0L,
@@ -135,20 +136,20 @@ public class RangeRuntimeTestCase {
                         9_000_000_000_000_000_000L),
                 collect(stepped));
 
-        CharRange cr = Range.ofChar('a', 'e', true).step(2);
+        CharRange cr = Ranges.ofChar('a', 'e', true).step(2);
         Assertions.assertEquals(List.of('a', 'c', 'e'), collect(cr));
         Assertions.assertEquals(List.of('e', 'c', 'a'), collect(cr.reversed()));
         Assertions.assertTrue(cr.containsChar('c'));
         Assertions.assertFalse(cr.containsChar('b'));
         Assertions.assertFalse(cr.contains("a"));
 
-        CharRange topChars = Range.ofChar('\ufffe', '\uffff', true);
+        CharRange topChars = Ranges.ofChar('\ufffe', '\uffff', true);
         Assertions.assertEquals(List.of('\ufffe', '\uffff'), collect(topChars));
     }
 
     @Test
     public void testDoubleRangeAndComparableRange() {
-        DoubleRange<Double> dr = Range.ofDouble(0.0, 1.0, false);
+        DoubleRange<Double> dr = Ranges.ofDouble(0.0, 1.0, false);
         Assertions.assertFalse(dr.isEmpty());
         Assertions.assertTrue(dr.containsDouble(0.0));
         Assertions.assertTrue(dr.containsDouble(0.5));
@@ -156,12 +157,12 @@ public class RangeRuntimeTestCase {
         Assertions.assertFalse(dr.containsDouble(Double.NaN));
         Assertions.assertFalse(dr.contains(0.5f));
 
-        Assertions.assertTrue(Range.ofDouble(Double.NaN, 1.0, true).isEmpty());
-        Assertions.assertTrue(Range.ofDouble(0.0, Double.NaN, true).isEmpty());
-        Assertions.assertTrue(Range.ofFloat(1.0f, 1.0f, false).isEmpty());
-        Assertions.assertTrue(Range.ofFloat(1.0f, 1.0f, true).contains(1.0f));
+        Assertions.assertTrue(Ranges.ofDouble(Double.NaN, 1.0, true).isEmpty());
+        Assertions.assertTrue(Ranges.ofDouble(0.0, Double.NaN, true).isEmpty());
+        Assertions.assertTrue(Ranges.ofFloat(1.0f, 1.0f, false).isEmpty());
+        Assertions.assertTrue(Ranges.ofFloat(1.0f, 1.0f, true).contains(1.0f));
 
-        ComparableRange<String> sr = Range.ofComparable("alpha", "omega", true);
+        ComparableRange<String> sr = Ranges.ofComparable("alpha", "omega", true);
         Assertions.assertFalse(sr.isEmpty());
         Assertions.assertTrue(sr.contains("beta"));
         Assertions.assertTrue(sr.contains("alpha"));
@@ -172,7 +173,7 @@ public class RangeRuntimeTestCase {
         Assertions.assertEquals("alpha..omega", sr.toString());
 
         ComparableRange<LocalDate> dates =
-                Range.ofComparable(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), false);
+                Ranges.ofComparable(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), false);
         Assertions.assertTrue(dates.contains(LocalDate.of(2026, 6, 15)));
         Assertions.assertFalse(dates.contains(LocalDate.of(2026, 12, 31)));
     }

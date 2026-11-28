@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * LambdaMetafactory} factories for accessible {@code 0..16}-argument SAMs, with {@link Proxy}
  * fallback for inaccessible or higher-arity SAMs).
  */
-final class Faces {
+public final class Faces {
     static final int MAX_SAM_ARITY = 16;
 
     private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
@@ -558,14 +558,128 @@ final class Faces {
         }
     }
 
-    static final class FaceHandler implements InvocationHandler {
+    /**
+     * What Java sees of a Babble instance : itself if compiled and implementing all interfaces,
+     * else a proxy.
+     */
+    public static Object face(Object instance) {
+        if (instance instanceof DynamicInstance interpreted) {
+            return interpreted.face();
+        }
+        BabbleClass cls = BabbleObjects.babbleClass(instance);
+        if (cls == null) {
+            return instance;
+        }
+        Class<?>[] interfaces = cls.javaInterfaces();
+        if (interfaces.length == 0) {
+            return instance;
+        }
+        for (Class<?> iface : interfaces) {
+            if (!iface.isInstance(instance)) {
+                return create(instance);
+            }
+        }
+        return instance;
+    }
+
+    /**
+     * A value going to Java, where {@code type} is expected : wrappers are unwrapped, a Babble
+     * instance becomes its face, and a Babble function becomes an implementation of an expected
+     * functional interface.
+     */
+    public static Object toJava(Object value, Class<?> type, ScriptRuntime rt) {
+        if (value instanceof JavaValue wrapper) {
+            return wrapper.javaValue();
+        }
+        if (BabbleObjects.isInstance(value)) {
+            return face(value);
+        }
+        if (type != null
+                && !type.isInstance(value)
+                && Values.isBabbleCallable(value)
+                && JavaTypes.isFunctionalInterface(type)) {
+            return function((Callable) value, type, rt);
+        }
+        return value;
+    }
+
+    public static Object[] toJava(Object[] values, Class<?>[] types, ScriptRuntime rt) {
+        Object[] result = new Object[values.length];
+        for (int i = 0; i < values.length; i++) {
+            result[i] = toJava(values[i], types[i], rt);
+        }
+        return result;
+    }
+
+    /**
+     * Eagerly adapts a Babble callable to a Java functional interface plus optional marker
+     * interfaces.
+     */
+    public static Object toJavaSam(
+            Object value, Class<?> samInterface, Class<?>[] markers, ScriptRuntime rt) {
+        return toJavaSam(value, samInterface, markers, null, rt);
+    }
+
+    /**
+     * Eagerly adapts a Babble callable to a Java functional interface with inbound Babble parameter
+     * type checks ({@code BIP032}).
+     */
+    public static Object toJavaSam(
+            Object value,
+            Class<?> samInterface,
+            Class<?>[] markers,
+            String[] paramDescriptors,
+            ScriptRuntime rt) {
+        if (value != null && Values.isBabbleCallable(value)) {
+            return function((Callable) value, samInterface, markers, paramDescriptors, rt);
+        }
+        return value;
+    }
+
+    /**
+     * Name-based {@link #toJavaSam} for non-public Java interfaces where {@code LDC} cannot
+     * reference the class.
+     */
+    public static Object toJavaSamByName(
+            Object value, String samName, String[] markerNames, ScriptRuntime rt) {
+        return toJavaSamByName(value, samName, markerNames, null, rt);
+    }
+
+    /** Name-based {@link #toJavaSam} with inbound Babble parameter type checks ({@code BIP032}). */
+    public static Object toJavaSamByName(
+            Object value,
+            String samName,
+            String[] markerNames,
+            String[] paramDescriptors,
+            ScriptRuntime rt) {
+        if (value == null || !Values.isBabbleCallable(value)) {
+            return value;
+        }
+        ClassLoader cl = Faces.class.getClassLoader();
+        try {
+            Class<?> sam = Class.forName(samName, false, cl);
+            Class<?>[] markers = null;
+            if (markerNames != null && markerNames.length > 0) {
+                markers = new Class<?>[markerNames.length];
+                for (int i = 0; i < markerNames.length; i++) {
+                    markers[i] = Class.forName(markerNames[i], false, cl);
+                }
+            }
+            return function((Callable) value, sam, markers, paramDescriptors, rt);
+        } catch (ClassNotFoundException e) {
+            throw new IllegalArgumentException("Unknown Java interface : " + samName, e);
+        }
+    }
+
+    static final class FaceHandler implements InvocationHandler, FaceProxy {
         private final Object instance;
 
         FaceHandler(Object instance) {
             this.instance = instance;
         }
 
-        Object instance() {
+        @Override
+        public Object instance() {
             return instance;
         }
 

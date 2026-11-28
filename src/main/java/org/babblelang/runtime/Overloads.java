@@ -54,18 +54,18 @@ public final class Overloads {
             Executable exec, boolean varArgs, Object[] args, ScriptRuntime rt) {
         Class<?>[] parameterTypes = exec.getParameterTypes();
         if (!varArgs) {
-            return Values.toJava(args, parameterTypes, rt);
+            return Faces.toJava(args, parameterTypes, rt);
         }
         int fixed = parameterTypes.length - 1;
         Class<?> comp = parameterTypes[fixed].getComponentType();
         Object[] java = new Object[parameterTypes.length];
         for (int i = 0; i < fixed; i++) {
-            java[i] = Values.toJava(args[i], parameterTypes[i], rt);
+            java[i] = Faces.toJava(args[i], parameterTypes[i], rt);
         }
         int varCount = args.length - fixed;
         Object array = Array.newInstance(comp, varCount);
         for (int j = 0; j < varCount; j++) {
-            Object elem = Values.toJava(args[fixed + j], comp, rt);
+            Object elem = Faces.toJava(args[fixed + j], comp, rt);
             Array.set(array, j, elem);
         }
         java[fixed] = array;

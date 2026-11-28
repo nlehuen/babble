@@ -704,7 +704,7 @@ final class AssignAndMemberEmitter {
             mv.visitVarInsn(ALOAD, c.rtLocal);
             mv.visitMethodInsn(
                     INVOKESTATIC,
-                    VALUES,
+                    RUNTIME + "Faces",
                     "toJava",
                     "(Ljava/lang/Object;Ljava/lang/Class;L"
                             + SCRIPT_RUNTIME
@@ -814,7 +814,7 @@ final class AssignAndMemberEmitter {
             mv.visitVarInsn(ALOAD, c.rtLocal);
             mv.visitMethodInsn(
                     INVOKESTATIC,
-                    VALUES,
+                    RUNTIME + "Faces",
                     "toJava",
                     "(Ljava/lang/Object;Ljava/lang/Class;L"
                             + SCRIPT_RUNTIME
@@ -1062,7 +1062,7 @@ final class AssignAndMemberEmitter {
                             mv.visitVarInsn(ALOAD, mc.rtLocal);
                             mv.visitMethodInsn(
                                     INVOKESTATIC,
-                                    VALUES,
+                                    RUNTIME + "Faces",
                                     "toJava",
                                     "(Ljava/lang/Object;Ljava/lang/Class;L"
                                             + SCRIPT_RUNTIME
@@ -1154,7 +1154,7 @@ final class AssignAndMemberEmitter {
                         mv.visitVarInsn(ALOAD, c.rtLocal);
                         mv.visitMethodInsn(
                                 INVOKESTATIC,
-                                VALUES,
+                                RUNTIME + "Faces",
                                 "toJava",
                                 "(Ljava/lang/Object;Ljava/lang/Class;L"
                                         + SCRIPT_RUNTIME

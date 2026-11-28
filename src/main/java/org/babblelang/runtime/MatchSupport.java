@@ -176,6 +176,6 @@ public final class MatchSupport {
      * variant.
      */
     public static BabbleException noMatchingCase(Object value) {
-        return new BabbleException("No matching case : " + ArraySupport.format(value));
+        return new BabbleException("No matching case : " + ErrorFormat.format(value));
     }
 }

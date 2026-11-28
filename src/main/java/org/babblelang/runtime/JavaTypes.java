@@ -283,7 +283,7 @@ public final class JavaTypes {
         if (type == void.class) {
             return null;
         }
-        Object value = Values.toJava(result, type, rt);
+        Object value = Faces.toJava(result, type, rt);
         if (type.isPrimitive()) {
             Class<?> boxed = box(type);
             if (boxed.isInstance(value)) {

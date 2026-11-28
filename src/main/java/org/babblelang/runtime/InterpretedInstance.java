@@ -7,7 +7,7 @@ import java.util.Arrays;
  * array indexed through the class's shape. Compiled classes are plain JVM classes with fields of
  * their own (BIP020-D18).
  */
-public final class InterpretedInstance implements HasMembers {
+public final class InterpretedInstance implements DynamicInstance {
     private static final CallSite TO_STRING =
             new CallSite("<toString>", -1, "toString", new String[0]);
 
@@ -125,7 +125,8 @@ public final class InterpretedInstance implements HasMembers {
         return m instanceof BabbleFunction bf ? bf : null;
     }
 
-    Object methodOrOverload(String name) {
+    @Override
+    public Object methodOrOverload(String name) {
         ClassShape shape = babbleClass.shape();
         int index = shape.memberIndex(name);
         if (index >= 0) {
