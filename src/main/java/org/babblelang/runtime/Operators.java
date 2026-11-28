@@ -82,7 +82,7 @@ public final class Operators {
 
     public static Object add(Object a, Object b, OpSite site) {
         if (a instanceof String sa) {
-            return sa + ArraySupport.format(b);
+            return sa + ErrorFormat.format(b);
         }
         Number na = number(a, site.leftText());
         Number nb = number(b, site.rightText());
@@ -224,7 +224,7 @@ public final class Operators {
         Object ua = Values.unwrap(a);
         Object ub = Values.unwrap(b);
         if (ua != null && ub != null && ua.getClass().isArray() && ub.getClass().isArray()) {
-            return ArraySupport.deepEquals(ua, ub);
+            return ErrorFormat.deepEquals(ua, ub);
         }
         return a.equals(b);
     }

@@ -12,7 +12,9 @@ import java.util.Enumeration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
@@ -65,6 +67,21 @@ public final class Babblec {
     public static ProgramIndex compile(
             Path main, Path root, Path jar, ScriptContext context, Integer optLevel)
             throws ScriptException, IOException {
+        return compile(main, root, jar, context, optLevel, false);
+    }
+
+    /**
+     * @param context where the analysis's warnings and the type checker's diagnostics go
+     * @param optLevel explicit optimization level ({@code 0}, {@code 1}, or {@code 2}), or null to
+     *     use the engine/system default
+     * @param debug when {@code false} (the default), strips {@code LocalVariableTable} / {@code
+     *     LocalVariableTypeTable} from bundled runtime classes (keeping {@code LineNumberTable} and
+     *     {@code SourceFile}); when {@code true} ({@code -dbg}), keeps all debug attributes
+     * @return the index written
+     */
+    public static ProgramIndex compile(
+            Path main, Path root, Path jar, ScriptContext context, Integer optLevel, boolean debug)
+            throws ScriptException, IOException {
         BabbleScriptEngine engine =
                 (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.setContext(context);
@@ -77,9 +94,13 @@ public final class Babblec {
                 engine.compileProgram(source, main.toAbsolutePath().normalize().toString());
 
         Map<String, ProgramIndex.Entry> entries = new LinkedHashMap<>();
-        Map<String, byte[]> files = new TreeMap<>();
+        Map<String, byte[]> programFiles = new TreeMap<>();
+        boolean hasDynamicImport = false;
+        boolean hasJavaImport = false;
+        Set<String> usedImplicits = new TreeSet<>();
         for (BabbleScriptEngine.ProgramModule module : modules) {
-            String className = module.script().getScriptClass().getName();
+            CompiledBabbleScript script = module.script();
+            String className = script.getScriptClass().getName();
             entries.put(
                     module.id().key(),
                     new ProgramIndex.Entry(
@@ -87,13 +108,39 @@ public final class Babblec {
                             module.id().displayName(),
                             className,
                             module.exports()));
-            for (Map.Entry<String, byte[]> file : module.script().getClasses().entrySet()) {
-                files.put(file.getKey() + ".class", file.getValue());
+            for (Map.Entry<String, byte[]> file : script.getClasses().entrySet()) {
+                programFiles.put(file.getKey() + ".class", file.getValue());
             }
+            CompiledBabbleScript.AotUsage usage = script.aotUsage();
+            hasDynamicImport |= usage.hasDynamicImport();
+            hasJavaImport |= usage.hasJavaImport();
+            usedImplicits.addAll(usage.usedImplicits());
+        }
+
+        String implicitsClass = null;
+        Map<String, byte[]> runtime = runtimeClasses();
+        if (!hasDynamicImport) {
+            byte[] implicitsBytes =
+                    RuntimeShaker.generateImplicitsClass(usedImplicits, hasJavaImport);
+            programFiles.put(RuntimeShaker.AOT_IMPLICITS_INTERNAL + ".class", implicitsBytes);
+            implicitsClass = RuntimeShaker.AOT_IMPLICITS_BINARY;
+            runtime = RuntimeShaker.shake(programFiles, runtime);
+        }
+        if (!debug) {
+            Map<String, byte[]> stripped = new TreeMap<>();
+            for (Map.Entry<String, byte[]> e : runtime.entrySet()) {
+                stripped.put(e.getKey(), RuntimeShaker.stripDebugLocals(e.getValue()));
+            }
+            runtime = stripped;
         }
         ProgramIndex index =
-                new ProgramIndex(modules.get(0).id().key(), relativeRoot(root, jar), entries);
-        files.putAll(runtimeClasses());
+                new ProgramIndex(
+                        modules.get(0).id().key(),
+                        relativeRoot(root, jar),
+                        entries,
+                        implicitsClass);
+        Map<String, byte[]> files = new TreeMap<>(programFiles);
+        files.putAll(runtime);
         write(jar, index, files);
         return index;
     }

@@ -121,7 +121,7 @@ public final class BabbleObjects {
     }
 
     private static CompiledInfo compiledInfo(Object value) {
-        return value != null && !(value instanceof InterpretedInstance)
+        return value != null && !(value instanceof DynamicInstance)
                 ? COMPILED.get(value.getClass())
                 : null;
     }
@@ -182,7 +182,7 @@ public final class BabbleObjects {
 
     /** Whether {@code value} is an instance of a Babble class, record, or object (either mode). */
     public static boolean isInstance(Object value) {
-        return value instanceof InterpretedInstance || isCompiledInstance(value);
+        return value instanceof DynamicInstance || isCompiledInstance(value);
     }
 
     /** Whether {@code value} is a plain compiled Babble instance. */
@@ -200,7 +200,7 @@ public final class BabbleObjects {
      * instance.
      */
     public static BabbleClass babbleClass(Object value) {
-        if (value instanceof InterpretedInstance interpreted) {
+        if (value instanceof DynamicInstance interpreted) {
             return interpreted.babbleClass();
         }
         CompiledInfo info = compiledInfo(value);
@@ -209,7 +209,7 @@ public final class BabbleObjects {
 
     /** The {@link ScriptRuntime} of the eval that created {@code value}, or null. */
     public static ScriptRuntime runtime(Object value) {
-        if (value instanceof InterpretedInstance interpreted) {
+        if (value instanceof DynamicInstance interpreted) {
             return interpreted.runtime();
         }
         CompiledInfo info = compiledInfo(value);
@@ -217,7 +217,7 @@ public final class BabbleObjects {
     }
 
     public static Object getMember(Object instance, String name, boolean own) {
-        if (instance instanceof InterpretedInstance interpreted) {
+        if (instance instanceof DynamicInstance interpreted) {
             return interpreted.getMember(name, own);
         }
         CompiledInfo info = compiledInfo(instance);
@@ -260,7 +260,7 @@ public final class BabbleObjects {
     }
 
     public static void setMember(Object instance, String name, Object value, boolean own) {
-        if (instance instanceof InterpretedInstance interpreted) {
+        if (instance instanceof DynamicInstance interpreted) {
             interpreted.setMember(name, value, own);
             return;
         }
@@ -302,7 +302,7 @@ public final class BabbleObjects {
     }
 
     static Object methodOrOverload(Object instance, String name) {
-        if (instance instanceof InterpretedInstance interpreted) {
+        if (instance instanceof DynamicInstance interpreted) {
             return interpreted.methodOrOverload(name);
         }
         CompiledInfo info = compiledInfo(instance);
@@ -346,33 +346,9 @@ public final class BabbleObjects {
         return null;
     }
 
-    /**
-     * What Java sees of a Babble instance : itself if compiled and implementing all interfaces,
-     * else a proxy.
-     */
-    public static Object face(Object instance) {
-        if (instance instanceof InterpretedInstance interpreted) {
-            return interpreted.face();
-        }
-        BabbleClass cls = babbleClass(instance);
-        if (cls == null) {
-            return instance;
-        }
-        Class<?>[] interfaces = cls.javaInterfaces();
-        if (interfaces.length == 0) {
-            return instance;
-        }
-        for (Class<?> iface : interfaces) {
-            if (!iface.isInstance(instance)) {
-                return Faces.create(instance);
-            }
-        }
-        return instance;
-    }
-
     /** Generated {@code toString()} target for plain compiled classes. */
     public static String toString(Object instance) {
-        if (instance instanceof InterpretedInstance interpreted) {
+        if (instance instanceof DynamicInstance interpreted) {
             return interpreted.toString();
         }
         CompiledInfo info = compiledInfo(instance);
@@ -401,7 +377,7 @@ public final class BabbleObjects {
                 }
                 result.append(shape.member(i))
                         .append(": ")
-                        .append(ArraySupport.format(field(info, instance, i)));
+                        .append(ErrorFormat.format(field(info, instance, i)));
                 first = false;
             }
         }

@@ -13,20 +13,6 @@ public final class Classes {
     private Classes() {}
 
     public static BabbleClass newClass(
-            ClassShape shape, Namespace closure, ClassBody body, Object[] interfaces) {
-        return new BabbleClass(shape, closure, body, interfaces);
-    }
-
-    public static BabbleClass newClass(
-            ClassShape shape,
-            Namespace closure,
-            Object[] captured,
-            ClassBody body,
-            Object[] interfaces) {
-        return new BabbleClass(shape, closure, captured, body, interfaces);
-    }
-
-    public static BabbleClass newClass(
             ClassShape shape,
             Namespace closure,
             Object[] captured,
@@ -98,7 +84,7 @@ public final class Classes {
     }
 
     public static Object initMember(Namespace namespace, int index, Object value) {
-        return ((InterpretedInstance) namespace.lookup("this")).initMember(index, value);
+        return ((DynamicInstance) namespace.lookup("this")).initMember(index, value);
     }
 
     public static Object initStatic(Namespace namespace, int index, Object value) {

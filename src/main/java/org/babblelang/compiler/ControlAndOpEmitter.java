@@ -169,7 +169,7 @@ final class ControlAndOpEmitter {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
         PrimitiveKind ek = r.elemKind();
-        String rangeOwner = RUNTIME + "Range";
+        String rangeOwner = RUNTIME + "Ranges";
         switch (ek) {
             case BYTE -> {
                 emitter.emitAs(r.start(), PrimitiveKind.BYTE);
@@ -177,7 +177,11 @@ final class ControlAndOpEmitter {
                 mv.visitInsn(r.inclusive() ? ICONST_1 : ICONST_0);
                 c.line(r.meta().line());
                 mv.visitMethodInsn(
-                        INVOKESTATIC, rangeOwner, "ofByte", "(BBZ)L" + RUNTIME + "IntRange;", true);
+                        INVOKESTATIC,
+                        rangeOwner,
+                        "ofByte",
+                        "(BBZ)L" + RUNTIME + "IntRange;",
+                        false);
             }
             case SHORT -> {
                 emitter.emitAs(r.start(), PrimitiveKind.SHORT);
@@ -189,7 +193,7 @@ final class ControlAndOpEmitter {
                         rangeOwner,
                         "ofShort",
                         "(SSZ)L" + RUNTIME + "IntRange;",
-                        true);
+                        false);
             }
             case INT -> {
                 emitter.emitAs(r.start(), PrimitiveKind.INT);
@@ -197,7 +201,7 @@ final class ControlAndOpEmitter {
                 mv.visitInsn(r.inclusive() ? ICONST_1 : ICONST_0);
                 c.line(r.meta().line());
                 mv.visitMethodInsn(
-                        INVOKESTATIC, rangeOwner, "ofInt", "(IIZ)L" + RUNTIME + "IntRange;", true);
+                        INVOKESTATIC, rangeOwner, "ofInt", "(IIZ)L" + RUNTIME + "IntRange;", false);
             }
             case LONG -> {
                 emitter.emitAs(r.start(), PrimitiveKind.LONG);
@@ -209,7 +213,7 @@ final class ControlAndOpEmitter {
                         rangeOwner,
                         "ofLong",
                         "(JJZ)L" + RUNTIME + "LongRange;",
-                        true);
+                        false);
             }
             case CHAR -> {
                 emitter.emitAs(r.start(), PrimitiveKind.CHAR);
@@ -221,7 +225,7 @@ final class ControlAndOpEmitter {
                         rangeOwner,
                         "ofChar",
                         "(CCZ)L" + RUNTIME + "CharRange;",
-                        true);
+                        false);
             }
             case FLOAT -> {
                 emitter.emitAs(r.start(), PrimitiveKind.FLOAT);
@@ -233,7 +237,7 @@ final class ControlAndOpEmitter {
                         rangeOwner,
                         "ofFloat",
                         "(FFZ)L" + RUNTIME + "DoubleRange;",
-                        true);
+                        false);
             }
             case DOUBLE -> {
                 emitter.emitAs(r.start(), PrimitiveKind.DOUBLE);
@@ -245,7 +249,7 @@ final class ControlAndOpEmitter {
                         rangeOwner,
                         "ofDouble",
                         "(DDZ)L" + RUNTIME + "DoubleRange;",
-                        true);
+                        false);
             }
             default -> {
                 emitter.emitBoxed(r.start());
@@ -261,7 +265,7 @@ final class ControlAndOpEmitter {
                         "(Ljava/lang/Comparable;Ljava/lang/Comparable;Z)L"
                                 + RUNTIME
                                 + "ComparableRange;",
-                        true);
+                        false);
             }
         }
         c.stackKind = PrimitiveKind.NONE;
@@ -647,7 +651,7 @@ final class ControlAndOpEmitter {
                 c.line(ln);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
-                        VALUES,
+                        RUNTIME + "Faces",
                         "toJavaSam",
                         "(Ljava/lang/Object;Ljava/lang/Class;[Ljava/lang/Class;[Ljava/lang/String;L"
                                 + SCRIPT_RUNTIME
@@ -658,7 +662,7 @@ final class ControlAndOpEmitter {
                 c.line(ln);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
-                        VALUES,
+                        RUNTIME + "Faces",
                         "toJavaSam",
                         "(Ljava/lang/Object;Ljava/lang/Class;[Ljava/lang/Class;L"
                                 + SCRIPT_RUNTIME
@@ -682,7 +686,7 @@ final class ControlAndOpEmitter {
                 c.line(ln);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
-                        VALUES,
+                        RUNTIME + "Faces",
                         "toJavaSamByName",
                         "(Ljava/lang/Object;Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;L"
                                 + SCRIPT_RUNTIME
@@ -693,7 +697,7 @@ final class ControlAndOpEmitter {
                 c.line(ln);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
-                        VALUES,
+                        RUNTIME + "Faces",
                         "toJavaSamByName",
                         "(Ljava/lang/Object;Ljava/lang/String;[Ljava/lang/String;L"
                                 + SCRIPT_RUNTIME

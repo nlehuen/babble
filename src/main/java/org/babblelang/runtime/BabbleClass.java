@@ -26,30 +26,8 @@ public final class BabbleClass extends BabbleType implements Callable {
     private final Map<String, List<Method>> javaDefaults = new ConcurrentHashMap<>();
 
     /**
-     * @param closure the namespace the class expression was evaluated in
-     * @param interfaces the implemented interfaces : BabbleInterface values or Java interface
-     *     classes
-     */
-    public BabbleClass(ClassShape shape, Namespace closure, ClassBody body, Object[] interfaces) {
-        this(shape, closure, Arguments.NONE, body, interfaces);
-    }
-
-    /**
-     * @param captured the cells of the outer variables the class body and its methods use (compiled
-     *     code) : stored once per class value, not per instance
-     */
-    public BabbleClass(
-            ClassShape shape,
-            Namespace closure,
-            Object[] captured,
-            ClassBody body,
-            Object[] interfaces) {
-        this(shape, closure, captured, body, interfaces, InterpretedInstance::new);
-    }
-
-    /**
      * @param factory creates the instances : the class the compiler generated for the class
-     *     expression, when it did
+     *     expression, or {@link InterpretedInstance} in the interpreter
      */
     public BabbleClass(
             ClassShape shape,
@@ -178,26 +156,6 @@ public final class BabbleClass extends BabbleType implements Callable {
     }
 
     /** Creates the single instance of an object literal. */
-    public static Object object(
-            ClassShape shape,
-            Namespace closure,
-            ClassBody body,
-            Object[] interfaces,
-            ScriptRuntime rt) {
-        return object(shape, closure, Arguments.NONE, body, interfaces, rt);
-    }
-
-    public static Object object(
-            ClassShape shape,
-            Namespace closure,
-            Object[] captured,
-            ClassBody body,
-            Object[] interfaces,
-            ScriptRuntime rt) {
-        return new BabbleClass(shape, closure, captured, body, interfaces)
-                .construct(rt, Arguments.NONE, null, null);
-    }
-
     public static Object object(
             ClassShape shape,
             Namespace closure,

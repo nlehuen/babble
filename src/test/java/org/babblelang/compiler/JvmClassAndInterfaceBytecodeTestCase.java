@@ -434,7 +434,7 @@ public class JvmClassAndInterfaceBytecodeTestCase {
         Assertions.assertSame(Object.class, inst.getClass().getSuperclass());
 
         // Zero Proxy allocation: face() returns the compiled instance itself.
-        Assertions.assertSame(inst, BabbleObjects.face(inst));
+        Assertions.assertSame(inst, org.babblelang.runtime.Faces.face(inst));
         Assertions.assertFalse(Proxy.isProxyClass(inst.getClass()));
         Assertions.assertInstanceOf(Comparable.class, inst);
         Assertions.assertInstanceOf(IntUnaryOperator.class, inst);

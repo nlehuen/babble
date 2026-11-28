@@ -28,7 +28,7 @@ public final class Values {
         }
         Object unwrapped = unwrap(value);
         if (unwrapped != null && unwrapped.getClass().isArray()) {
-            return ArraySupport.deepHashCode(unwrapped);
+            return ErrorFormat.deepHashCode(unwrapped);
         }
         return value.hashCode();
     }
@@ -154,104 +154,14 @@ public final class Values {
                         && babbleClass.shape().kind() != ClassShape.Kind.OBJECT;
     }
 
-    /**
-     * A value going to Java, where {@code type} is expected : wrappers are unwrapped, a Babble
-     * instance becomes its face, and a Babble function becomes an implementation of an expected
-     * functional interface.
-     */
-    public static Object toJava(Object value, Class<?> type, ScriptRuntime rt) {
-        if (value instanceof JavaValue wrapper) {
-            return wrapper.javaValue();
-        }
-        if (BabbleObjects.isInstance(value)) {
-            return BabbleObjects.face(value);
-        }
-        if (type != null
-                && !type.isInstance(value)
-                && isBabbleCallable(value)
-                && JavaTypes.isFunctionalInterface(type)) {
-            return Faces.function((Callable) value, type, rt);
-        }
-        return value;
-    }
-
-    /**
-     * Eagerly adapts a Babble callable to a Java functional interface plus optional marker
-     * interfaces.
-     */
-    public static Object toJavaSam(
-            Object value, Class<?> samInterface, Class<?>[] markers, ScriptRuntime rt) {
-        return toJavaSam(value, samInterface, markers, null, rt);
-    }
-
-    /**
-     * Eagerly adapts a Babble callable to a Java functional interface with inbound Babble parameter
-     * type checks ({@code BIP032}).
-     */
-    public static Object toJavaSam(
-            Object value,
-            Class<?> samInterface,
-            Class<?>[] markers,
-            String[] paramDescriptors,
-            ScriptRuntime rt) {
-        if (value != null && isBabbleCallable(value)) {
-            return Faces.function((Callable) value, samInterface, markers, paramDescriptors, rt);
-        }
-        return value;
-    }
-
-    /**
-     * Name-based {@link #toJavaSam} for non-public Java interfaces where {@code LDC} cannot
-     * reference the class.
-     */
-    public static Object toJavaSamByName(
-            Object value, String samName, String[] markerNames, ScriptRuntime rt) {
-        return toJavaSamByName(value, samName, markerNames, null, rt);
-    }
-
-    /** Name-based {@link #toJavaSam} with inbound Babble parameter type checks ({@code BIP032}). */
-    public static Object toJavaSamByName(
-            Object value,
-            String samName,
-            String[] markerNames,
-            String[] paramDescriptors,
-            ScriptRuntime rt) {
-        if (value == null || !isBabbleCallable(value)) {
-            return value;
-        }
-        ClassLoader cl = Values.class.getClassLoader();
-        try {
-            Class<?> sam = Class.forName(samName, false, cl);
-            Class<?>[] markers = null;
-            if (markerNames != null && markerNames.length > 0) {
-                markers = new Class<?>[markerNames.length];
-                for (int i = 0; i < markerNames.length; i++) {
-                    markers[i] = Class.forName(markerNames[i], false, cl);
-                }
-            }
-            return Faces.function((Callable) value, sam, markers, paramDescriptors, rt);
-        } catch (ClassNotFoundException e) {
-            throw new IllegalArgumentException("Unknown Java interface : " + samName, e);
-        }
-    }
-
     /** Unwraps a {@link JavaValue} wrapper to its underlying Java object, if wrapped. */
     public static Object unwrap(Object value) {
         return value instanceof JavaValue wrapper ? wrapper.javaValue() : value;
     }
 
-    public static Object[] toJava(Object[] values, Class<?>[] types, ScriptRuntime rt) {
-        Object[] result = new Object[values.length];
-        for (int i = 0; i < values.length; i++) {
-            result[i] = toJava(values[i], types[i], rt);
-        }
-        return result;
-    }
-
     /** A value coming back from Java : the face of a Babble instance is the instance again. */
     public static Object fromJava(Object value) {
-        if (value instanceof Proxy
-                && Proxy.getInvocationHandler(value) instanceof Faces.FaceHandler face) {
+        if (value instanceof Proxy && Proxy.getInvocationHandler(value) instanceof FaceProxy face) {
             return face.instance();
         }
         return value;

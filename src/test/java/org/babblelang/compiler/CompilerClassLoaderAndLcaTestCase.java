@@ -11,7 +11,6 @@ import java.util.Map;
 import org.babblelang.engine.BabbleScriptEngineFactory;
 import org.babblelang.runtime.Implicits;
 import org.babblelang.runtime.ScriptRuntime;
-import org.babblelang.runtime.Values;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassWriter;
@@ -269,7 +268,7 @@ public class CompilerClassLoaderAndLcaTestCase {
                         .eval("fn (x : int) : int -> ( x + 40 )");
         ScriptRuntime rt =
                 new ScriptRuntime(Implicits.create(), new PrintWriter(Writer.nullWriter()), null);
-        Object adapted = Values.toJava(callable, childSam, rt);
+        Object adapted = org.babblelang.runtime.Faces.toJava(callable, childSam, rt);
 
         Assertions.assertTrue(childSam.isInstance(adapted));
         Assertions.assertTrue(

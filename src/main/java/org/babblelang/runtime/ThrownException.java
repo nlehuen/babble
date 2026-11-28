@@ -13,7 +13,7 @@ public final class ThrownException extends RuntimeException {
     private final Object value;
 
     public ThrownException(Object value) {
-        super(ArraySupport.format(value));
+        super(ErrorFormat.format(value));
         this.value = value;
     }
 

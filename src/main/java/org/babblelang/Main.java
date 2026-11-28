@@ -49,11 +49,12 @@ public final class Main {
               -keep-alive   after the script, continue in the interactive mode, with what it defined
               -O0|-O1|-O2   compiler optimization level
               -help         this text
-            Or : java -jar babble.jar -compile main.ba [-target jvm|wasm-js|wasm-bare] [-o app.jar|app.wasm] [-root dir] [-O0|-O1|-O2] [-wasm-opt]
+            Or : java -jar babble.jar -compile main.ba [-target jvm|wasm-js|wasm-bare] [-o app.jar|app.wasm] [-root dir] [-O0|-O1|-O2] [-dbg] [-wasm-opt]
               Compiles a program, main.ba and the modules it imports, into a jar that runs on a plain JRE
               (java -jar app.jar [arguments...]), or a WebAssembly 3.0 module (-target wasm-js writes app.wasm
               and a Node.js/browser app.mjs loader ; -target wasm-bare writes a standalone app.wasm).
-              Modules are under -root, by default main.ba's directory ; -wasm-opt runs Binaryen wasm-opt -O3.
+              Modules are under -root, by default main.ba's directory ; -dbg keeps runtime LocalVariableTable
+              debug info in the jar ; -wasm-opt runs Binaryen wasm-opt -O3.
             Or : java -jar babble.jar -format [-w] [-l] [-check] [file.ba | directory]...
               Formats source files : see java -jar babble.jar -format -help.
             Or : java -jar babble.jar -axioms [-O0|-O1|-O2] <class-or-package>
@@ -237,7 +238,7 @@ public final class Main {
 
     /**
      * {@code -compile main.ba [-target jvm|wasm-js|wasm-bare] [-o app.jar|app.wasm] [-root dir]
-     * [-O0|-O1|-O2] [-wasm-opt]} : babblec.
+     * [-O0|-O1|-O2] [-dbg] [-wasm-opt]} : babblec.
      */
     private static int compile(String[] args, PrintWriter out, PrintWriter err) throws IOException {
         Path main = null;
@@ -246,6 +247,7 @@ public final class Main {
         Integer optLevel = null;
         org.babblelang.analysis.CompilationTarget target =
                 org.babblelang.analysis.CompilationTarget.JVM;
+        boolean debug = false;
         boolean wasmOpt = false;
         for (int i = 1; i < args.length; i++) {
             String option = args[i];
@@ -266,6 +268,8 @@ public final class Main {
                     err.flush();
                     return USAGE_ERROR;
                 }
+            } else if (option.equals("-dbg") || option.equals("--dbg")) {
+                debug = true;
             } else if (option.equals("-wasm-opt") || option.equals("--wasm-opt")) {
                 wasmOpt = true;
             } else if (option.equals("-O0")) {
@@ -316,7 +320,7 @@ public final class Main {
             } else {
                 org.babblelang.runtime.ProgramIndex index =
                         org.babblelang.compiler.Babblec.compile(
-                                main, root, output, context, optLevel);
+                                main, root, output, context, optLevel, debug);
                 out.println(
                         "Wrote "
                                 + output

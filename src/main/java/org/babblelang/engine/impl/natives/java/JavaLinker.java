@@ -11,6 +11,7 @@ import org.babblelang.runtime.BabbleException;
 import org.babblelang.runtime.BabbleObjects;
 import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.Callable;
+import org.babblelang.runtime.Faces;
 import org.babblelang.runtime.JavaTypes;
 import org.babblelang.runtime.ScriptRuntime;
 import org.babblelang.runtime.Values;
@@ -268,7 +269,7 @@ public final class JavaLinker {
     }
 
     private static Object toJava(Class<?> type, Object value) {
-        return Values.toJava(value, type, null);
+        return Faces.toJava(value, type, null);
     }
 
     private static boolean isWrappedOf(JavaClass clazz, Object target) {

@@ -296,8 +296,8 @@ public final class CoreCollections {
 
     @SuppressWarnings("unchecked")
     private static int compareBabble(Object a, Object b) {
-        Object ca = BabbleObjects.face(a);
-        Object cb = BabbleObjects.face(b);
+        Object ca = Faces.face(a);
+        Object cb = Faces.face(b);
         return ((Comparable<Object>) ca).compareTo(cb);
     }
 
@@ -384,7 +384,7 @@ public final class CoreCollections {
             Object iterable, ScriptRuntime rt, CallSite site) {
         Object raw = Values.unwrap(iterable);
         if (BabbleObjects.isInstance(raw)) {
-            Object face = BabbleObjects.face(raw);
+            Object face = Faces.face(raw);
             if (face instanceof java.util.Iterator<?> it) {
                 return it;
             }
@@ -428,7 +428,7 @@ public final class CoreCollections {
     private static Iterable<?> toIterable(Object obj) {
         Object u = Values.unwrap(obj);
         if (BabbleObjects.isInstance(u)) {
-            u = BabbleObjects.face(u);
+            u = Faces.face(u);
         }
         return (Iterable<?>) u;
     }
@@ -436,7 +436,7 @@ public final class CoreCollections {
     private static Map<?, ?> toMap(Object obj) {
         Object u = Values.unwrap(obj);
         if (BabbleObjects.isInstance(u)) {
-            u = BabbleObjects.face(u);
+            u = Faces.face(u);
         }
         return (Map<?, ?>) u;
     }

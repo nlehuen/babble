@@ -6,6 +6,7 @@ import org.babblelang.parser.BabbleParser;
 import org.babblelang.runtime.Arguments;
 import org.babblelang.runtime.BabbleFunction;
 import org.babblelang.runtime.CallSite;
+import org.babblelang.runtime.Faces;
 import org.babblelang.runtime.Frames;
 import org.babblelang.runtime.Namespace;
 import org.babblelang.runtime.ScriptRuntime;
@@ -78,7 +79,7 @@ public class Function implements BabbleFunction {
             LoweringTargets.JavaSamTarget paramSam =
                     interpreter.scopes().lowering().javaSamTarget(paramDecl);
             if (paramSam != null) {
-                value = Values.toJavaSam(value, paramSam.samInterface(), paramSam.markers(), rt);
+                value = Faces.toJavaSam(value, paramSam.samInterface(), paramSam.markers(), rt);
             }
             value =
                     org.babblelang.runtime.Types.check(
@@ -103,7 +104,7 @@ public class Function implements BabbleFunction {
         LoweringTargets.JavaSamTarget blockSam =
                 interpreter.scopes().lowering().javaSamTarget(definition.functionBlock);
         if (blockSam != null) {
-            result = Values.toJavaSam(result, blockSam.samInterface(), blockSam.markers(), rt);
+            result = Faces.toJavaSam(result, blockSam.samInterface(), blockSam.markers(), rt);
         }
         return result;
     }

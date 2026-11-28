@@ -77,12 +77,24 @@ final class CallEmitter {
                 return;
             }
         } else if (count == 0) {
+            String directClass =
+                    switch (kind) {
+                        case "list" -> "java/util/ArrayList";
+                        case "set" -> "java/util/LinkedHashSet";
+                        case "map" -> "java/util/LinkedHashMap";
+                        default -> null;
+                    };
+            if (directClass != null) {
+                mv.visitTypeInsn(NEW, directClass);
+                mv.visitInsn(DUP);
+                mv.visitMethodInsn(INVOKESPECIAL, directClass, "<init>", "()V", false);
+                mc.stackKind = PrimitiveKind.NONE;
+                finishCallCheck(c.meta());
+                return;
+            }
             String method =
                     switch (kind) {
-                        case "list" -> "listEmpty";
-                        case "set" -> "setEmpty";
                         case "sortedset" -> "sortedSetEmpty";
-                        case "map" -> "mapEmpty";
                         case "sortedmap" -> "sortedMapEmpty";
                         default ->
                                 throw new IllegalStateException(
@@ -90,10 +102,7 @@ final class CallEmitter {
                     };
             String desc =
                     switch (kind) {
-                        case "list" -> "()Ljava/util/List;";
-                        case "set" -> "()Ljava/util/Set;";
                         case "sortedset" -> "()Ljava/util/SortedSet;";
-                        case "map" -> "()Ljava/util/Map;";
                         case "sortedmap" -> "()Ljava/util/SortedMap;";
                         default -> throw new IllegalStateException();
                     };

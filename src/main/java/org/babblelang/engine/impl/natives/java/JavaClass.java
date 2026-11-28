@@ -9,6 +9,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.babblelang.runtime.BabbleException;
 import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.Callable;
+import org.babblelang.runtime.Faces;
 import org.babblelang.runtime.JavaType;
 import org.babblelang.runtime.JavaTypes;
 import org.babblelang.runtime.Overloads;
@@ -69,7 +70,7 @@ public class JavaClass implements Scope<Object>, Callable, JavaType {
                 return args[0];
             }
             if (Values.isBabbleCallable(args[0])) {
-                return Values.toJava(args[0], clazz, rt);
+                return Faces.toJava(args[0], clazz, rt);
             }
         }
         Overloads.Resolved<Constructor<?>> resolved = constructors.findResolved(args);
@@ -193,7 +194,7 @@ public class JavaClass implements Scope<Object>, Callable, JavaType {
                             + "(f)");
         }
         try {
-            field.set(isStatic ? null : receiver, Values.toJava(value, type, null));
+            field.set(isStatic ? null : receiver, Faces.toJava(value, type, null));
         } catch (IllegalArgumentException e) {
             throw new BabbleException(
                     "Cannot assign "

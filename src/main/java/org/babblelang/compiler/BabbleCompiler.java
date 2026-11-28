@@ -279,6 +279,7 @@ public final class BabbleCompiler {
                         ? org.babblelang.opt.hir.InlinePass.collectCrossModuleExports(
                                 hir, moduleKey)
                         : Map.of();
+        CompiledBabbleScript.AotUsage aotUsage = RuntimeShaker.analyzeAotUsage(hir);
         return new CompiledBabbleScript(
                 engine,
                 scriptClass,
@@ -290,7 +291,8 @@ public final class BabbleCompiler {
                 hir.ownInterfaceJvmNames(),
                 hir.ownClassJvmNames(),
                 hir.ownExportedFunctions(),
-                ownInlineExports);
+                ownInlineExports,
+                aotUsage);
     }
 
     private record HirPipelineResult(

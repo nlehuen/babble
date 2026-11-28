@@ -876,6 +876,8 @@ final class HirEmitter {
         if (cls.isObject()) {
             if (gen != null) {
                 emitInstanceFactory(gen);
+            } else {
+                emitInterpretedInstanceFactory();
             }
             mv.visitVarInsn(ALOAD, ctx.rtLocal);
             ctx.line(expr.meta().line());
@@ -889,9 +891,9 @@ final class HirEmitter {
                             + NAMESPACE
                             + ";[Ljava/lang/Object;L"
                             + CLASS_BODY
-                            + ";[Ljava/lang/Object;"
-                            + (gen != null ? "L" + INSTANCE_FACTORY + ";" : "")
-                            + "L"
+                            + ";[Ljava/lang/Object;L"
+                            + INSTANCE_FACTORY
+                            + ";L"
                             + SCRIPT_RUNTIME
                             + ";)Ljava/lang/Object;",
                     false);
@@ -925,38 +927,25 @@ final class HirEmitter {
                 } else {
                     emitInstanceFactory(gen);
                 }
-                mv.visitMethodInsn(
-                        INVOKESTATIC,
-                        CLASSES,
-                        "newClass",
-                        "(L"
-                                + CLASS_SHAPE
-                                + ";L"
-                                + NAMESPACE
-                                + ";[Ljava/lang/Object;L"
-                                + CLASS_BODY
-                                + ";[Ljava/lang/Object;L"
-                                + INSTANCE_FACTORY
-                                + ";)L"
-                                + BABBLE_CLASS
-                                + ";",
-                        false);
             } else {
-                mv.visitMethodInsn(
-                        INVOKESTATIC,
-                        CLASSES,
-                        "newClass",
-                        "(L"
-                                + CLASS_SHAPE
-                                + ";L"
-                                + NAMESPACE
-                                + ";[Ljava/lang/Object;L"
-                                + CLASS_BODY
-                                + ";[Ljava/lang/Object;)L"
-                                + BABBLE_CLASS
-                                + ";",
-                        false);
+                emitInterpretedInstanceFactory();
             }
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    CLASSES,
+                    "newClass",
+                    "(L"
+                            + CLASS_SHAPE
+                            + ";L"
+                            + NAMESPACE
+                            + ";[Ljava/lang/Object;L"
+                            + CLASS_BODY
+                            + ";[Ljava/lang/Object;L"
+                            + INSTANCE_FACTORY
+                            + ";)L"
+                            + BABBLE_CLASS
+                            + ";",
+                    false);
             emitStaticBlock(cls.staticBlock());
         }
         ctx.stackKind = PrimitiveKind.NONE;
@@ -1007,6 +996,14 @@ final class HirEmitter {
     }
 
     private void emitInstanceFactory(ClassGen gen) {
+        emitInstanceFactoryFor(gen.name);
+    }
+
+    private void emitInterpretedInstanceFactory() {
+        emitInstanceFactoryFor(RUNTIME + "InterpretedInstance");
+    }
+
+    private void emitInstanceFactoryFor(String instanceJvmName) {
         String descriptor = "(L" + BABBLE_CLASS + ";L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;";
         ctx.mv.visitInvokeDynamicInsn(
                 "create",
@@ -1015,12 +1012,18 @@ final class HirEmitter {
                 Type.getMethodType(descriptor),
                 new Handle(
                         H_NEWINVOKESPECIAL,
-                        gen.name,
+                        instanceJvmName,
                         "<init>",
                         "(L" + BABBLE_CLASS + ";L" + SCRIPT_RUNTIME + ";)V",
                         false),
                 Type.getMethodType(
-                        "(L" + BABBLE_CLASS + ";L" + SCRIPT_RUNTIME + ";)L" + gen.name + ";"));
+                        "(L"
+                                + BABBLE_CLASS
+                                + ";L"
+                                + SCRIPT_RUNTIME
+                                + ";)L"
+                                + instanceJvmName
+                                + ";"));
     }
 
     private void emitInterfaceExpr(HirExpr.InterfaceExpr expr) {
@@ -1154,7 +1157,7 @@ final class HirEmitter {
         ConstantPool.pushString(ctx.mv, recvText);
         ctx.mv.visitMethodInsn(
                 INVOKESTATIC,
-                RUNTIME + "Members",
+                RUNTIME + "Receivers",
                 helper,
                 "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
                 false);
@@ -1219,7 +1222,7 @@ final class HirEmitter {
                 ctx.line(lineAt);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
-                        VALUES,
+                        RUNTIME + "Faces",
                         "toJava",
                         "(Ljava/lang/Object;Ljava/lang/Class;L"
                                 + SCRIPT_RUNTIME
@@ -1285,7 +1288,7 @@ final class HirEmitter {
             ctx.line(lineAt);
             mv.visitMethodInsn(
                     INVOKESTATIC,
-                    VALUES,
+                    RUNTIME + "Faces",
                     "toJava",
                     "(Ljava/lang/Object;Ljava/lang/Class;L"
                             + SCRIPT_RUNTIME

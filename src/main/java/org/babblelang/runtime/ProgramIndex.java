@@ -26,8 +26,13 @@ import java.util.Map;
  * The root, "/"-separated, may be missing : it is where modules the jar doesn't hold are compiled
  * from, when Babble is on the class path ({@link ModuleCompiler}).
  */
-public record ProgramIndex(String main, String root, Map<String, Entry> modules) {
+public record ProgramIndex(
+        String main, String root, Map<String, Entry> modules, String implicitsClass) {
     public static final String RESOURCE = "babble/modules.index";
+
+    public ProgramIndex(String main, String root, Map<String, Entry> modules) {
+        this(main, root, modules, null);
+    }
 
     /** A module of the program : {@code className} is a binary name, {@code babble.lib.vec3$ba}. */
     public record Entry(String key, String displayName, String className, String[] exports) {}
@@ -36,6 +41,9 @@ public record ProgramIndex(String main, String root, Map<String, Entry> modules)
         out.write("main\t" + main + "\n");
         if (root != null) {
             out.write("root\t" + root + "\n");
+        }
+        if (implicitsClass != null) {
+            out.write("implicits\t" + implicitsClass + "\n");
         }
         for (Entry entry : modules.values()) {
             out.write(
@@ -54,6 +62,7 @@ public record ProgramIndex(String main, String root, Map<String, Entry> modules)
     public static ProgramIndex read(InputStream in) throws IOException {
         String main = null;
         String root = null;
+        String implicitsClass = null;
         Map<String, Entry> modules = new LinkedHashMap<>();
         BufferedReader reader =
                 new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
@@ -63,6 +72,8 @@ public record ProgramIndex(String main, String root, Map<String, Entry> modules)
                 main = fields[1];
             } else if (fields[0].equals("root") && fields.length == 2) {
                 root = fields[1];
+            } else if (fields[0].equals("implicits") && fields.length == 2) {
+                implicitsClass = fields[1];
             } else if (fields[0].equals("module") && fields.length == 5) {
                 String[] exports = fields[4].isEmpty() ? new String[0] : fields[4].split(",");
                 modules.put(fields[1], new Entry(fields[1], fields[2], fields[3], exports));
@@ -73,7 +84,7 @@ public record ProgramIndex(String main, String root, Map<String, Entry> modules)
         if (main == null || !modules.containsKey(main)) {
             throw new IOException(RESOURCE + " names no main module");
         }
-        return new ProgramIndex(main, root, modules);
+        return new ProgramIndex(main, root, modules, implicitsClass);
     }
 
     @Override
