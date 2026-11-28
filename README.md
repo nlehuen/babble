@@ -789,7 +789,7 @@ A program can also be compiled ahead of time, with the modules it imports, into 
 on a plain JRE, without Babble, or into a WebAssembly 3.0 (`.wasm`) module :
 
 ```
-$ java -jar target/babble-1.0-SNAPSHOT.jar -compile hello.ba                           # or -o app.jar, -root dir
+$ java -jar target/babble-1.0-SNAPSHOT.jar -compile hello.ba                           # or -o app.jar, -root dir, -dbg
 Wrote /home/ada/hello.jar : 1 module
 $ java -jar hello.jar Ada
 Hello, Ada
@@ -804,8 +804,9 @@ $ java -jar target/babble-1.0-SNAPSHOT.jar -compile -target wasm-js -wasm-opt he
 $ java -jar target/babble-1.0-SNAPSHOT.jar -dev-server -d examples/raytracer -p 8080   # serve browser Wasm demos with proper MIME types
 ```
 
-The jar holds the program's classes and a copy of Babble's runtime (about 120 KB), and
-nothing but `java.base` : no parser, no compiler, no ANTLR or ASM. It starts in about half the
+The jar holds the program's classes and a tree-shaken copy of Babble's runtime (with runtime
+`LocalVariableTable` attributes stripped by default; pass `-dbg` to preserve them, while
+`LineNumberTable` and `SourceFile` are always kept), and nothing but `java.base` : no parser, no compiler, no ANTLR or ASM. It starts in about half the
 time (a hello world in 100 to 140 ms, against 200 to 270 ms through the engine), compiling the
 same program twice gives the same bytes, and errors read as they do through the engine. A
 dynamic import only finds the modules the program imports statically. With Babble on the class path,
