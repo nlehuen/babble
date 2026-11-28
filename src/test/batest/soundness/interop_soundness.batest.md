@@ -391,7 +391,19 @@ def C = class () implements java.util.function.Consumer of (list of int) (
 Type error : expected (p0 : list(int)) : null, got (unique xs : list(int)) : null
 ```
 
-## A Java Predicate or BiConsumer implementation cannot take a unique parameter
+## A Java Predicate implementation cannot take a unique parameter
+
+```babble
+def C = class () implements java.util.function.Predicate of (list of int) (
+    def test = fn (unique xs: list of int): bool -> (def r = list(from: move(xs)) ; r.add(9) ; r.size() > 0)
+)
+```
+
+```error
+Type error : expected (p0 : list(int)) : bool, got (unique xs : list(int)) : bool
+```
+
+## A Java BiConsumer implementation cannot take a unique parameter
 
 ```babble
 def o = object implements java.util.function.BiConsumer of (int, list of int) (
