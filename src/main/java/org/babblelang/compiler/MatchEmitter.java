@@ -168,8 +168,7 @@ final class MatchEmitter {
                     denseTargets[idx] = armLabels[e.getValue() - run.startInclusive()];
                     idx++;
                 }
-                String mapField = emitter.constantPool.enumSwitchMapField(run.enumClass(), names);
-                mv.visitFieldInsn(GETSTATIC, emitter.className, mapField, "[I");
+                emitter.constantPool.emitEnumSwitchMap(mv, run.enumClass(), names);
                 mv.visitVarInsn(ALOAD, scrutSlot);
                 mv.visitTypeInsn(CHECKCAST, enumInternal);
                 mv.visitMethodInsn(INVOKEVIRTUAL, enumInternal, "ordinal", "()I", false);

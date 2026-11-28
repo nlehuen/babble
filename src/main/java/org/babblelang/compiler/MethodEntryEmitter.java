@@ -99,7 +99,6 @@ final class MethodEntryEmitter {
     void emitBabbleConstructorCall(HirExpr.DynamicCall c) {
         MethodEmitContext mc = emitter.ctx;
         MethodVisitor mv = mc.mv;
-        String site = emitter.constantPool.callSiteField(c.callSite());
         emitter.emitBoxed(c.callee());
         mv.visitTypeInsn(CHECKCAST, BABBLE_CLASS);
         ConstantPool.pushInt(mv, c.constructorIndex());
@@ -116,7 +115,7 @@ final class MethodEntryEmitter {
                 mv.visitInsn(ACONST_NULL);
             }
         }
-        mv.visitFieldInsn(GETSTATIC, emitter.className, site, "L" + CALL_SITE + ";");
+        emitter.constantPool.emitCallSite(mv, c.callSite(), false);
         mc.line(c.meta().line());
         mv.visitMethodInsn(
                 INVOKEVIRTUAL,
@@ -141,12 +140,11 @@ final class MethodEntryEmitter {
             return;
         }
         if (scheduledFunctions.add(fn.id())) {
-            String paramsField = emitter.constantPool.stringArrayField(fn.paramNames());
-            pendingMethods.add(() -> generateFunction(fn, paramsField));
+            pendingMethods.add(() -> generateFunction(fn, fn.paramNames()));
         }
     }
 
-    private void generateFunction(HirFunction fn, String paramsField) {
+    private void generateFunction(HirFunction fn, String[] paramNames) {
         String method = fn.jvmMethodName();
         if (fn.isSpread()) {
             int count = fn.params().size();
@@ -156,7 +154,7 @@ final class MethodEntryEmitter {
                     ACC_PUBLIC | ACC_STATIC | ACC_SYNTHETIC,
                     method + "$call",
                     BODY_DESCRIPTOR,
-                    paramsField,
+                    paramNames,
                     count,
                     fn.keywordOnlyStart(),
                     fn.restIndex(),
@@ -198,7 +196,7 @@ final class MethodEntryEmitter {
                     fn.capturedVars());
         }
         emitter.frameVars.loadCapturedCells(COMPILED_FUNCTION);
-        functionBody(fn, paramsField, COMPILED_FUNCTION);
+        functionBody(fn, paramNames, COMPILED_FUNCTION);
     }
 
     private void generateBoxedToSpecForwarder(
@@ -333,7 +331,7 @@ final class MethodEntryEmitter {
             int access,
             String name,
             String descriptor,
-            String paramsField,
+            String[] paramNames,
             int count,
             int kwStart,
             int restIndex,
@@ -341,7 +339,7 @@ final class MethodEntryEmitter {
         MethodVisitor m = writer.visitMethod(access, name, descriptor, null, null);
         m.visitCode();
         int binder = FN_NS;
-        m.visitFieldInsn(GETSTATIC, emitter.className, paramsField, "[Ljava/lang/String;");
+        emitter.constantPool.emitStringArray(m, paramNames);
         if (restIndex >= 0) {
             ConstantPool.pushInt(m, kwStart);
             ConstantPool.pushInt(m, restIndex);
@@ -395,10 +393,10 @@ final class MethodEntryEmitter {
             return existing;
         }
         String member = fn.memberName();
-        String paramsField = emitter.constantPool.stringArrayField(fn.paramNames());
+        String[] paramNames = fn.paramNames();
         int required = fn.requiredParams();
         if (scheduledFunctions.add(fn.id())) {
-            pendingMethods.add(() -> generateMethod(fn, gen, paramsField));
+            pendingMethods.add(() -> generateMethod(fn, gen, paramNames));
         }
         String sam =
                 "(Ljava/lang/Object;L"
@@ -466,11 +464,7 @@ final class MethodEntryEmitter {
                             } else if (restIndex >= 0) {
                                 m.visitInsn(ACONST_NULL);
                             }
-                            m.visitFieldInsn(
-                                    GETSTATIC,
-                                    emitter.className,
-                                    paramsField,
-                                    "[Ljava/lang/String;");
+                            emitter.constantPool.emitStringArray(m, paramNames);
                             ConstantPool.pushInt(m, required);
                             if (restIndex >= 0) {
                                 ConstantPool.pushInt(m, optBits);
@@ -539,7 +533,7 @@ final class MethodEntryEmitter {
         return field;
     }
 
-    private void generateMethod(HirFunction fn, ClassGen gen, String paramsField) {
+    private void generateMethod(HirFunction fn, ClassGen gen, String[] paramNames) {
         String method = fn.jvmMethodName();
         if (fn.isSpread()) {
             int count = fn.params().size();
@@ -549,7 +543,7 @@ final class MethodEntryEmitter {
                     ACC_PUBLIC | ACC_SYNTHETIC,
                     method + "$call",
                     METHOD_DESCRIPTOR,
-                    paramsField,
+                    paramNames,
                     count,
                     fn.keywordOnlyStart(),
                     fn.restIndex(),
@@ -594,7 +588,7 @@ final class MethodEntryEmitter {
         emitter.ctx.thizLocal = 0;
         emitter.ctx.methodClass = gen;
         emitter.frameVars.loadCapturedCells(BABBLE_CLASS);
-        functionBody(fn, paramsField, COMPILED_METHOD);
+        functionBody(fn, paramNames, COMPILED_METHOD);
     }
 
     private void generateMethodSpec(HirFunction fn, ClassGen gen, String method) {
@@ -702,12 +696,12 @@ final class MethodEntryEmitter {
         }
     }
 
-    private void functionBody(HirFunction fn, String paramsField, String selfType) {
+    private void functionBody(HirFunction fn, String[] paramNames, String selfType) {
         MethodEmitContext ctx = emitter.ctx;
         ctx.cacheNameReads = emitter.cacheNameReadsInBodies && !fn.namespaceScope();
         ctx.beginTailLoop(null, -1);
         initFrameLocals(fn, selfType);
-        bindParameters(paramsField, fn.params(), fn.keywordOnlyStart(), fn.restIndex(), null);
+        bindParameters(paramNames, fn.params(), fn.keywordOnlyStart(), fn.restIndex(), null);
         emitter.statements(fn.body());
         emitter.widenStackRank(fn.bodyWideningRank());
         emitter.convertStack(ctx.stackKind, PrimitiveKind.NONE);
@@ -826,7 +820,7 @@ final class MethodEntryEmitter {
 
         int[] boundSlots = new int[ctor.params().size()];
         bindParameters(
-                emitter.constantPool.stringArrayField(ctor.paramNames()),
+                ctor.paramNames(),
                 ctor.params(),
                 ctor.keywordOnlyStart(),
                 ctor.restIndex(),
@@ -1025,7 +1019,7 @@ final class MethodEntryEmitter {
 
         emitter.declareVariables(ctor.declaredVars());
         bindParameters(
-                emitter.constantPool.stringArrayField(ctor.paramNames()),
+                ctor.paramNames(),
                 ctor.params(),
                 ctor.keywordOnlyStart(),
                 ctor.restIndex(),
@@ -1145,14 +1139,7 @@ final class MethodEntryEmitter {
 
         Map<Integer, Integer> deferredMembers =
                 deferredInit ? new java.util.LinkedHashMap<>() : null;
-        bindParameters(
-                emitter.constantPool.stringArrayField(paramNames),
-                ctorParams,
-                kwStart,
-                restIndex,
-                shape,
-                deferredMembers,
-                null);
+        bindParameters(paramNames, ctorParams, kwStart, restIndex, shape, deferredMembers, null);
         if (deferredInit) {
             ctx.typedThisLocal = ctx.newLocal();
             mv.visitTypeInsn(NEW, gen.name);
@@ -1195,16 +1182,16 @@ final class MethodEntryEmitter {
     }
 
     private void bindParameters(
-            String paramsField,
+            String[] paramNames,
             List<HirParam> params,
             int kwStart,
             int restIndex,
             ClassShape shape) {
-        bindParameters(paramsField, params, kwStart, restIndex, shape, null, null);
+        bindParameters(paramNames, params, kwStart, restIndex, shape, null, null);
     }
 
     private void bindParameters(
-            String paramsField,
+            String[] paramNames,
             List<HirParam> params,
             int kwStart,
             int restIndex,
@@ -1217,7 +1204,7 @@ final class MethodEntryEmitter {
         int binder = spread ? BINDER_LOCAL : ctx.newLocal();
         int arrayValue = spread ? -1 : ctx.newLocal();
         if (!spread) {
-            mv.visitFieldInsn(GETSTATIC, emitter.className, paramsField, "[Ljava/lang/String;");
+            emitter.constantPool.emitStringArray(mv, paramNames);
             if (restIndex >= 0) {
                 ConstantPool.pushInt(mv, kwStart);
                 ConstantPool.pushInt(mv, restIndex);

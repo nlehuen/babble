@@ -141,11 +141,7 @@ final class ControlAndOpEmitter {
         if (operatorMethod == null) {
             emitter.emitBoxed(b.left());
             emitter.emitBoxed(b.right());
-            mv.visitFieldInsn(
-                    GETSTATIC,
-                    emitter.className,
-                    emitter.constantPool.opSiteField(b.leftText(), b.rightText()),
-                    "L" + OP_SITE + ";");
+            emitter.constantPool.emitOpSite(mv, b.leftText(), b.rightText());
             c.line(b.meta().line());
             mv.visitMethodInsn(
                     INVOKESTATIC,
@@ -301,11 +297,7 @@ final class ControlAndOpEmitter {
         mv.visitLabel(numbers);
         mv.visitVarInsn(ALOAD, left);
         mv.visitVarInsn(ALOAD, right);
-        mv.visitFieldInsn(
-                GETSTATIC,
-                emitter.className,
-                emitter.constantPool.opSiteField(leftText, rightText),
-                "L" + OP_SITE + ";");
+        emitter.constantPool.emitOpSite(mv, leftText, rightText);
         c.line(lineNumber);
         mv.visitMethodInsn(
                 INVOKESTATIC,
@@ -326,10 +318,9 @@ final class ControlAndOpEmitter {
             int argument) {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
-        String[] argTexts = argumentText == null ? new String[0] : new String[] {argumentText};
         CallSite site =
-                new CallSite(emitter.sourceName, lineNumber, receiver + "." + method, argTexts);
-        String field = emitter.constantPool.callSiteField(site);
+                new CallSite(
+                        emitter.sourceName, lineNumber, receiver + "." + method, new String[0]);
         mv.visitVarInsn(ALOAD, receiverLocal);
         c.line(lineNumber);
         mv.visitInvokeDynamicInsn(
@@ -338,7 +329,7 @@ final class ControlAndOpEmitter {
                 SELECT_BOOTSTRAP,
                 method,
                 receiver);
-        mv.visitFieldInsn(GETSTATIC, emitter.className, field, "L" + CALL_SITE + ";");
+        emitter.constantPool.emitCallSite(mv, site, false);
         mv.visitMethodInsn(
                 INVOKESTATIC,
                 RUNTIME + "Calls",
@@ -347,7 +338,7 @@ final class ControlAndOpEmitter {
                 false);
         mv.visitVarInsn(ALOAD, c.rtLocal);
         mv.visitInsn(ACONST_NULL);
-        mv.visitFieldInsn(GETSTATIC, emitter.className, field, "L" + CALL_SITE + ";");
+        emitter.constantPool.emitCallSite(mv, site, false);
         if (argument >= 0) {
             mv.visitVarInsn(ALOAD, argument);
         }
@@ -648,12 +639,10 @@ final class ControlAndOpEmitter {
             if (markers.length == 0) {
                 mv.visitInsn(ACONST_NULL);
             } else {
-                String field = emitter.constantPool.classArrayField(markers);
-                mv.visitFieldInsn(GETSTATIC, emitter.className, field, "[Ljava/lang/Class;");
+                emitter.constantPool.emitClassArray(mv, markers);
             }
             if (paramDescs.length > 0) {
-                String pField = emitter.constantPool.stringArrayField(paramDescs);
-                mv.visitFieldInsn(GETSTATIC, emitter.className, pField, "[Ljava/lang/String;");
+                emitter.constantPool.emitStringArray(mv, paramDescs);
                 mv.visitVarInsn(ALOAD, c.rtLocal);
                 c.line(ln);
                 mv.visitMethodInsn(
@@ -685,12 +674,10 @@ final class ControlAndOpEmitter {
                 for (int i = 0; i < markers.length; i++) {
                     names[i] = markers[i].getName();
                 }
-                String field = emitter.constantPool.stringArrayField(names);
-                mv.visitFieldInsn(GETSTATIC, emitter.className, field, "[Ljava/lang/String;");
+                emitter.constantPool.emitStringArray(mv, names);
             }
             if (paramDescs.length > 0) {
-                String pField = emitter.constantPool.stringArrayField(paramDescs);
-                mv.visitFieldInsn(GETSTATIC, emitter.className, pField, "[Ljava/lang/String;");
+                emitter.constantPool.emitStringArray(mv, paramDescs);
                 mv.visitVarInsn(ALOAD, c.rtLocal);
                 c.line(ln);
                 mv.visitMethodInsn(
@@ -744,8 +731,7 @@ final class ControlAndOpEmitter {
     void checkType(String descriptor) {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
-        String field = emitter.constantPool.typeField(descriptor);
-        mv.visitFieldInsn(GETSTATIC, emitter.className, field, "L" + TYPES_TYPE + ";");
+        emitter.constantPool.emitType(mv, descriptor);
         mv.visitMethodInsn(
                 INVOKESTATIC,
                 TYPES,

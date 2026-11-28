@@ -401,7 +401,6 @@ final class CallEmitter {
             }
         }
 
-        String site = emitter.constantPool.callSiteField(c.callSite());
         emitter.loadVarOrName(c.thisVar(), "this", ln);
         emitter.convertStack(mc.stackKind, PrimitiveKind.NONE);
         emitter.emitTypeRef(c.superTypeRef());
@@ -418,7 +417,7 @@ final class CallEmitter {
                 mv.visitInsn(ACONST_NULL);
             }
         }
-        mv.visitFieldInsn(GETSTATIC, emitter.className, site, "L" + CALL_SITE + ";");
+        emitter.constantPool.emitCallSite(mv, c.callSite(), false);
         mc.line(ln);
         mv.visitMethodInsn(
                 INVOKESTATIC,
@@ -734,7 +733,6 @@ final class CallEmitter {
             finishCallCheck(c.meta());
             return;
         }
-        String site = emitter.constantPool.callSiteField(c.callSite());
         if (binding != null) {
             emitBoundArgumentsArray(callArgExprs(args), binding);
             mv.visitInsn(ACONST_NULL);
@@ -746,7 +744,7 @@ final class CallEmitter {
                 mv.visitInsn(ACONST_NULL);
             }
         }
-        mv.visitFieldInsn(GETSTATIC, emitter.className, site, "L" + CALL_SITE + ";");
+        emitter.constantPool.emitCallSite(mv, c.callSite(), false);
         mc.line(ln);
         mv.visitMethodInsn(
                 INVOKEVIRTUAL,
@@ -1071,7 +1069,8 @@ final class CallEmitter {
         }
         emitCallWithCallee(
                 c.meta().line(),
-                emitter.constantPool.callSiteField(c.callSite()),
+                c.callSite(),
+                false,
                 c.binding() != null ? null : MethodEntryEmitter.callArgNames(c.args()),
                 c.args(),
                 c.binding(),
@@ -1085,6 +1084,27 @@ final class CallEmitter {
         mc.stackKind = PrimitiveKind.NONE;
     }
 
+    private static boolean mayReadArgTexts(HirExpr callee) {
+        if (callee instanceof HirExpr.NameRead nr) {
+            return switch (nr.name()) {
+                case "import",
+                        "importe",
+                        "print",
+                        "println",
+                        "affiche",
+                        "afficherc",
+                        "same",
+                        "classof",
+                        "move",
+                        "freeze",
+                        "discard" ->
+                        false;
+                default -> true;
+            };
+        }
+        return true;
+    }
+
     void emitDynamicCall(HirExpr.DynamicCall c) {
         if (c.constructorIndex() >= 0) {
             emitter.entries.emitBabbleConstructorCall(c);
@@ -1093,7 +1113,8 @@ final class CallEmitter {
         emitter.emitBoxed(c.callee());
         emitCallWithCallee(
                 c.meta().line(),
-                emitter.constantPool.callSiteField(c.callSite()),
+                c.callSite(),
+                mayReadArgTexts(c.callee()),
                 c.binding() != null ? null : MethodEntryEmitter.callArgNames(c.args()),
                 c.args(),
                 c.binding(),
@@ -1103,7 +1124,8 @@ final class CallEmitter {
 
     private void emitCallWithCallee(
             int lineNumber,
-            String site,
+            org.babblelang.runtime.CallSite site,
+            boolean keepArgTexts,
             String[] names,
             List<HirCallArg> parameters,
             LoweringTargets.ArgumentBinding binding,
@@ -1111,7 +1133,7 @@ final class CallEmitter {
         MethodEmitContext mc = ctx();
         MethodVisitor mv = mc.mv;
         mc.line(lineNumber);
-        mv.visitFieldInsn(GETSTATIC, emitter.className, site, "L" + CALL_SITE + ";");
+        emitter.constantPool.emitCallSite(mv, site, keepArgTexts);
         mv.visitMethodInsn(
                 INVOKESTATIC,
                 RUNTIME + "Calls",
@@ -1126,7 +1148,7 @@ final class CallEmitter {
                         ? binding.paramCount() == sig.parameterKinds().length
                         : parameters.size() == sig.parameterKinds().length)) {
             int missingBits = binding != null ? binding.missingParamBits() : 0;
-            mv.visitFieldInsn(GETSTATIC, emitter.className, site, "L" + CALL_SITE + ";");
+            emitter.constantPool.emitCallSite(mv, site, keepArgTexts);
             StringBuilder desc =
                     new StringBuilder("(L")
                             .append(CALLABLE)
@@ -1154,7 +1176,7 @@ final class CallEmitter {
             int effective = effectiveParamCount(binding);
             if (effective <= HirFunction.MAX_SPREAD) {
                 mv.visitInsn(ACONST_NULL);
-                mv.visitFieldInsn(GETSTATIC, emitter.className, site, "L" + CALL_SITE + ";");
+                emitter.constantPool.emitCallSite(mv, site, keepArgTexts);
                 emitBoundBoxedArgs(callArgExprs(parameters), binding, effective, true);
                 mc.line(lineNumber);
                 mv.visitInvokeDynamicInsn(
@@ -1174,7 +1196,7 @@ final class CallEmitter {
             }
             emitBoundArgumentsArray(callArgExprs(parameters), binding);
             mv.visitInsn(ACONST_NULL);
-            mv.visitFieldInsn(GETSTATIC, emitter.className, site, "L" + CALL_SITE + ";");
+            emitter.constantPool.emitCallSite(mv, site, keepArgTexts);
             mc.line(lineNumber);
             mv.visitMethodInsn(
                     INVOKEINTERFACE,
@@ -1195,7 +1217,7 @@ final class CallEmitter {
             } else {
                 mv.visitInsn(ACONST_NULL);
             }
-            mv.visitFieldInsn(GETSTATIC, emitter.className, site, "L" + CALL_SITE + ";");
+            emitter.constantPool.emitCallSite(mv, site, keepArgTexts);
             for (HirCallArg parameter : parameters) {
                 emitter.emitBoxed(parameter.value());
             }
@@ -1221,7 +1243,7 @@ final class CallEmitter {
         } else {
             mv.visitInsn(ACONST_NULL);
         }
-        mv.visitFieldInsn(GETSTATIC, emitter.className, site, "L" + CALL_SITE + ";");
+        emitter.constantPool.emitCallSite(mv, site, keepArgTexts);
         mc.line(lineNumber);
         mv.visitMethodInsn(
                 INVOKEINTERFACE,
@@ -1667,11 +1689,7 @@ final class CallEmitter {
         if (markers.length == 0) {
             mv.visitInsn(ACONST_NULL);
         } else {
-            mv.visitFieldInsn(
-                    GETSTATIC,
-                    emitter.className,
-                    emitter.constantPool.classArrayField(markers),
-                    "[Ljava/lang/Class;");
+            emitter.constantPool.emitClassArray(mv, markers);
         }
     }
 
@@ -1686,11 +1704,7 @@ final class CallEmitter {
             for (int i = 0; i < markers.length; i++) {
                 names[i] = markers[i].getName();
             }
-            mv.visitFieldInsn(
-                    GETSTATIC,
-                    emitter.className,
-                    emitter.constantPool.stringArrayField(names),
-                    "[Ljava/lang/String;");
+            emitter.constantPool.emitStringArray(mv, names);
         }
     }
 
@@ -1857,7 +1871,6 @@ final class CallEmitter {
 
         PrimitiveKind joinKind = d.meta().kind();
         Label endLabel = new Label();
-        String siteField = emitter.constantPool.callSiteField(d.callSite());
 
         for (HirExpr.OverloadBranch branch : d.branches()) {
             Label nextBranch = new Label();
@@ -1964,7 +1977,7 @@ final class CallEmitter {
                 mv.visitVarInsn(ALOAD, mc.rtLocal);
                 emitBoundArgsArrayFromTemps(binding, argLocals, argKinds);
                 mv.visitInsn(ACONST_NULL);
-                mv.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + CALL_SITE + ";");
+                emitter.constantPool.emitCallSite(mv, d.callSite(), false);
                 mc.line(ln);
                 mv.visitMethodInsn(
                         INVOKEINTERFACE,

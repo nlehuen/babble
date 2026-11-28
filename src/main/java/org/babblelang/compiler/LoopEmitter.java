@@ -553,13 +553,12 @@ final class LoopEmitter {
         mv.visitJumpInsn(GOTO, iterLoop);
 
         mv.visitLabel(notIter);
-        String iterSite =
-                emitter.constantPool.callSiteField(
-                        new CallSite(
-                                emitter.sourceName, f.meta().line(), "iterator", new String[0]));
         mv.visitVarInsn(ALOAD, rawLocal);
         mv.visitVarInsn(ALOAD, c.rtLocal);
-        mv.visitFieldInsn(GETSTATIC, emitter.className, iterSite, "L" + CALL_SITE + ";");
+        emitter.constantPool.emitCallSite(
+                mv,
+                new CallSite(emitter.sourceName, f.meta().line(), "iterator", new String[0]),
+                false);
         mv.visitMethodInsn(
                 INVOKESTATIC,
                 RUNTIME + "CoreCollections",
@@ -647,9 +646,7 @@ final class LoopEmitter {
             int lineNumber) {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
-        String site =
-                emitter.constantPool.callSiteField(
-                        new CallSite(emitter.sourceName, lineNumber, memberName, new String[0]));
+        CallSite site = new CallSite(emitter.sourceName, lineNumber, memberName, new String[0]);
         mv.visitVarInsn(ALOAD, receiverLocal);
         c.line(lineNumber);
         mv.visitInvokeDynamicInsn(
@@ -658,7 +655,7 @@ final class LoopEmitter {
                 SELECT_BOOTSTRAP,
                 memberName,
                 memberName);
-        mv.visitFieldInsn(GETSTATIC, emitter.className, site, "L" + CALL_SITE + ";");
+        emitter.constantPool.emitCallSite(mv, site, false);
         mv.visitMethodInsn(
                 INVOKESTATIC,
                 RUNTIME + "Calls",
@@ -667,7 +664,7 @@ final class LoopEmitter {
                 false);
         mv.visitVarInsn(ALOAD, c.rtLocal);
         if (sig != null && sig.returnKind().isPrimitive()) {
-            mv.visitFieldInsn(GETSTATIC, emitter.className, site, "L" + CALL_SITE + ";");
+            emitter.constantPool.emitCallSite(mv, site, false);
             String desc =
                     "(L"
                             + CALLABLE
@@ -682,7 +679,7 @@ final class LoopEmitter {
             c.stackKind = sig.returnKind();
         } else {
             mv.visitInsn(ACONST_NULL);
-            mv.visitFieldInsn(GETSTATIC, emitter.className, site, "L" + CALL_SITE + ";");
+            emitter.constantPool.emitCallSite(mv, site, false);
             c.line(lineNumber);
             mv.visitInvokeDynamicInsn(
                     "call",

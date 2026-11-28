@@ -520,6 +520,15 @@ public final class Types {
                 || canAcceptJavaType(parse(descriptor), javaParam);
     }
 
+    /** {@code CONSTANT_Dynamic} bootstrap materializing a parsed {@link Type} lazily. */
+    public static Type constant(
+            java.lang.invoke.MethodHandles.Lookup lookup,
+            String name,
+            Class<Type> type,
+            String descriptor) {
+        return parse(descriptor);
+    }
+
     private static boolean canAcceptJavaType(Type type, Class<?> javaParam) {
         Class<?> boxed = JavaTypes.box(javaParam);
         return switch (type) {

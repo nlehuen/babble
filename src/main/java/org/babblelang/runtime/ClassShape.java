@@ -514,6 +514,15 @@ public final class ClassShape {
         return values.stream().mapToInt(Integer::intValue).toArray();
     }
 
+    /** {@code CONSTANT_Dynamic} bootstrap materializing a {@link ClassShape} lazily. */
+    public static ClassShape constant(
+            java.lang.invoke.MethodHandles.Lookup lookup,
+            String name,
+            Class<ClassShape> type,
+            String encoded) {
+        return decode(encoded);
+    }
+
     @Override
     public String toString() {
         return encode();
