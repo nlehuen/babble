@@ -111,6 +111,7 @@ final class EffectBodyWalker {
     final Set<String> reportedMessages = new HashSet<>();
     final List<ActiveForLoop> activeForIterables = new ArrayList<>();
     final Deque<Reachability.Origin[]> loopBreakOrigins = new ArrayDeque<>();
+    final Map<Reachability.Origin, Reachability.Origin> uniqueBranchJoins = new IdentityHashMap<>();
     final Deque<TryFrame> activeTryStack = new ArrayDeque<>();
     final Deque<MatchEffectAnalyzer.CasePureFrame> casePureStack = new ArrayDeque<>();
     int deepestThrowEscapeLevel = Integer.MAX_VALUE;
@@ -1509,7 +1510,8 @@ final class EffectBodyWalker {
         }
     }
 
-    void recordReturnOrigin(Reachability.Origin retOrigin, ParserRuleContext at) {
+    void recordReturnOrigin(Reachability.Origin value, ParserRuleContext at) {
+        Reachability.Origin retOrigin = BranchValueJoins.atReturn(this, value);
         if (retOrigin == Reachability.Origin.IMMUTABLE) {
             return;
         }

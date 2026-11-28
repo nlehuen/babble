@@ -706,3 +706,18 @@ println(t(true, 0) + t(false, 1))
 ```stdout
 [1, 99][3, 99][2, 99][4, 99]
 ```
+
+## Returning a branch join of fresh locals stays unique
+
+```babble
+def pick = fn (c: bool): list of int -> (
+    def a = list(1)
+    def b = list(2)
+    if c then (a) else (b)
+)
+println(string(consume(pick(true))) + string(consume(pick(false))))
+```
+
+```stdout
+[1, 99][2, 99]
+```
