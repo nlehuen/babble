@@ -37,7 +37,7 @@ final class AeGraphState {
         /**
          * Unary algebraic call result e-class -> origin metadata for {@code f(f(x)) -> f(x)} and
          * cross-statement {@code injective}/{@code monotone} comparison cancellation ({@code
-         * BIP042-P1}).
+         * BIP042-I1}).
          */
         final Map<Integer, UnaryCallOrigin> unaryCallOrigins = new HashMap<>();
 

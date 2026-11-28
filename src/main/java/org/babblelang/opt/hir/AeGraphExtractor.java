@@ -624,7 +624,7 @@ final class AeGraphExtractor {
 
     /**
      * Cross-statement {@code injective} / {@code monotone + injective} comparison cancellation
-     * ({@code BIP042-P1}): rewrites {@code a <op> b} to {@code x <op> y} when both operands come
+     * ({@code BIP042-I1}): rewrites {@code a <op> b} to {@code x <op> y} when both operands come
      * from the same pure deterministic unary call and both arguments have dominating zero-cost live
      * values.
      */

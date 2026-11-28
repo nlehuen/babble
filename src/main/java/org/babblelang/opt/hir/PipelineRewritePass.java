@@ -15,7 +15,7 @@ import org.babblelang.opt.PassContext;
 
 /**
  * {@code -O2} E-graph pipeline & algebraic loop rewrite pass ({@code BIP042}, completing {@code
- * BIP014-P5} Half B / {@code O12}).
+ * BIP014-I5} Half B / {@code O12}).
  *
  * <p>Follows the 4-stage Lift → Saturate → Extract → Lower architecture:
  *

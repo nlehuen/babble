@@ -10,7 +10,7 @@ import org.babblelang.analysis.PrimitiveKind;
 
 /**
  * Declarative pipeline rewrite rules ({@code R1}–{@code R8}) and monotonic selectivity-weighted
- * {@link EGraph.CostModel} for {@code BIP042} ({@code BIP014-P5} Half B).
+ * {@link EGraph.CostModel} for {@code BIP042} ({@code BIP014-I5} Half B).
  *
  * <p>Zero ANTLR or HIR dependencies: operates purely on {@link ENode} / {@link EGraph} so pipeline
  * transformations compose directly with {@link AlgebraicRules} during equality saturation and can

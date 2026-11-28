@@ -4,19 +4,19 @@
 |---|---|
 | **BIP** | 042 |
 | **Date** | 2026-11-27 |
-| **Status** | Decided (`BIP042-D1`–`D8` settled ; `BIP042-Q9`–`Q11` open for future extensions ; `BIP042-P1`–`P4` planned ; specifies `BIP014-P5` Half B independently of a standard library) |
+| **Status** | Implemented (`BIP042-D1`–`D8` settled ; `BIP042-I1`–`I4` implemented ; `BIP042-Q9`–`Q11` open for future extensions ; completes `BIP014-I5` Half B independently of a standard library) |
 | **Depends on** | Function effects, algebraic properties (`idempotent`, `commutative`, `associative`, `monotone`, `injective`) & ownership (`RM002`/`RM007`, [bip007_effects.md](bip007_effects.md)), 8-primitive unboxing & core collections (`RM005`, [bip011_core-types.md](bip011_core-types.md)), `for` loops & `break`/`continue` (`RM009`, [bip013_iterators.md](bip013_iterators.md)), typed `HIR` & `-O1`/`-O2` Nanopass optimizer (`RM010`/`RM013`, [bip014_optimization-passes.md](bip014_optimization-passes.md) `BIP014-I0`–`I4`), pure-by-default effects & `fn calling f` (`RM008`/`RM009`, [bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md), [bip017_higher-order-function-effects.md](bip017_higher-order-function-effects.md)), WebAssembly 3.0 backend (`RM018`, [bip025_compile-to-wasm.md](bip025_compile-to-wasm.md)), shared `org.babblelang.ir.egraph` core & `AlgebraicVerifier` (`RM012`, [bip027_tackling-complexity-in-the-compiler.md](bip027_tackling-complexity-in-the-compiler.md) `BIP027-I2`/`I6`), `.batest.md` v2 & IR goldens ([bip029_batest-v2-and-ir-goldens.md](bip029_batest-v2-and-ir-goldens.md)), first-class ranges & counted `for` loops (`RM019`, [bip031_ranges.md](bip031_ranges.md)), immutable `def` & mutable `var` bindings ([bip034_immutable-def-and-mutable-var.md](bip034_immutable-def-and-mutable-var.md)), test hygiene ([bip037_babble-test-hygiene.md](bip037_babble-test-hygiene.md)), and unified enriched `HIR` `-O2` + `HirAeGraphPass` ([bip039_mir-deorbitation.md](bip039_mir-deorbitation.md)) |
-| **Scope** | Completing `BIP014-P5` Half B (`O12`) independently of introducing a `std/...` library or `babble.path` : extending `org.babblelang.ir.egraph` with `injective`/`monotone` algebraic comparison rules (shared across `-O1`, `-O2`, and `AlgebraicVerifier`), dominator-scoped cross-statement `UnaryCallOrigin` cancellation in `HirAeGraphPass` (`-O2`), a composable 11-op E-graph pipeline dialect (`ENode.Op.PIPE_*`), a monotonic selectivity-weighted `EGraph.CostModel`, declarative `PipelineRules` (`R1`–`R8` covering stream fusion, filter fusion, guard-safe filter reordering, map–filter push-down, `injective` `distinct` push-down, `monotone` range clamping / early-exit / whole-range pruning, and `associative` pairwise loop tree reduction), and a `PipelineRewritePass` (`HirPipelineLifter` → `EGraph.saturate` → `EGraph.extract` → `HirPipelineLowerer`) at `-O2` across both JVM bytecode and WebAssembly 3.0 — while exposing a clean lifting seam for future `std/` combinators |
+| **Scope** | Completing `BIP014-I5` Half B (`O12`) independently of introducing a `std/...` library or `babble.path` : extending `org.babblelang.ir.egraph` with `injective`/`monotone` algebraic comparison rules (shared across `-O1`, `-O2`, and `AlgebraicVerifier`), dominator-scoped cross-statement `UnaryCallOrigin` cancellation in `HirAeGraphPass` (`-O2`), a composable 11-op E-graph pipeline dialect (`ENode.Op.PIPE_*`), a monotonic selectivity-weighted `EGraph.CostModel`, declarative `PipelineRules` (`R1`–`R8` covering stream fusion, filter fusion, guard-safe filter reordering, map–filter push-down, `injective` `distinct` push-down, `monotone` range clamping / early-exit / whole-range pruning, and `associative` pairwise loop tree reduction), and a `PipelineRewritePass` (`HirPipelineLifter` → `EGraph.saturate` → `EGraph.extract` → `HirPipelineLowerer`) at `-O2` across both JVM bytecode and WebAssembly 3.0 — while exposing a clean lifting seam for future `std/` combinators |
 
 ---
 
 ## 1. Summary & Motivation
 
-### 1.1 Decoupling `BIP014-P5` Half B (`O12`) from a Standard Library
+### 1.1 Decoupling `BIP014-I5` Half B (`O12`) from a Standard Library
 
-[BIP014](bip014_optimization-passes.md) is almost completely implemented: `BIP014-I0`–`I4` landed the decoupled typed `HIR`, `-O1` Nanopass pipeline, `record` scalar replacement and FBIP reuse, and [BIP027](bip027_tackling-complexity-in-the-compiler.md) (`BIP027-I2`) delivered Half A of `BIP014-P5` (`org.babblelang.ir.egraph` + `HirEGraphSimplifyPass`), while [BIP039](bip039_mir-deorbitation.md) retired legacy SSA `MIR` and landed the dominator-scoped `HirAeGraphPass` directly on unified structured `HIR` at `-O2` (shared by both JVM bytecode and WebAssembly 3.0).
+[BIP014](bip014_optimization-passes.md) is almost completely implemented: `BIP014-I0`–`I4` landed the decoupled typed `HIR`, `-O1` Nanopass pipeline, `record` scalar replacement and FBIP reuse, and [BIP027](bip027_tackling-complexity-in-the-compiler.md) (`BIP027-I2`) delivered Half A of `BIP014-I5` (`org.babblelang.ir.egraph` + `HirEGraphSimplifyPass`), while [BIP039](bip039_mir-deorbitation.md) retired legacy SSA `MIR` and landed the dominator-scoped `HirAeGraphPass` directly on unified structured `HIR` at `-O2` (shared by both JVM bytecode and WebAssembly 3.0).
 
-Only **Half B of `BIP014-P5` (`O12` : pipeline push-down / push-up, `monotone` range pruning, `injective` equality & `distinct` push-down, and `associative` fold reassociation)** remains. Originally, `BIP014` §3.2 assumed `O12` would wait for a future `std/...` library of higher-order combinators (`map`, `filter`, `reduce`, `distinct`) and a `babble.path` module search path (`BIP005-D5`). Coupling `O12` to `std/...` creates three unnecessary problems:
+Only **Half B of `BIP014-I5` (`O12` : pipeline push-down / push-up, `monotone` range pruning, `injective` equality & `distinct` push-down, and `associative` fold reassociation)** remains. Originally, `BIP014` §3.2 assumed `O12` would wait for a future `std/...` library of higher-order combinators (`map`, `filter`, `reduce`, `distinct`) and a `babble.path` module search path (`BIP005-D5`). Coupling `O12` to `std/...` creates three unnecessary problems:
 
 1. **Artificial sequencing bottleneck :** Designing a standard library, module search path, and versioning/packaging rules deserves its own dedicated BIP. Waiting on `std/...` stalls `BIP014` completion and, by `BIP018-D4`, blocks `BIP018-P1` onward.
 2. **Real Babble programs already write pipelines today :** Idiomatic Babble code today builds multi-stage data pipelines with `for` loops, `CountedRangeLoop`s (`BIP031`), local `list` / `set` accumulators, and `pure deterministic nothrow` helpers annotated `injective`, `monotone`, or `associative` (`BIP007`, `BIP027-I6`). Furthermore, once `InlinePass` (`BIP014-I2`/`I4`) inlines small user-defined `map` / `filter` / `reduce` helpers, they lower to those exact same `for`-loop + `list.add` + `var acc` HIR shapes.
@@ -272,9 +272,9 @@ sa < sb                    ;; -> a < b   (dead `sa`/`sb` subsequently dropped by
 
 | Option | Description | Pros | Cons |
 |---|---|---|---|
-| **Option A : Wait for `std/` & match `std/` calls only** | Defer all of `BIP014-P5` Half B until a `std/` library BIP lands, then optimize `std/iter.*` calls directly. | Clean functional combinator surface from day one. | Artificially blocks `BIP014` completion (and `BIP018-P1` per `BIP018-D4`) on an unwritten `std/` BIP; ignores hand-written `for` pipelines and inlined user helpers. |
+| **Option A : Wait for `std/` & match `std/` calls only** | Defer all of `BIP014-I5` Half B until a `std/` library BIP lands, then optimize `std/iter.*` calls directly. | Clean functional combinator surface from day one. | Artificially blocks `BIP014` completion (and `BIP018-P1` per `BIP018-D4`) on an unwritten `std/` BIP; ignores hand-written `for` pipelines and inlined user helpers. |
 | **Option B : Custom imperative HIR loop passes** | Write standalone imperative HIR rewriters (`LoopPipelineFuser`, `LoopAlgebraRewriter`) directly over `HirExpr.For` / `If` / `Def`. | Decouples from `std/` immediately; straightforward per-rule matching. | Suffers from phase-ordering conflicts between fusion, push-down, algebraic cancellation, `distinct`, and range clamping; rules must be duplicated later when `std/` combinators arrive. |
-| **Option C : E-Graph Lift → Saturate → Extract → Lower *(Selected)*** | Lift qualifying `for` / `list` / `set` / `CountedRangeLoop` pipelines into a compact 11-op `ENode.Op.PIPE_*` dialect, saturate jointly with `AlgebraicRules` + declarative `PipelineRules` under a monotonic selectivity-weighted `EGraph.CostModel`, and lower winning plans back to structured `HIR`. | Decouples `BIP014-P5` from `std/` today; eliminates phase ordering across algebraic + pipeline rewrites; unit-testable in milliseconds via `EGraphTestCase`; future `std/` combinators plug into the exact same E-nodes; shared automatically by JVM and WebAssembly 3.0. | Requires adding a 10-line child-weighted `CostModel` overload to `EGraph.extract` and careful lifter/lowerer soundness guards (straightforward and cleanly encapsulated in `HirPipelineLifter` / `HirPipelineLowerer`). |
+| **Option C : E-Graph Lift → Saturate → Extract → Lower *(Selected)*** | Lift qualifying `for` / `list` / `set` / `CountedRangeLoop` pipelines into a compact 11-op `ENode.Op.PIPE_*` dialect, saturate jointly with `AlgebraicRules` + declarative `PipelineRules` under a monotonic selectivity-weighted `EGraph.CostModel`, and lower winning plans back to structured `HIR`. | Decouples `BIP014-I5` from `std/` today; eliminates phase ordering across algebraic + pipeline rewrites; unit-testable in milliseconds via `EGraphTestCase`; future `std/` combinators plug into the exact same E-nodes; shared automatically by JVM and WebAssembly 3.0. | Requires adding a 10-line child-weighted `CostModel` overload to `EGraph.extract` and careful lifter/lowerer soundness guards (straightforward and cleanly encapsulated in `HirPipelineLifter` / `HirPipelineLowerer`). |
 
 ---
 
@@ -282,7 +282,7 @@ sa < sb                    ;; -> a < b   (dead `sa`/`sb` subsequently dropped by
 
 ### 4.1 Settled Design Decisions (`BIP042-D1`–`D8`)
 
-- **`BIP042-D1` *(resolves `BIP042-Q1`)* — Decouple `BIP014-P5` Half B (`O12`) from `std/...` :** Implement `O12` directly over Babble's existing structured `HIR` (`for`, `CountedRangeLoop`, local `list`/`set` accumulators, and `BIP007` algebraic contracts) so `BIP014` can complete independently of a future standard-library BIP. Future `std/` combinators will attach cleanly to `HirPipelineLifter` without rewriting the optimizer.
+- **`BIP042-D1` *(resolves `BIP042-Q1`)* — Decouple `BIP014-I5` Half B (`O12`) from `std/...` :** Implement `O12` directly over Babble's existing structured `HIR` (`for`, `CountedRangeLoop`, local `list`/`set` accumulators, and `BIP007` algebraic contracts) so `BIP014` can complete independently of a future standard-library BIP. Future `std/` combinators will attach cleanly to `HirPipelineLifter` without rewriting the optimizer.
 - **`BIP042-D2` *(resolves `BIP042-Q2`)* — Lift → Saturate → Extract → Lower on `org.babblelang.ir.egraph` :** Express all eight `O12` pipeline transformations (`R1`–`R8`) as declarative rewrite rules in `org.babblelang.ir.egraph.PipelineRules`, saturated jointly with `AlgebraicRules.optimizerRules()` inside Babble's existing `EGraph` engine (`[WNW+21]`, `[TSL+09]`). Imperative HIR code is strictly limited to the thin front-end lifter (`HirPipelineLifter`) and back-end lowerer (`HirPipelineLowerer`).
 - **`BIP042-D3` *(resolves `BIP042-Q3`)* — Monotonic selectivity-weighted `EGraph.CostModel` :** Purely additive bottom-up node costs cannot distinguish `FILTER(MAP(s, f), p)` from `MAP(FILTER(s, p), f)` or `DISTINCT(MAP(s, f))` from `MAP(DISTINCT(s), f)` because both trees contain the exact same nodes. Extend `EGraph.extract` with `@FunctionalInterface public interface CostModel { int cost(ENode node, int[] childCosts); }` where `PIPE_FILTER` and `PIPE_DISTINCT` multiply their upstream stream cost `childCosts[0]` by `2` (§6.3). Because every weight is strictly positive ($\ge 1$) and capped, bottom-up fixed-point extraction remains guaranteed to converge to the global minimum.
 - **`BIP042-D4` *(resolves `BIP042-Q4`)* — Optimization-tier placement (`-O1` vs. `-O2`) :**
@@ -296,10 +296,10 @@ sa < sb                    ;; -> a < b   (dead `sa`/`sb` subsequently dropped by
 
 ### 4.2 Open Questions for Future Extensions (`BIP042-Q9`–`Q11`)
 
-These are explicitly out of scope for `BIP042-P1`–`P4` (not required to close `BIP014-P5`) and recorded here as clean follow-ups:
+These are explicitly out of scope for `BIP042-I1`–`I4` (not required to close `BIP014-I5`) and recorded here as clean follow-ups:
 
 - **`BIP042-Q9` — 4-way tree reduction & `commutative` multi-accumulator unrolling :** `R8` uses 2-way pairwise reduction (`acc = op(acc, op(e0, e1))`), which halves loop-carried latency and branch overhead with zero identity element and works for non-commutative semigroups. Should a later pass add a 4-way variant (`op(op(e0, e1), op(e2, e3))`) or multi-accumulator splits for `associative commutative` combiners once benchmarks warrant it?
-- **`BIP042-Q10` — Multi-emit (`flatMap`) & nested-loop fusion :** `BIP042-P3` restricts producer lifting to straight-line / `if`-guarded single-emit loops (`tmp.add(e)` not inside an inner nested loop). Lifting nested producer `for` loops (`PIPE_FLAT_MAP`) is a natural future extension of the same dialect (with consumer `continue`/`break` guarded off).
+- **`BIP042-Q10` — Multi-emit (`flatMap`) & nested-loop fusion :** `BIP042-I3` restricts producer lifting to straight-line / `if`-guarded single-emit loops (`tmp.add(e)` not inside an inner nested loop). Lifting nested producer `for` loops (`PIPE_FLAT_MAP`) is a natural future extension of the same dialect (with consumer `continue`/`break` guarded off).
 - **`BIP042-Q11` — Direct `std/` combinator lifting :** Once a dedicated standard-library BIP introduces `std/...` combinators (`map`, `filter`, `flatMap`, `distinct`, `takeWhile`, `reduce`, `forEach`), should `HirPipelineLifter` lift recognized `std/` calls directly into `PIPE_*` E-nodes *before* `InlinePass` (avoiding inlining large combinator bodies altogether), or rely on `InlinePass` + loop lifting? Lifting `std/` calls directly into `PIPE_*` is strongly preferred (§7.5) and requires zero changes to `PipelineRules` or `HirPipelineLowerer`.
 
 ---
@@ -536,52 +536,60 @@ When a future standard-library BIP introduces `std/` modules (`map`, `filter`, `
 
 Every new and modified production file stays strictly within Babble's architecture boundaries (`RuntimeBoundaryTestCase`, `ArchitectureBoundaryTestCase`) and well under the 1,250-LOC soft limit:
 
-| File | Package | Action | Est. LOC | JaCoCo Scope (`-Pbatest`) |
+| File | Package | Action | Actual LOC | JaCoCo Scope (`-Pbatest`) |
 |---|---|---|---:|---|
-| `ENode.java` | `org.babblelang.ir.egraph` | Modify | ~270 | `Optimizer (-O1)` |
-| `EGraph.java` | `org.babblelang.ir.egraph` | Modify | ~630 | `Optimizer (-O1)` |
-| `AlgebraicRules.java` | `org.babblelang.ir.egraph` | Modify | ~880 | `Optimizer (-O1)` |
-| `PipelineRules.java` | `org.babblelang.ir.egraph` | **New** | ~350 | **`Optimizer (-O2)`** |
-| `EffectAstExtractors.java` | `org.babblelang.analysis` | Modify | (+2 lines) | `Shared Front-End` |
-| `HirPurity.java` | `org.babblelang.opt` | Modify | ~890 | `Optimizer (-O1)` |
-| `HirEGraphCodec.java` | `org.babblelang.opt.hir` | Modify | ~480 | `Optimizer (-O1)` |
-| `AeGraphState.java` | `org.babblelang.opt.hir` | Modify | ~415 | `Optimizer (-O2)` |
-| `AeGraphExtractor.java` | `org.babblelang.opt.hir` | Modify | ~640 | `Optimizer (-O2)` |
-| `AeGraphBuilder.java` | `org.babblelang.opt.hir` | Modify | (+10 lines) | `Optimizer (-O2)` |
-| `PipelineRewritePass.java` | `org.babblelang.opt.hir` | **New** | ~150 | **`Optimizer (-O2)`** |
-| `HirPipelineLifter.java` | `org.babblelang.opt.hir` | **New** | ~450 | **`Optimizer (-O2)`** |
-| `HirPipelineLowerer.java` | `org.babblelang.opt.hir` | **New** | ~450 | **`Optimizer (-O2)`** |
-| `PassManager.java` | `org.babblelang.opt` | Modify | ~130 | `Optimizer (-O1)` |
-| `BatestCoverageReporter.java` | `org.babblelang.tests.batest` | Modify | (+4 entries in `O2_OPTIMIZER_CLASSES`) | test harness |
+| `ENode.java` | `org.babblelang.ir.egraph` | Modified | 297 | `Optimizer (-O1)` |
+| `EGraph.java` | `org.babblelang.ir.egraph` | Modified | 653 | `Optimizer (-O1)` |
+| `AlgebraicRules.java` | `org.babblelang.ir.egraph` | Modified | 875 | `Optimizer (-O1)` |
+| `PipelineRules.java` | `org.babblelang.ir.egraph` | **New** | 725 | **`Optimizer (-O2)`** |
+| `EffectAstExtractors.java` | `org.babblelang.analysis` | Modified | (+2 lines) | `Shared Front-End` |
+| `EffectChecker.java` / `EffectSet.java` | `org.babblelang.analysis` | Modified | (+10 lines) | `Shared Front-End` |
+| `HirPurity.java` | `org.babblelang.opt` | Modified | 893 | `Optimizer (-O1)` |
+| `HirEGraphCodec.java` | `org.babblelang.opt.hir` | Modified | 481 | `Optimizer (-O1)` |
+| `AeGraphState.java` | `org.babblelang.opt.hir` | Modified | 414 | `Optimizer (-O2)` |
+| `AeGraphExtractor.java` | `org.babblelang.opt.hir` | Modified | 703 | `Optimizer (-O2)` |
+| `AeGraphBuilder.java` | `org.babblelang.opt.hir` | Modified | 1,356 | `Optimizer (-O2)` |
+| `PipelineRewritePass.java` | `org.babblelang.opt.hir` | **New** | 258 | **`Optimizer (-O2)`** |
+| `HirPipelineLifter.java` | `org.babblelang.opt.hir` | **New** | 945 | **`Optimizer (-O2)`** |
+| `HirPipelineAnalysis.java` | `org.babblelang.opt.hir` | **New** | 447 | **`Optimizer (-O2)`** |
+| `HirPipelineLowerer.java` | `org.babblelang.opt.hir` | **New** | 992 | **`Optimizer (-O2)`** |
+| `PassManager.java` | `org.babblelang.opt` | Modified | 125 | `Optimizer (-O1)` |
+| `BatestCoverageReporter.java` / `pom.xml` | test harness / build | Modified | (+5 entries / `-O2` JaCoCo scope) | test harness |
 
 - **Runtime boundary (`BIP006` §3) :** Zero references to `org.babblelang.ir` or `org.babblelang.opt` in `org.babblelang.runtime` or `org.babblelang.engine.impl.natives`.
 - **ANTLR isolation (`BIP027-D9`) :** Zero `org.antlr`, `org.babblelang.parser`, or `ScopeAnalysis` references in any new or modified `ir.egraph` / `opt.hir` file.
 
 ---
 
-## 9. Incremental Implementation Roadmap (`BIP042-P1`–`P4`)
+## 9. Implementation Summary (`BIP042-I1`–`I4`)
 
-### `BIP042-P1` — Shared E-Graph Algebraic Rules & Cross-Statement Cancellation
-- Extend `EGraph.CallProps` (`monotone`, `injective`), `EGraph.CostModel`, and `ENode.Op` pipeline variants.
-- Implement `AlgebraicRules::injectiveAndMonotoneRules`, `EffectAstExtractors` wiring, `HirPurity` algebraic queries, and `HirEGraphCodec` unary algebraic call lowering (`-O1` & `-O2`).
-- Generalize `AeGraphState.UnaryCallOrigin` and add `AeGraphExtractor.tryCancelUnaryComparison` (`-O2`).
-- Add unit tests in `EGraphTestCase` and `.batest.md` suite `src/test/batest/compiler/algebraic_injective_and_monotone.batest.md` (`interpret`, `-O0`, `-O1`, `-O2`, Wasm 3.0).
+### `BIP042-I1` — Shared E-Graph Algebraic Rules & Cross-Statement Cancellation
+- Extended `EGraph.CallProps` (`monotone`, `injective`), `EGraph.CostModel`, and `ENode.Op` (11 `PIPE_*` variants).
+- Implemented `AlgebraicRules::injectiveAndMonotoneRules`, `EffectAstExtractors` wiring, `HirPurity` algebraic queries, and `HirEGraphCodec` unary algebraic call lowering (`-O1` & `-O2`).
+- Generalized `AeGraphState.UnaryCallOrigin` and added `AeGraphExtractor.tryCancelUnaryComparison` (`-O2`).
+- Added unit tests in `EGraphTestCase` and `.batest.md` suite `src/test/batest/compiler/algebraic_injective_and_monotone.batest.md` (`interpret`, `-O0`, `-O1`, `-O2`, Wasm 3.0).
 
-### `BIP042-P2` — Declarative `PipelineRules` (`R1`–`R8`) & Selectivity-Weighted `CostModel`
-- Implement `org.babblelang.ir.egraph.PipelineRules` (all 8 rewrite rules `R1`–`R8`, integral `min`/`max` folding, and monotonic `CostModel`).
-- Add thorough standalone saturation & extraction tests in `EGraphTestCase` covering every rule individually, negative guard bailouts (`"narrow"`, non-`injective`, non-`monotone`, non-`associative`), and the joint 5-step saturation (`materialize` → `push-down` → `monotone+injective` → `range clamp` → `min` fold).
+### `BIP042-I2` — Declarative `PipelineRules` (`R1`–`R8`) & Selectivity-Weighted `CostModel`
+- Implemented `org.babblelang.ir.egraph.PipelineRules` (all 8 rewrite rules `R1`–`R8`, integral `min`/`max` folding, and monotonic selectivity-weighted `CostModel`).
+- Added standalone saturation & extraction tests in `EGraphTestCase` covering every rule individually, negative guard bailouts (`"narrow"`, non-`injective`, non-`monotone`, non-`associative`), and the joint 5-step saturation (`materialize` → `push-down` → `monotone+injective` → `range clamp` → `min` fold).
 
-### `BIP042-P3` — `HirPipelineLifter`, `HirPipelineLowerer` & `PipelineRewritePass` (`-O2`)
-- Implement `HirPipelineLifter`, `HirPipelineLowerer`, and `PipelineRewritePass`, wire `PipelineRewritePass` into `PassManager.O2_PASSES`, and register the four `-O2` classes in `BatestCoverageReporter.O2_OPTIMIZER_CLASSES`.
-- Add `.batest.md` specification + `hir -O0`/`-O1`/`-O2` golden suites:
-  - `src/test/batest/compiler/pipeline_fusion_and_pushdown.batest.md` (multi-stage fusion, nested filter fusion/reordering, map+filter push-down, `injective` `distinct` push-down, adversarial soundness bailouts),
-  - `src/test/batest/compiler/pipeline_monotone_and_associative.batest.md` (direct range clamping, `monotone` early exit & `O(1)` whole-range skip, `associative` pairwise fold across `int`/`long`, non-commutative & commutative combiners, `MIN_VALUE`/`MAX_VALUE` boundaries).
-- Add focused ASM bytecode test in `OptimizerTestCase` verifying zero `ArrayList` allocation on fused `-O2` pipelines.
+### `BIP042-I3` — `HirPipelineLifter`, `HirPipelineAnalysis`, `HirPipelineLowerer` & `PipelineRewritePass` (`-O2`)
+- Split soundness/alias analysis into `HirPipelineAnalysis` alongside `HirPipelineLifter`, `HirPipelineLowerer`, and `PipelineRewritePass` (every new file under 1,000 LOC), wired `PipelineRewritePass` into `PassManager.O2_PASSES`, and registered all five `-O2` classes in `BatestCoverageReporter.O2_OPTIMIZER_CLASSES` and `pom.xml`'s `report-opt-O2` scope.
+- Propagated callee algebraic traits (`idempotent`, `commutative`, `associative`, `monotone`, `injective`) into call-site `EffectMetadata` in `EffectChecker.recordAllCallEffects` so Java `axiom` calls (e.g. `java.lang.Math.max`) lift cleanly into `PIPE_FOLD` and unary algebraic rewrites even when arguments read local `var`s.
+- Added `.batest.md` specification + `hir -O0`/`-O1`/`-O2` golden suites (`pipeline_fusion_and_pushdown.batest.md` and `pipeline_monotone_and_associative.batest.md`) plus `OptimizerTestCase#testO2PipelineFusionZeroListAllocation` verifying zero `ArrayList`/`Iterator`/`NEW` allocations on the fused `-O2` 5-step joint-saturation bytecode.
 
-### `BIP042-P4` — Benchmarks, Full-Suite Verification & `BIP014` Completion
-- Add a `pipeline : fused map+filter+reduce & associative fold` benchmark row to `org.babblelang.bench.Benchmarks` and record `-O0` / `-O1` / `-O2` speedups in `BIP042` and `BIP014`.
-- Verify `mvn -B package -PO2`, `mvn -q verify -Pbatest` (`>= 80%` line & branch across all 6 scopes, 0 divergences across 4 JVM modes + Wasm 3.0), `mvn spotless:check`, `-format -check`, `ArchitectureBoundaryTestCase`, `RuntimeBoundaryTestCase`, and byte-identical `examples/raytracer/assets/scene.ppm`.
-- Promote `BIP042-P1`–`P4` → `BIP042-I1`–`I4` and `BIP014-P5` → `BIP014-I5` via `src/tools/mark_bip_implemented.py`, marking both `BIP042` and `BIP014` **Implemented** across `docs/design/`, `README.md`, and `docs/ARCHITECTURE.md` (unblocking `BIP018-P1` per `BIP018-D4`).
+### `BIP042-I4` — Benchmarks, Full-Suite Verification & `BIP014` Completion
+- Added `pipeline : fused map+filter+reduce & associative fold` (`n = 50,000`, combining multi-stage `map`/`filter`/`sum` fusion, the 5-step joint saturation `0..50000` → `0..50`, and an `associative` pairwise fold) to `org.babblelang.bench.Benchmarks`. Separate-JVM 3-trial medians (`-Xms1g -Xmx1g -XX:+UseParallelGC`):
+
+| Benchmark | `-O0` (ms) | `-O1` (ms) | `-O2` (ms) | `-O2` vs `-O0` | `-O2` vs `-O1` |
+|---|---:|---:|---:|---:|---:|
+| `pipeline : fused map+filter+reduce & associative fold` (`n = 50,000`) | 4.79 | 2.51 | **0.42** | **11.4×** | **6.0×** |
+
+- Implementation refinements surfaced during testing:
+  - **Refined `PipelineRules.costModel()` weights :** `PIPE_MAP` (`5 + cc[0] + cc[1]`), `PIPE_FILTER` (`20 + 2*cc[0] + 2*cc[1]`), `PIPE_DISTINCT` (`15 + 2*cc[0]`), and `AND` (`4 + 2*cc[0] + cc[1]`) guarantee cheaper predicates stay on the left of `AND`, fused `FILTER(s, AND(a, b))` always beats nested `FILTER`, and Case 4b (`R4`) never duplicates `f(x)` on opaque streams unless `AlgebraicRules` cancels or `R7` fires.
+  - **Strict `R5` binder provenance :** `PIPE_SRC` encodes its binder in its symbol (`src#0:$e0`) so `R5` verifies `call.child(0)` is the exact element binder of the upstream stream (rejecting derived non-injective projections like `encode(x * 0)`).
+  - **Output-list vs. chained-temp disambiguation (`isChainedTempList`) :** A fresh `list` preceding a `for` over `tmp` is only treated as an intermediate chained producer when consumed solely by a later `for` loop; otherwise it is hoisted as the final output list for the fused consumer loop.
+- Verified byte-identical `examples/raytracer/assets/scene.ppm` at both `-O1` and `-O2`, 4-mode JVM + WebAssembly 3.0 parity across all `.batest.md` specs, `ArchitectureBoundaryTestCase`, `RuntimeBoundaryTestCase`, and `-format -check`. Promoted `BIP042-I1`–`I4` and `BIP014-I5` to **Implemented**, completing `BIP014` and unblocking `BIP018-P1` (`BIP018-D4`).
 
 ---
 

@@ -22,7 +22,7 @@ import org.babblelang.opt.HirRewriter;
 
 /**
  * Lowers an extracted minimum-cost pipeline {@link EGraph.ExtractedTree} back to verified,
- * Wasm-portable structured HIR ({@code BIP042-P3}, {@code BIP042-D5}).
+ * Wasm-portable structured HIR ({@code BIP042-I3}, {@code BIP042-D5}).
  *
  * <p>Emits strictly standard HIR nodes ({@link HirExpr.For}, {@link HirExpr.While}, {@link
  * HirExpr.If}, {@link HirExpr.Break}, {@link HirExpr.Block}, {@link HirExpr.Def}, {@link
