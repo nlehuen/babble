@@ -4,6 +4,7 @@
 def math = import("math.ba")
 def Vec3 = import("vec3.ba").Vec3
 def Ray = import("ray.ba").Ray
+def Interval = import("interval.ba").Interval
 
 export def AABB = record (
     minX: double, maxX: double,
@@ -31,6 +32,72 @@ export def AABB = record (
             math.min(this.minY, p.y), math.max(this.maxY, p.y),
             math.min(this.minZ, p.z), math.max(this.maxZ, p.z)
         )
+    )
+
+    def expand = fn (margin: double): AABB -> (
+        AABB(
+            this.minX - margin, this.maxX + margin,
+            this.minY - margin, this.maxY + margin,
+            this.minZ - margin, this.maxZ + margin
+        )
+    )
+
+    def translate = fn (offset: Vec3): AABB -> (
+        AABB(
+            this.minX + offset.x, this.maxX + offset.x,
+            this.minY + offset.y, this.maxY + offset.y,
+            this.minZ + offset.z, this.maxZ + offset.z
+        )
+    )
+
+    def scale = fn (factor: double): AABB -> (
+        def a: Vec3 = Vec3(this.minX * factor, this.minY * factor, this.minZ * factor)
+        def b: Vec3 = Vec3(this.maxX * factor, this.maxY * factor, this.maxZ * factor)
+        AABB.fromPoints(a, b)
+    )
+
+    def intersect = fn (r: Ray, tmin: double, tmax: double): Interval? -> (
+        def orig: Vec3 = r.origin
+        def dir: Vec3 = r.dir
+        var curMin: double = tmin
+        var curMax: double = tmax
+
+        def invX: double = 1.0 / dir.x
+        var tx0: double = (this.minX - orig.x) * invX
+        var tx1: double = (this.maxX - orig.x) * invX
+        if invX < 0.0 then (
+            def tmpX: double = tx0
+            tx0 = tx1
+            tx1 = tmpX
+        )
+        if tx0 > curMin then (curMin = tx0)
+        if tx1 < curMax then (curMax = tx1)
+        if curMax <= curMin then (return null)
+
+        def invY: double = 1.0 / dir.y
+        var ty0: double = (this.minY - orig.y) * invY
+        var ty1: double = (this.maxY - orig.y) * invY
+        if invY < 0.0 then (
+            def tmpY: double = ty0
+            ty0 = ty1
+            ty1 = tmpY
+        )
+        if ty0 > curMin then (curMin = ty0)
+        if ty1 < curMax then (curMax = ty1)
+        if curMax <= curMin then (return null)
+
+        def invZ: double = 1.0 / dir.z
+        var tz0: double = (this.minZ - orig.z) * invZ
+        var tz1: double = (this.maxZ - orig.z) * invZ
+        if invZ < 0.0 then (
+            def tmpZ: double = tz0
+            tz0 = tz1
+            tz1 = tmpZ
+        )
+        if tz0 > curMin then (curMin = tz0)
+        if tz1 < curMax then (curMax = tz1)
+        if curMax <= curMin then (return null)
+        Interval(curMin, curMax)
     )
 
     def longestAxis = fn (): int -> (
@@ -124,5 +191,9 @@ export def AABB = record (
             math.min(box0.minY, box1.minY), math.max(box0.maxY, box1.maxY),
             math.min(box0.minZ, box1.minZ), math.max(box0.maxZ, box1.maxZ)
         )
+    )
+
+    def copy = fn (box: frozen AABB): AABB -> (
+        this(box.minX, box.maxX, box.minY, box.maxY, box.minZ, box.maxZ)
     )
 )

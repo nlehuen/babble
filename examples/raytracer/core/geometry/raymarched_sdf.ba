@@ -1,0 +1,156 @@
+;; Sphere-tracing (raymarching) Hittable primitive for Signed Distance Fields (SDFs),
+;; following Inigo Quilez's "Raymarching Distance Fields" (iquilezles.org/articles/raymarchingdf/)
+;; and 4-tap tetrahedral gradient normals (iquilezles.org/articles/normalsSDF/).
+;;
+;; Features:
+;; - Tight AABB slab entry/exit clipping (zero marching steps on bounding-box misses)
+;; - Arc-length normalization for non-unit rays (thin-lens camera and scattered rays)
+;; - Signed-aware exterior & interior tracing (full Dielectric glass refraction support)
+;; - Grazing-bounce self-intersection guard + surface polish / bisection refinement
+;; - Zero-allocation hot loop with optional per-hit `MaterialField` selector
+
+def math = import("../math.ba")
+def Vec3 = import("../vec3.ba").Vec3
+def Ray = import("../ray.ba").Ray
+def Interval = import("../interval.ba").Interval
+def AABB = import("../aabb.ba").AABB
+def Describable = import("../interfaces.ba").Describable
+def HitRecord = import("../interfaces.ba").HitRecord
+def Hittable = import("../interfaces.ba").Hittable
+def Material = import("../interfaces.ba").Material
+def Sdf = import("sdf.ba").Sdf
+
+export def MaterialField = interface (
+    ;; Selects a material for a confirmed SDF hit point and outward surface normal.
+    def sample: fn (p: Vec3, normal: Vec3): Material
+)
+
+export def RaymarchedSdf = record (
+    sdf: frozen Sdf,
+    mat: Material,
+    materialField: MaterialField? = null,
+    maxSteps: int = 128,
+    hitEps: double = 0.0005,
+    normalEps: double = 0.00025,
+    stepScale: double = 1.0,
+    bboxPadding: double = 0.01
+) implements Hittable, Describable (
+    private def bbox: AABB
+
+    init (
+        this.bbox = AABB.copy(this.sdf.boundingBox()).expand(math.max(0.0, this.bboxPadding))
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    ;; 4-sample tetrahedral finite-difference outward gradient normal (IQ normalsSDF).
+    private def estimateNormal = fn (p: Vec3): Vec3 -> (
+        def h: double = this.normalEps
+        def d1: double = this.sdf.distance(Vec3(p.x + h, p.y - h, p.z - h))
+        def d2: double = this.sdf.distance(Vec3(p.x - h, p.y - h, p.z + h))
+        def d3: double = this.sdf.distance(Vec3(p.x - h, p.y + h, p.z - h))
+        def d4: double = this.sdf.distance(Vec3(p.x + h, p.y + h, p.z + h))
+        def g: Vec3 = Vec3(
+            d1 - d2 - d3 + d4,
+            -d1 - d2 + d3 + d4,
+            -d1 + d2 - d3 + d4
+        )
+        if g.lengthSquared() <= 0.0000000000000001 then (
+            Vec3(0.0, 1.0, 0.0)
+        ) else (
+            g.unit()
+        )
+    )
+
+    def hit = fn (r: Ray, tmin: double, tmax: double): HitRecord? -> (
+        def span: Interval? = this.bbox.intersect(r, tmin, tmax)
+        if span == null then (return null)
+
+        def dirLen: double = r.dir.length()
+        if dirLen <= 0.000000000001 then (return null)
+        def invDirLen: double = 1.0 / dirLen
+        def rd: Vec3 = r.dir * invDirLen
+        def ro: Vec3 = r.origin
+        def sStart: double = span.min * dirLen
+        def sEnd: double = span.max * dirLen
+        if sEnd <= sStart then (return null)
+
+        var s: double = sStart
+        var prevS: double = sStart
+        def d0: double = this.sdf.distance(ro + rd * s)
+        def mediumSign: double = if d0 < 0.0 then (-1.0) else (1.0)
+
+        ;; Grazing-bounce self-intersection guard: when a secondary ray originates inside the
+        ;; surface epsilon shell and moves deeper into its current medium, nudge past the shell.
+        def startTol: double = math.max(this.hitEps, this.hitEps * s * 0.25)
+        if mediumSign * d0 <= startTol then (
+            var curD: double = mediumSign * d0
+            for nudge in 0..<4 then (
+                def nextS: double = s + startTol * 2.0
+                if nextS >= sEnd then (return null)
+                def probeD: double = mediumSign * this.sdf.distance(ro + rd * nextS)
+                if probeD > curD then (
+                    prevS = s
+                    s = nextS
+                    curD = probeD
+                    if curD > startTol then (break)
+                ) else (
+                    break
+                )
+            )
+        )
+
+        ;; Main sphere-tracing loop
+        for step in 0..<this.maxSteps then (
+            def signedD: double = mediumSign * this.sdf.distance(ro + rd * s)
+            def tol: double = math.max(this.hitEps, this.hitEps * s * 0.25)
+            if signedD <= tol then (
+                var hitS: double = s
+                if signedD < -tol and prevS < s then (
+                    ;; Genuine overshoot across the zero isosurface: bisect until within tolerance
+                    var lo: double = prevS
+                    var hi: double = s
+                    for b in 0..<12 then (
+                        if hi - lo <= tol * 0.25 then (break)
+                        def mid: double = 0.5 * (lo + hi)
+                        if mediumSign * this.sdf.distance(ro + rd * mid) <= 0.0 then (
+                            hi = mid
+                        ) else (
+                            lo = mid
+                        )
+                    )
+                    hitS = 0.5 * (lo + hi)
+                ) else (
+                    ;; Polish step (forward when signedD > 0, backward when -tol <= signedD < 0)
+                    ;; to land tightly on the zero isosurface for crisp reflections & refractions
+                    def polishS: double = hitS + signedD * this.stepScale
+                    if polishS > prevS and polishS <= sEnd then (
+                        hitS = polishS
+                    )
+                )
+
+                def worldT: double = hitS * invDirLen
+                if worldT <= tmin or worldT >= tmax then (return null)
+                def hitP: Vec3 = ro + rd * hitS
+                def outward: Vec3 = this.estimateNormal(hitP)
+                def mf: MaterialField? = this.materialField
+                def resolvedMat: Material = if mf != null then (
+                    mf.sample(hitP, outward)
+                ) else (
+                    this.mat
+                )
+                return HitRecord.create(r, hitP, outward, worldT, resolvedMat)
+            )
+            prevS = s
+            s += signedD * this.stepScale
+            if s > sEnd then (return null)
+        )
+        null
+    )
+
+    def kind = fn (): string -> ("raymarched_sdf")
+
+    def describe = fn (): string -> (
+        super(Hittable).describe() + "(" + this.sdf.describe() + ")"
+    )
+)

@@ -58,6 +58,30 @@ export def Vec3 = record (x: double, y: double, z: double) (
         math.abs(this.x) < s and math.abs(this.y) < s and math.abs(this.z) < s
     )
 
+    def abs = fn (): Vec3 -> (
+        Vec3(math.abs(this.x), math.abs(this.y), math.abs(this.z))
+    )
+
+    def maxComp = fn (): double -> (
+        math.max(this.x, math.max(this.y, this.z))
+    )
+
+    def minComp = fn (): double -> (
+        math.min(this.x, math.min(this.y, this.z))
+    )
+
+    def maxScalar = fn (s: double): Vec3 -> (
+        Vec3(math.max(this.x, s), math.max(this.y, s), math.max(this.z, s))
+    )
+
+    def minScalar = fn (s: double): Vec3 -> (
+        Vec3(math.min(this.x, s), math.min(this.y, s), math.min(this.z, s))
+    )
+
+    def lerp = fn (v: Vec3, t: double): Vec3 -> (
+        this * (1.0 - t) + v * t
+    )
+
     ;; Specular reflection of incident vector about unit normal n
     def reflect = fn (n: Vec3): Vec3 -> (
         this - n * (2.0 * this.dot(n))

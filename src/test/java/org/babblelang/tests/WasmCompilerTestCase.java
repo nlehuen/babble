@@ -944,12 +944,13 @@ public class WasmCompilerTestCase {
                         false);
         Assertions.assertEquals(0, cmpStatus, "Wasm raytracer_ppm compile failed : " + compileErr);
 
-        // 2. Verify exact byte-for-byte PPM parity between JVM and V8 on cover, triceratops &
-        // cornell-box
+        // 2. Verify exact byte-for-byte PPM parity between JVM and V8 on cover, triceratops,
+        // cornell-box & sdf-cube
         String[][] cases = {
             {"cover", "16", "2", "6", "2", "P3\n16 9\n255\n"},
             {"triceratops", "16", "4", "4", "1", "P3\n16 16\n255\n"},
-            {"cornell-box", "16", "4", "6", "1", "P3\n16 16\n255\n"}
+            {"cornell-box", "16", "4", "6", "1", "P3\n16 16\n255\n"},
+            {"sdf-cube", "16", "2", "6", "1", "P3\n16 9\n255\n"}
         };
         for (String[] c : cases) {
             String scene = c[0];

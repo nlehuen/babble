@@ -33,6 +33,24 @@ export def clamp = fn (x: double, lo: double, hi: double): double -> (
     ) else if x > hi then (hi) else (x)
 )
 
+export def mix = fn (a: double, b: double, t: double): double -> (
+    a * (1.0 - t) + b * t
+)
+
+export def smoothstep = fn (edge0: double, edge1: double, x: double): double -> (
+    def t: double = clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0)
+    t * t * (3.0 - 2.0 * t)
+)
+
+export def sign = fn (x: double): double -> (
+    if x < 0.0 then (-1.0) else if x > 0.0 then (1.0) else (0.0)
+)
+
+export def floor = fn (x: double): double -> (
+    def i: int = int(x)
+    if x < i then (i - 1.0) else (double(i))
+)
+
 export def degreesToRadians = fn (degrees: double): double -> (
     degrees * pi / 180.0
 )

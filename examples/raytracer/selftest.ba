@@ -14,6 +14,12 @@ def Rng = core.Rng
 def registry = import("scenes/registry.ba")
 def threeSpheres = import("scenes/three_spheres.ba")
 
+def SplitYMaterialField = record (upper: core.Metal, lower: core.Lambertian) implements core.MaterialField (
+    def sample = fn (p: Vec3, normal: Vec3): core.Material -> (
+        if p.y > 0.0 then (this.upper) else (this.lower)
+    )
+)
+
 def runTests = fn () -> (
     ;; 1. Pure-Babble math
     assert(math.abs(-3.5) == 3.5, "abs failed")
@@ -26,6 +32,10 @@ def runTests = fn () -> (
     assert(math.abs(math.sin(math.halfPi) - 1.0) < 0.00000001, "sin(pi/2) failed")
     assert(math.toInt(225.8) == 225 and math.toInt(-42.9) == -42, "toInt failed")
     assert(math.toByte(0.0) == 0 and math.toByte(128.4) == 128 and math.toByte(300.0) == 255, "toByte failed")
+    assert(math.abs(math.mix(10.0, 20.0, 0.25) - 12.5) < 0.000000001, "mix failed")
+    assert(math.abs(math.smoothstep(0.0, 1.0, 0.5) - 0.5) < 0.000000001, "smoothstep failed")
+    assert(math.sign(-2.0) == -1.0 and math.sign(0.0) == 0.0 and math.sign(3.0) == 1.0, "sign failed")
+    assert(math.floor(2.7) == 2.0 and math.floor(-0.2) == -1.0 and math.floor(-2.0) == -2.0, "floor failed")
 
     ;; 2. Vec3 record semantics, operators, and sRGB helper
     def v1: Vec3 = Vec3(1.0, 2.0, 3.0)
@@ -39,6 +49,14 @@ def runTests = fn () -> (
     assert(Vec3(3.0, 4.0, 0.0).length() == 5.0, "Vec3.length failed")
     assert(Vec3(1.0, -1.0, 0.0).reflect(Vec3(0.0, 1.0, 0.0)) == Vec3(1.0, 1.0, 0.0), "Vec3.reflect failed")
     assert(Vec3.srgb(0, 255, 0) == Vec3(0.0, 1.0, 0.0), "Vec3.srgb failed")
+    assert(Vec3(-1.0, 2.0, -3.0).abs() == Vec3(1.0, 2.0, 3.0), "Vec3.abs failed")
+    assert(Vec3(1.0, 5.0, 3.0).maxComp() == 5.0 and Vec3(1.0, 5.0, 3.0).minComp() == 1.0, "Vec3.maxComp/minComp failed")
+    assert(Vec3(-1.0, 2.0, 0.0).maxScalar(0.0) == Vec3(0.0, 2.0, 0.0), "Vec3.maxScalar failed")
+
+    def boxAabb: AABB = AABB(-1.0, 1.0, -1.0, 1.0, -3.0, -1.0)
+    def boxSpan: Interval? = boxAabb.intersect(Ray(Vec3.zero, Vec3(0.0, 0.0, -1.0)), 0.001, math.infinity)
+    assert(boxSpan != null and math.abs(boxSpan.min - 1.0) < 0.0000001 and math.abs(boxSpan.max - 3.0) < 0.0000001, "AABB.intersect failed")
+    assert(boxAabb.intersect(Ray(Vec3(5.0, 0.0, 0.0), Vec3(0.0, 0.0, -1.0)), 0.001, math.infinity) == null, "AABB.intersect miss failed")
 
     ;; 3. Geometries: Sphere, Ellipsoid, RoundCone, SculptedLobe, and interface conformance
     def r: Ray = Ray(Vec3(0.0, 0.0, 0.0), Vec3(0.0, 0.0, -1.0))
@@ -152,6 +170,91 @@ def runTests = fn () -> (
         cornellPixels += 1
     ))
     assert(cornellPixels == 16 and cornellLit > 0, "cornell-box renderRow failed")
+
+    ;; 8. SDF primitives, CSG combinators, transforms, and sphere-tracing RaymarchedSdf
+    def sdfSph = core.SdfSphere(Vec3.zero, 1.0)
+    assert(math.abs(sdfSph.distance(Vec3(2.0, 0.0, 0.0)) - 1.0) < 0.0000001, "SdfSphere outside failed")
+    assert(math.abs(sdfSph.distance(Vec3.zero) + 1.0) < 0.0000001, "SdfSphere inside failed")
+
+    def sdfBox = core.SdfBox(Vec3(1.0, 1.0, 1.0))
+    assert(math.abs(sdfBox.distance(Vec3(2.0, 0.0, 0.0)) - 1.0) < 0.0000001, "SdfBox outside failed")
+    assert(math.abs(sdfBox.distance(Vec3(1.0, 0.5, 0.0))) < 0.0000001, "SdfBox surface failed")
+    assert(sdfBox.distance(Vec3.zero) < 0.0, "SdfBox inside failed")
+
+    def sdfRoundBox = core.SdfRoundBox.fromOuter(Vec3(1.0, 1.0, 1.0), 0.2)
+    assert(math.abs(sdfRoundBox.distance(Vec3(1.0, 0.0, 0.0))) < 0.0000001, "SdfRoundBox face failed")
+    assert(sdfRoundBox.distance(Vec3(1.0, 1.0, 1.0)) > 0.0, "SdfRoundBox corner should be rounded")
+
+    def sdfFrame = core.SdfBoxFrame(Vec3(1.0, 1.0, 1.0), 0.1)
+    assert(sdfFrame.distance(Vec3.zero) > 0.5 and math.abs(sdfFrame.distance(Vec3(1.0, 1.0, 0.0))) < 0.0000001, "SdfBoxFrame failed")
+
+    def sdfTorus = core.SdfTorus(1.0, 0.25)
+    assert(math.abs(sdfTorus.distance(Vec3(1.0, 0.0, 0.0)) + 0.25) < 0.0000001, "SdfTorus core failed")
+    assert(math.abs(sdfTorus.distance(Vec3(1.25, 0.0, 0.0))) < 0.0000001, "SdfTorus outer rim failed")
+
+    def sdfCap = core.SdfCapsule(Vec3(0.0, -1.0, 0.0), Vec3(0.0, 1.0, 0.0), 0.5)
+    assert(math.abs(sdfCap.distance(Vec3(0.5, 0.0, 0.0))) < 0.0000001, "SdfCapsule side failed")
+    assert(math.abs(sdfCap.distance(Vec3(0.0, 1.5, 0.0))) < 0.0000001, "SdfCapsule cap failed")
+
+    def sdfCyl = core.SdfCylinder(0.5, 1.0)
+    assert(math.abs(sdfCyl.distance(Vec3(0.5, 0.0, 0.0))) < 0.0000001, "SdfCylinder side failed")
+    assert(math.abs(sdfCyl.distance(Vec3(0.0, 1.0, 0.0))) < 0.0000001, "SdfCylinder cap failed")
+
+    def sdfOct = core.SdfOctahedron(1.0)
+    assert(math.abs(sdfOct.distance(Vec3(1.0, 0.0, 0.0))) < 0.0000001, "SdfOctahedron vertex failed")
+    assert(sdfOct.distance(Vec3.zero) < 0.0, "SdfOctahedron inside failed")
+
+    ;; CSG Boolean subtraction + smooth union + transforms
+    def carved = core.SdfSubtraction(sdfBox, core.SdfSphere(Vec3.zero, 0.6))
+    assert(carved.distance(Vec3.zero) > 0.5, "SdfSubtraction hollow center failed")
+    assert(carved.distance(Vec3(0.85, 0.85, 0.85)) < 0.0, "SdfSubtraction solid corner failed")
+
+    def blended = core.SdfSmoothUnion(
+        core.SdfSphere(Vec3(-0.5, 0.0, 0.0), 0.5),
+        core.SdfSphere(Vec3(0.5, 0.0, 0.0), 0.5),
+        0.4
+    )
+    assert(blended.distance(Vec3.zero) < 0.0, "SdfSmoothUnion bridge failed")
+
+    def rotBox = core.SdfRotateY(core.SdfBox(Vec3(1.0, 0.5, 0.5)), 90.0)
+    assert(math.abs(rotBox.distance(Vec3(0.0, 0.0, 1.0))) < 0.0000001, "SdfRotateY failed")
+
+    ;; RaymarchedSdf: exterior hit, tetrahedral normal, interior exit hit (glass refraction), and MaterialField
+    def sdfLamMat = core.Lambertian(Vec3(0.8, 0.3, 0.3))
+    def sdfMetalMat = core.Metal(Vec3(0.7, 0.6, 0.5), 0.1)
+    def marchedSphere: core.RaymarchedSdf = core.RaymarchedSdf(
+        core.SdfSphere(Vec3(0.0, 0.0, -3.0), 1.0),
+        sdfLamMat,
+        materialField: SplitYMaterialField(sdfMetalMat, sdfLamMat)
+    )
+    assert(marchedSphere is core.Hittable and marchedSphere is core.Describable, "RaymarchedSdf interface conformance failed")
+    def mHit: core.HitRecord? = marchedSphere.hit(Ray(Vec3(0.0, 0.25, 0.0), Vec3(0.0, 0.0, -2.0)), 0.001, math.infinity)
+    if mHit == null then (return assert(false, "RaymarchedSdf exterior hit failed"))
+    assert(mHit.frontFace, "RaymarchedSdf exterior frontFace failed")
+    assert(mHit.mat is core.Metal, "RaymarchedSdf MaterialField dispatch failed")
+    def expectedZ: double = -3.0 + math.sqrt(1.0 - 0.25 * 0.25)
+    assert(math.abs(mHit.p.z - expectedZ) < 0.002, "RaymarchedSdf exterior hit point inaccurate")
+    assert(mHit.normal.z > 0.95 and mHit.normal.y > 0.20, "RaymarchedSdf tetrahedral normal inaccurate")
+
+    ;; Interior exit hit for dielectric refraction
+    def exitHit: core.HitRecord? = marchedSphere.hit(Ray(Vec3(0.0, 0.0, -3.0), Vec3(0.0, 0.0, -1.0)), 0.001, math.infinity)
+    if exitHit == null then (return assert(false, "RaymarchedSdf interior exit hit failed"))
+    assert(not exitHit.frontFace, "RaymarchedSdf interior exit frontFace must be false")
+    assert(math.abs(exitHit.t - 1.0) < 0.002, "RaymarchedSdf interior exit t inaccurate")
+    assert(exitHit.normal.z > 0.99, "RaymarchedSdf interior exit flipped normal inaccurate")
+
+    ;; Bounding-box miss fast-path
+    assert(marchedSphere.hit(Ray(Vec3(5.0, 0.0, 0.0), Vec3(0.0, 0.0, -1.0)), 0.001, math.infinity) == null, "RaymarchedSdf miss failed")
+
+    ;; Sculpted CSG Cube demo scene via registry
+    def sdfScene: core.Scene = registry.buildScene("sdf-cube", imageWidth: 16, samplesPerPixel: 2, maxDepth: 4)
+    assert(sdfScene.camera.imageHeight == 9, "sdf-cube aspect ratio failed")
+    var sdfPixels: int = 0
+    sdfScene.camera.renderRow(4, sdfScene.world, sdfScene.defaultSeed, fn (x: int, y: int, cr: int, cg: int, cb: int) -> (
+        assert(cr >= 0 and cr <= 255 and cg >= 0 and cg <= 255 and cb >= 0 and cb <= 255, "sdf-cube RGB out of range")
+        sdfPixels += 1
+    ))
+    assert(sdfPixels == 16, "sdf-cube renderRow pixel count failed")
 
     "selftest-ok"
 )
