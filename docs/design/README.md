@@ -84,6 +84,13 @@ It handles single references, sub-phases, ranges (splitting them when only part 
 | **BIP033** | [Tensors as core types with dimensional safety](bip033_tensors.md) | 2026-11-25 | Decided (`BIP033-P1`–`P6` planned) | Core `float16`/`bfloat16` scalars and immutable `tensor of (DType, ...)` types with static/symbolic/dynamic/labeled shapes, E-graph algebraic dim solving, scalar + labeled-subset broadcasting, `matmul`/`einsum`, `unique` FBIP reuse, and a `java.base` strided runtime behind `TensorBackend` SPI (with a compiled-region hook for optional StableHLO/XLA PJRT backends) (`RM023`). |
 | **BIP035** | [`babblebabble` : a Babble interpreter written in Babble](bip035_babblebabble.md) | 2026-11-25 | Draft (`BIP035-Q1`–`Q11` open ; `BIP035-P1`–`P6` planned) | First-class pure-Babble interpreter in `src/main/babble/babblebabble/` (zero `java.*` core, hand-written lexer/Pratt parser/evaluator, `Mode.BABBLEBABBLE`) integrated with `DifferentialTestCase` and `BatestTestCase`, targeting byte-identical Argon, meta-circular "`babblebabblebabble`", and `BIP025` Wasm playground compilation (`RM022`). |
 | **BIP036** | [Compiler simplification, front-end data model and god-class splits](bip036_compiler-simplification-and-god-class-splits.md) | 2026-11-25 | Decided (`BIP036-P1`, `P6`–`P9` remaining; `P2`/`P4` retired by `BIP039`; `P3`/`P5` splits landed) | A lifetime-separated front-end data model (`FileFacts`, single-source `SlotInference`, fresh-per-walk `TypingPass`, `DiagnosticSink`) that retires `TypeChecker.resetPass()`, pure splits of the remaining oversized classes (`EffectBodyWalker`, `CallEffectAnalyzer`, `EffectAstExtractors`, `CallEmitter`, `WasmCoreEmitter`, `WasmCallEmitter`, `WasmObjectSystem`, `AxiomData`), a repository-wide 1,500-line ceiling, and clean seams ahead of `BIP015` Option 2 (`RM020`). |
+| **BIP043** | [Verified structured parallelism (`Send`, `Sync`, `threadsafe`, `parallel`, `std/parallel`)](bip043_parallelism.md) | 2026-11-28 | Draft (`BIP043-D1`–`D9` settled ; `BIP043-Q1`–`Q6` open ; `BIP043-P1`–`P6` planned) | Structured data & task parallelism with auto-derived erased `Send`/`Sync` marker interfaces, pure-by-default `threadsafe` effect inference, scoped `unique` borrowing & disjoint in-place parallel mutation, minimal `parallel (def ...) [then (...)]` fork-join, `std/parallel` combinators, thread-safe `Interpreter`, adaptive `PlatformRuntime` chunking, and portable sequential Wasm 3.0 lowering (`RM017`). |
+
+### Reference / Informational
+
+| BIP | Title | Date | Status | Summary |
+|---|---|---|---|---|
+| **BIP044** | [Babble hierarchies — data types, reference capabilities, and function effects](bip044_babble-hierarchies.md) | 2026-11-28 | Active (Reference) | Authoritative conceptual map and terminology guide unifying Babble's three static hierarchies (Data Types, Reference Capabilities, Function Effects), Layer 1 internals vs. Layer 2 syntax, variance, `ModalKindTable` mode crossing, cross-hierarchy bridges, conceptual seams, and how draft `BIP043` extends all three without adding a fourth. |
 
 ## Milestones done
 
@@ -193,7 +200,7 @@ Completed `BIP014-I5` Half B (`O12`) independently of a standard library via [BI
 
 ## Roadmap
 
-The milestones below sequence what remains: `BIP015-Q1`–`Q8`, `BIP018-P0`–`P4`, `BIP026-P2`–`P5`, `BIP032-P1`–`P4`, `BIP033-P1`–`P6`, `BIP035-Q1`–`Q11` / `BIP035-P1`–`P6`, and `BIP036-P1`, `P6`–`P9`. Work that no BIP specifies yet is in the [backlog](#backlog-awaiting-a-bip); a milestone that needs one of those items starts by writing its BIP.
+The milestones below sequence what remains: `BIP015-Q1`–`Q8`, `BIP018-P0`–`P4`, `BIP026-P2`–`P5`, `BIP032-P1`–`P4`, `BIP033-P1`–`P6`, `BIP035-Q1`–`Q11` / `BIP035-P1`–`P6`, `BIP036-P1`, `P6`–`P9`, and `BIP043-Q1`–`Q6` / `BIP043-P1`–`P6`. Work that no BIP specifies yet is in the [backlog](#backlog-awaiting-a-bip); a milestone that needs one of those items starts by writing its BIP.
 
 Every milestone ends with `mvn -B package -PO2` green in all execution modes (`interpret`, `-O0`, `-O1`, `-O2`, `wasm-js -O1`/`-O2`), `ParserGrammarTestCase`, `RuntimeBoundaryTestCase`, `ArchitectureBoundaryTestCase`, `AxiomsTestCase`, `-format -check`, the `-Pbatest` coverage gate, and a byte-identical render of `examples/raytracer/assets/scene.ppm`. The exit criteria below list only what each milestone adds.
 
@@ -210,7 +217,7 @@ The order follows constraints recorded in the BIPs:
 |---|---|---|---|---|
 | **RM014** | Front-end decision & string templates | `BIP015-Q1`–`Q8` (and the migration it picks); `BIP026-Q4`–`Q10` → `BIP026-P2`–`P5` | `RM012` (`RM020` recommended ahead of `BIP015` Option 2) | A parser migration, if chosen, lands before `BIP026-P2`. |
 | **RM016** | `Babble 21` & `Babble 25` editions | `BIP018-P1`–`P2` | `RM025` (`RM015` landed) | Unblocked by `RM015` (`BIP014` complete, `BIP018-D4`). |
-| **RM017** | Verified parallelism, `Babble 28` & Valhalla | `BIP018-P3`–`P4`, `BIP007` §10 | `RM016`; a parallelism BIP | A thread-safe `Interpreter` can land any time before. |
+| **RM017** | Verified parallelism, `Babble 28` & Valhalla | `BIP018-P3`–`P4`, `BIP043-Q1`–`Q6` → `BIP043-P1`–`P6` (`BIP007` §10) | `RM016`; `std/...` | `BIP043-P1` (thread-safe `Interpreter`) can land any time before. |
 | **RM020** | Compiler simplification & god-class splits | `BIP036-P1`, `P6`–`P9` (`P2`/`P4` retired by `BIP039`; `P3`/`P5` splits landed) | `RM013`, `RM018` | Can run now; shrinks the blast radius of `RM014` (`BIP015` Option 2) and `RM023`. |
 | **RM021** | Adversarial soundness (*The Great Escape*) | `BIP032-P1`–`P4` | `RM013`, `RM018` | Actively underway (accelerated by landed `BIP041` `-crib`); hardens soundness ahead of `RM017`. |
 | **RM022** | `babblebabble` pure-Babble interpreter | `BIP035-Q1`–`Q11` → `BIP035-P1`–`P6` | `RM018` | Draft; independent of `BIP015` and `BIP018`, can run alongside the others. |
@@ -242,16 +249,16 @@ Continue [BIP018](bip018_tracking-java-improvements.md) now that `BIP014` is com
 
 ### RM017 — Verified parallelism, `Babble 28` & Valhalla
 
-Make Babble safe on several threads in both backends, add effect-verified parallel combinators, and back them with structured concurrency and value classes on newer JDKs.
+Deliver [BIP043](bip043_parallelism.md) (making Babble safe on several threads in both backends with verified `Send`/`Sync`/`threadsafe` checks, `parallel (...)` fork-join, and `std/parallel` combinators), and back it with structured concurrency and value classes on newer JDKs.
 
-- **Spans:** `BIP007`, `BIP018`, `BIP002`, `BIP011`, `BIP016`, `BIP020`
-- **Depends on:** `RM016`, `std/...`, and a parallelism BIP for the `threadsafe` effect and the combinators. A thread-safe `Interpreter` is independent.
+- **Spans:** `BIP043`, `BIP007`, `BIP018`, `BIP002`, `BIP011`, `BIP016`, `BIP017`, `BIP020`, `BIP021`, `BIP022`, `BIP025`, `BIP042`
+- **Depends on:** `RM016` and `std/...` (`BIP005-D5`). `BIP043-P1` (thread-safe `Interpreter`) is independent.
 - **Deliverables:**
-  - A thread-safe `Interpreter` (no mutable current-scope field, audited runtime caches), so multi-threaded `examples/raytracer/raytracer_jvm.ba` renders run interpreted.
-  - `threadsafe` and parallel `std/` combinators (`parallelMap`, `parallelFilter`, `parallelReduce`, `parallelForEach`) over `frozen` or `unique` inputs (`BIP007` §10).
+  - `BIP043-P1`: A thread-safe `Interpreter` (no mutable current-scope field, audited runtime caches), so multi-threaded `examples/raytracer/raytracer_jvm.ba` renders run interpreted.
+  - `BIP043-P2`–`P6`: Settle `BIP043-Q1`–`Q6` and deliver auto-derived `Send`/`Sync` marker interfaces, pure-by-default `threadsafe` inference, scoped `unique` borrowing & disjoint in-place parallel mutation, `parallel (def ... ) [then (...)]`, portable `std/parallel` combinators (`map`, `filter`, `reduce`, `forEach`, `fill`, `mapInPlace`, `forEachMut`), and `examples/raytracer` migration.
   - `BIP018-P3`: `StructuredTaskScope`-backed combinators and `babble-28`.
   - `BIP018-P4`: `babble-28-preview` with `record`s as value classes (JEP 401).
-- **Exit criteria:** multi-threaded differential tests, race-freedom checks on the combinators, and Argon allocation and throughput benchmarks on each edition.
+- **Exit criteria:** multi-threaded differential tests, race-freedom checks on `parallel (...)` and the combinators, Wasm 3.0 sequential portability parity, and Argon allocation and throughput benchmarks on each edition.
 
 ### RM020 — Compiler simplification & god-class splits
 
@@ -316,9 +323,7 @@ Planned work no BIP specifies yet, gathered from decisions of implemented BIPs, 
 
 | Item | Source | Needed by |
 |---|---|---|
-| Standard library `std/...` and a module search path (`babble.path`) | `BIP005-D5`, `BIP006-I3`, `BIP042-Q11`, [README](../../README.md) | `RM016` (`std/foreign`), `RM017` |
-| `threadsafe` effect and parallel combinators | `BIP007` §10 | `RM017` |
-| Thread-safe `Interpreter` | [AGENTS.md](../../AGENTS.md) known issues | `RM017` (any time) |
+| Standard library `std/...` and a module search path (`babble.path`) | `BIP005-D5`, `BIP006-I3`, `BIP042-Q11`, `BIP043`, [README](../../README.md) | `RM016` (`std/foreign`), `RM017` (`std/parallel`) |
 | Destructuring definitions, including `for (k, v) in m` | `BIP005-D3`, `BIP013` §8 (can reuse `BIP038` patterns) | — |
 | Babble `sealed interface` and `enum` declarations | `BIP038-D3` (the `permittedSubtypes` hook of its exhaustiveness checker) | — |
 | `yield` generator functions | `BIP013`, [README](../../README.md) | — |
