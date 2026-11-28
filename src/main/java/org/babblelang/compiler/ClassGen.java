@@ -603,9 +603,6 @@ final class ClassGen {
                         emitAdaptKind(m, PrimitiveKind.NONE, sig.returnKind());
                         m.visitInsn(returnInsn(sig.returnKind()));
                     } else {
-                        String siteField =
-                                emitter.constantPool.syntheticCallSiteField(
-                                        shape.name() + "." + memberName, ifaceCount);
                         packBridgeArgsArray(m, sig, paramSlots);
                         if (sig.restIndex() >= 0 && sig.restIndex() < ifaceCount) {
                             m.visitInsn(DUP);
@@ -622,8 +619,8 @@ final class ClassGen {
                             m.visitInsn(AASTORE);
                         }
                         m.visitInsn(ACONST_NULL);
-                        m.visitFieldInsn(
-                                GETSTATIC, emitter.className, siteField, "L" + CALL_SITE + ";");
+                        emitter.constantPool.emitSyntheticCallSite(
+                                m, shape.name() + "." + memberName, ifaceCount);
                         m.visitMethodInsn(
                                 INVOKEVIRTUAL,
                                 name,
@@ -671,9 +668,7 @@ final class ClassGen {
             LoweringTargets.FunctionSignature sig,
             int[] paramSlots,
             int ifaceCount) {
-        String siteField =
-                emitter.constantPool.syntheticCallSiteField(
-                        shape.name() + "." + memberName, ifaceCount);
+        String calleeName = shape.name() + "." + memberName;
         m.visitVarInsn(ALOAD, 0);
         m.visitLdcInsn(memberName);
         m.visitInsn(ICONST_0);
@@ -700,7 +695,7 @@ final class ClassGen {
                     "(Ljava/lang/Object;Ljava/lang/String;)L" + CALLABLE + ";",
                     false);
         } else {
-            m.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + CALL_SITE + ";");
+            emitter.constantPool.emitSyntheticCallSite(m, calleeName, ifaceCount);
             m.visitMethodInsn(
                     INVOKESTATIC,
                     RUNTIME + "Calls",
@@ -711,7 +706,7 @@ final class ClassGen {
         m.visitVarInsn(ALOAD, 1);
         packBridgeArgsArray(m, sig, paramSlots);
         m.visitInsn(ACONST_NULL);
-        m.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + CALL_SITE + ";");
+        emitter.constantPool.emitSyntheticCallSite(m, calleeName, ifaceCount);
         m.visitMethodInsn(
                 INVOKEINTERFACE,
                 CALLABLE,
@@ -950,8 +945,6 @@ final class ClassGen {
                             INVOKEVIRTUAL, name, jvmMethod, methodDirectDescriptor(fn), false);
                     emitReturnToJava(m, PrimitiveKind.NONE, retType, descText, rtSlot);
                 } else {
-                    String siteField =
-                            emitter.constantPool.javaCallSiteField(mName, paramTypes.length);
                     emitPackJavaBridgeArgs(m, paramTypes, javaParamSlots);
                     if (jm.isVarArgs()
                             && fn.restIndex() == paramTypes.length - 1
@@ -982,8 +975,7 @@ final class ClassGen {
                         m.visitLabel(skipWrap);
                     }
                     m.visitInsn(ACONST_NULL);
-                    m.visitFieldInsn(
-                            GETSTATIC, emitter.className, siteField, "L" + CALL_SITE + ";");
+                    emitter.constantPool.emitJavaCallSite(m, mName, paramTypes.length);
                     m.visitMethodInsn(
                             INVOKEVIRTUAL,
                             name,
@@ -1021,7 +1013,6 @@ final class ClassGen {
             return;
         }
 
-        String siteField = emitter.constantPool.javaCallSiteField(mName, paramTypes.length);
         m.visitVarInsn(ALOAD, 0);
         m.visitLdcInsn(mName);
         m.visitInsn(ICONST_0);
@@ -1040,7 +1031,7 @@ final class ClassGen {
                     "(Ljava/lang/Object;I)L" + CALLABLE + ";",
                     false);
         } else {
-            m.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + CALL_SITE + ";");
+            emitter.constantPool.emitJavaCallSite(m, mName, paramTypes.length);
             m.visitMethodInsn(
                     INVOKESTATIC,
                     RUNTIME + "Calls",
@@ -1051,7 +1042,7 @@ final class ClassGen {
         m.visitVarInsn(ALOAD, rtSlot);
         emitPackJavaBridgeArgs(m, paramTypes, javaParamSlots);
         m.visitInsn(ACONST_NULL);
-        m.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + CALL_SITE + ";");
+        emitter.constantPool.emitJavaCallSite(m, mName, paramTypes.length);
         m.visitMethodInsn(
                 INVOKEINTERFACE,
                 CALLABLE,

@@ -298,7 +298,6 @@ final class BridgeHelpers {
             m.visitInsn(JvmPrimitives.returnInsn(targetSig.returnKind()));
             return;
         }
-        String siteField = emitter.constantPool.syntheticCallSiteField(memberName, argCount);
         m.visitVarInsn(ALOAD, 0);
         m.visitLdcInsn(memberName);
         m.visitInsn(ICONST_0);
@@ -317,8 +316,7 @@ final class BridgeHelpers {
                     "(Ljava/lang/Object;Ljava/lang/String;)L" + JvmPrimitives.CALLABLE + ";",
                     false);
         } else {
-            m.visitFieldInsn(
-                    GETSTATIC, emitter.className, siteField, "L" + JvmPrimitives.CALL_SITE + ";");
+            emitter.constantPool.emitSyntheticCallSite(m, memberName, argCount);
             m.visitMethodInsn(
                     INVOKESTATIC,
                     JvmPrimitives.RUNTIME + "Calls",
@@ -333,8 +331,7 @@ final class BridgeHelpers {
         m.visitVarInsn(ALOAD, 1);
         JvmPrimitives.packBridgeArgsArray(m, targetSig, paramSlots);
         m.visitInsn(ACONST_NULL);
-        m.visitFieldInsn(
-                GETSTATIC, emitter.className, siteField, "L" + JvmPrimitives.CALL_SITE + ";");
+        emitter.constantPool.emitSyntheticCallSite(m, memberName, argCount);
         m.visitMethodInsn(
                 INVOKEINTERFACE,
                 JvmPrimitives.CALLABLE,

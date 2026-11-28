@@ -245,11 +245,7 @@ final class HirEmitter {
         ctx.line(module.startLine());
         ctx.mv.visitVarInsn(ALOAD, ctx.nsLocal);
         getStringArray(module.topLevelDeclaredNames());
-        ctx.mv.visitFieldInsn(
-                GETSTATIC,
-                className,
-                constantPool.booleanArrayField(module.topLevelDeclaredFinals()),
-                "[Z");
+        constantPool.emitBooleanArray(ctx.mv, module.topLevelDeclaredFinals());
         ctx.mv.visitMethodInsn(
                 INVOKEVIRTUAL, NAMESPACE, "declare", "([Ljava/lang/String;[Z)V", false);
 
@@ -448,8 +444,7 @@ final class HirEmitter {
     }
 
     void getStringArray(String[] values) {
-        ctx.mv.visitFieldInsn(
-                GETSTATIC, className, constantPool.stringArrayField(values), "[Ljava/lang/String;");
+        constantPool.emitStringArray(ctx.mv, values);
     }
 
     // ---------------------------------------------------------------- entry-point & frame
@@ -777,7 +772,6 @@ final class HirEmitter {
         }
         ensureFunctionScheduled(fn);
         String method = fn.jvmMethodName();
-        String paramsField = constantPool.stringArrayField(fn.paramNames());
         boolean spread = fn.isSpread();
         boolean spec = fn.hasSpec();
         boolean hasOptMask = spec && fn.hasOptionalMask();
@@ -819,7 +813,7 @@ final class HirEmitter {
         }
         mv.visitVarInsn(ALOAD, ctx.nsLocal);
         frameVars.capturedCells(fn.capturedVars());
-        mv.visitFieldInsn(GETSTATIC, className, paramsField, "[Ljava/lang/String;");
+        constantPool.emitStringArray(mv, fn.paramNames());
         ConstantPool.pushInt(mv, fn.requiredParams());
         if (restIndex >= 0) {
             ConstantPool.pushInt(mv, hasOptMask ? fn.optionalParamBits() : 0);
@@ -974,8 +968,7 @@ final class HirEmitter {
         String[] methods = entries.scheduleClassConstructors(cls);
         String method = methods[0];
 
-        mv.visitFieldInsn(
-                GETSTATIC, className, constantPool.shapeField(shape), "L" + CLASS_SHAPE + ";");
+        constantPool.emitClassShape(mv, shape);
         mv.visitVarInsn(ALOAD, ctx.nsLocal);
         frameVars.capturedCells(cls.capturedVars());
         Type bodyType = Type.getMethodType(CLASS_BODY_DESCRIPTOR);
@@ -993,8 +986,7 @@ final class HirEmitter {
         ClassShape shape = cls.shape();
         String[] methods = entries.scheduleClassConstructors(cls);
 
-        mv.visitFieldInsn(
-                GETSTATIC, className, constantPool.shapeField(shape), "L" + CLASS_SHAPE + ";");
+        constantPool.emitClassShape(mv, shape);
         mv.visitVarInsn(ALOAD, ctx.nsLocal);
         frameVars.capturedCells(cls.capturedVars());
         ConstantPool.pushInt(mv, methods.length);
@@ -1034,11 +1026,7 @@ final class HirEmitter {
     private void emitInterfaceExpr(HirExpr.InterfaceExpr expr) {
         MethodVisitor mv = ctx.mv;
         HirInterface iface = module.iface(expr.interfaceId());
-        mv.visitFieldInsn(
-                GETSTATIC,
-                className,
-                constantPool.shapeField(iface.shape()),
-                "L" + CLASS_SHAPE + ";");
+        constantPool.emitClassShape(mv, iface.shape());
         emitTypeRefs(iface.extendedTypes());
         mv.visitMethodInsn(
                 INVOKESTATIC,

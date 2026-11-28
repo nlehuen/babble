@@ -161,6 +161,16 @@ public final class MatchSupport {
         return map;
     }
 
+    /** {@code CONSTANT_Dynamic} bootstrap materializing an enum switch map lazily. */
+    public static int[] constantEnumSwitchMap(
+            java.lang.invoke.MethodHandles.Lookup lookup,
+            String name,
+            Class<int[]> type,
+            Class<?> enumClass,
+            String packedNames) {
+        return buildEnumSwitchMap(enumClass, BabbleConstants.unpackStrings(packedNames));
+    }
+
     /**
      * Defensive fallback when an exhaustive-without-else match encounters an unknown runtime
      * variant.

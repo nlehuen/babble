@@ -352,15 +352,12 @@ final class InterfaceGen {
             m.visitInsn(returnInsn(sig.returnKind()));
             return;
         }
-        String siteField =
-                emitter.constantPool.syntheticCallSiteField(
-                        shape.name() + "." + memberName, ifaceCount);
         m.visitTypeInsn(CHECKCAST, COMPILED_FUNCTION);
         m.visitVarInsn(ALOAD, 0);
         m.visitVarInsn(ALOAD, 1);
         packBridgeArgsArray(m, sig, paramSlots);
         m.visitInsn(ACONST_NULL);
-        m.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + CALL_SITE + ";");
+        emitter.constantPool.emitSyntheticCallSite(m, shape.name() + "." + memberName, ifaceCount);
         m.visitMethodInsn(
                 INVOKEVIRTUAL,
                 COMPILED_FUNCTION,
