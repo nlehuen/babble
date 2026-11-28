@@ -637,7 +637,7 @@ public final class HirPurity {
                             && c.meta().effects().has(prop));
         }
         if (expr instanceof HirExpr.JavaMethodCall c) {
-            return c.meta().isPure() && c.meta().isDeterministic() && c.meta().effects().has(prop);
+            return c.meta().isPure() && c.meta().effects().has(prop);
         }
         return false;
     }

@@ -1935,6 +1935,16 @@ final class EffectChecker {
             if (probe.nothrow) {
                 effs.add(Effect.NOTHROW);
             }
+            if (probe.hermetic) {
+                EffectSet calleeFx = algebraic.calleeIntrinsicOrResolvedEffects(call);
+                if (calleeFx != null && calleeFx.isPure() && calleeFx.isDeterministic()) {
+                    for (Effect alg : EffectSet.ALGEBRAIC_ORDER) {
+                        if (calleeFx.has(alg)) {
+                            effs.add(alg);
+                        }
+                    }
+                }
+            }
             pass.analysis
                     .effects()
                     .setCallEffects(

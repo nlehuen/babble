@@ -5,6 +5,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.ir.egraph.ENode;
 import org.babblelang.ir.hir.HirExpr;
@@ -361,128 +362,73 @@ final class HirPipelineAnalysis {
                 });
     }
 
-    static boolean containsControlFlowExit(List<HirExpr> stmts) {
-        for (HirExpr s : stmts) {
-            if (containsControlFlowExitExpr(s)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean containsControlFlowExitExpr(HirExpr expr) {
+    static boolean anyExpr(HirExpr expr, Predicate<HirExpr> predicate) {
         if (expr == null) {
             return false;
         }
-        if (expr instanceof HirExpr.Break
-                || expr instanceof HirExpr.Continue
-                || expr instanceof HirExpr.Return
-                || expr instanceof HirExpr.Throw) {
+        if (predicate.test(expr)) {
             return true;
         }
         boolean[] found = {false};
         HirRewriter.rewriteChildren(
                 expr,
                 child -> {
-                    if (!found[0] && containsControlFlowExitExpr(child)) {
+                    if (!found[0] && anyExpr(child, predicate)) {
                         found[0] = true;
                     }
                     return child;
                 });
         return found[0];
+    }
+
+    private static boolean anyStmt(List<HirExpr> stmts, Predicate<HirExpr> predicate) {
+        for (HirExpr s : stmts) {
+            if (anyExpr(s, predicate)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static boolean containsControlFlowExit(List<HirExpr> stmts) {
+        return anyStmt(
+                stmts,
+                e ->
+                        e instanceof HirExpr.Break
+                                || e instanceof HirExpr.Continue
+                                || e instanceof HirExpr.Return
+                                || e instanceof HirExpr.Throw);
     }
 
     static boolean containsNarrowOrRightNarrowed(HirExpr expr) {
-        if (expr == null) {
-            return false;
-        }
-        if (expr instanceof HirExpr.Narrow
-                || (expr instanceof HirExpr.Logic l && l.rightNarrowed())) {
-            return true;
-        }
-        boolean[] found = {false};
-        HirRewriter.rewriteChildren(
+        return anyExpr(
                 expr,
-                child -> {
-                    if (!found[0] && containsNarrowOrRightNarrowed(child)) {
-                        found[0] = true;
-                    }
-                    return child;
-                });
-        return found[0];
+                e ->
+                        e instanceof HirExpr.Narrow
+                                || (e instanceof HirExpr.Logic l && l.rightNarrowed()));
     }
 
     static boolean containsNameAssign(List<HirExpr> stmts) {
-        for (HirExpr s : stmts) {
-            if (containsNameAssignExpr(s)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean containsNameAssignExpr(HirExpr expr) {
-        if (expr == null) {
-            return false;
-        }
-        if (expr instanceof HirExpr.NameAssign) {
-            return true;
-        }
-        boolean[] found = {false};
-        HirRewriter.rewriteChildren(
-                expr,
-                child -> {
-                    if (!found[0] && containsNameAssignExpr(child)) {
-                        found[0] = true;
-                    }
-                    return child;
-                });
-        return found[0];
+        return anyStmt(stmts, e -> e instanceof HirExpr.NameAssign);
     }
 
     static boolean containsMutableNameRead(HirExpr expr) {
-        if (expr == null) {
-            return false;
-        }
-        if (expr instanceof HirExpr.NameRead nr && !nr.finalBinding()) {
-            return true;
-        }
-        boolean[] found = {false};
-        HirRewriter.rewriteChildren(
-                expr,
-                child -> {
-                    if (!found[0] && containsMutableNameRead(child)) {
-                        found[0] = true;
-                    }
-                    return child;
-                });
-        return found[0];
+        return anyExpr(expr, e -> e instanceof HirExpr.NameRead nr && !nr.finalBinding());
     }
 
     static boolean containsDeclOrControlFlow(HirExpr expr) {
-        if (expr == null) {
-            return false;
-        }
-        if (expr instanceof HirExpr.Def
-                || expr instanceof HirExpr.Break
-                || expr instanceof HirExpr.Continue
-                || expr instanceof HirExpr.Return
-                || expr instanceof HirExpr.Throw
-                || expr instanceof HirExpr.For
-                || expr instanceof HirExpr.While
-                || (expr instanceof HirExpr.Block blk && !blk.declaredVars().isEmpty())) {
-            return true;
-        }
-        boolean[] found = {false};
-        HirRewriter.rewriteChildren(
+        return anyExpr(
                 expr,
-                child -> {
-                    if (!found[0] && containsDeclOrControlFlow(child)) {
-                        found[0] = true;
-                    }
-                    return child;
-                });
-        return found[0];
+                e ->
+                        e instanceof HirExpr.Def
+                                || e instanceof HirExpr.Break
+                                || e instanceof HirExpr.Continue
+                                || e instanceof HirExpr.Return
+                                || e instanceof HirExpr.Throw
+                                || e instanceof HirExpr.For
+                                || e instanceof HirExpr.While
+                                || (e instanceof HirExpr.Block blk
+                                        && !blk.declaredVars().isEmpty()));
     }
 
     static int hirNodeCount(HirExpr expr) {

@@ -464,6 +464,9 @@
                                         <exclude>org/babblelang/opt/hir/HirSccpPass*</exclude>
                                         <exclude>org/babblelang/opt/hir/HirAeGraphPass*</exclude>
                                         <exclude>org/babblelang/opt/hir/AeGraph*</exclude>
+                                        <exclude>org/babblelang/ir/egraph/PipelineRules*</exclude>
+                                        <exclude>org/babblelang/opt/hir/PipelineRewritePass*</exclude>
+                                        <exclude>org/babblelang/opt/hir/HirPipeline*</exclude>
                                     </excludes>
                                 </configuration>
                             </execution>
@@ -486,6 +489,9 @@
                                         <exclude>org/babblelang/opt/hir/HirSccpPass*</exclude>
                                         <exclude>org/babblelang/opt/hir/HirAeGraphPass*</exclude>
                                         <exclude>org/babblelang/opt/hir/AeGraph*</exclude>
+                                        <exclude>org/babblelang/ir/egraph/PipelineRules*</exclude>
+                                        <exclude>org/babblelang/opt/hir/PipelineRewritePass*</exclude>
+                                        <exclude>org/babblelang/opt/hir/HirPipeline*</exclude>
                                     </excludes>
                                 </configuration>
                             </execution>
@@ -523,6 +529,9 @@
                                         <include>org/babblelang/opt/hir/HirSccpPass*</include>
                                         <include>org/babblelang/opt/hir/HirAeGraphPass*</include>
                                         <include>org/babblelang/opt/hir/AeGraph*</include>
+                                        <include>org/babblelang/ir/egraph/PipelineRules*</include>
+                                        <include>org/babblelang/opt/hir/PipelineRewritePass*</include>
+                                        <include>org/babblelang/opt/hir/HirPipeline*</include>
                                     </includes>
                                 </configuration>
                             </execution>

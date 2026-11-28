@@ -243,7 +243,8 @@ final class HirPipelineLifter {
                 if (isFreshListDef(s)
                         && scan + 1 < stmts.size()
                         && stmts.get(scan + 1) instanceof HirExpr.For nextProd
-                        && iteratesVar(nextProd, tmpVar)) {
+                        && iteratesVar(nextProd, tmpVar)
+                        && isChainedTempList(stmts, scan + 2, ((HirExpr.Def) s).var(), wholeBody)) {
                     nextChainStart = scan;
                     break;
                 }
@@ -678,33 +679,32 @@ final class HirPipelineLifter {
             return lowerExpr(rawPred);
         }
 
+        private int markStringReflexive(int id, HirExpr expr) {
+            if (expr.meta().stringType()) {
+                graph.markReflexiveEq(id);
+            }
+            return id;
+        }
+
         private int lowerExpr(HirExpr raw) {
             HirExpr expr = HirRewriter.unwrapTransparent(raw);
-            if (!HirPurity.isPureNothrowTerminating(expr, module)) {
+            if (!HirPurity.isPureNothrowTerminating(expr, module)
+                    || expr.meta().wideningRank() >= 0
+                    || expr.meta().checkedType() != null) {
                 return lowerOpaqueWithBinderDeps(raw);
             }
-            if (expr instanceof HirExpr.Const c
-                    && c.meta().wideningRank() < 0
-                    && c.meta().checkedType() == null) {
+            if (expr instanceof HirExpr.Const c) {
                 return graph.add(ENode.constVal(c.value(), c.meta().kind()));
             }
-            if (expr instanceof HirExpr.VarRead v
-                    && v.meta().wideningRank() < 0
-                    && v.meta().checkedType() == null) {
+            if (expr instanceof HirExpr.VarRead v) {
                 String binder = varIdToBinder.get(v.var().id());
                 String key = binder != null ? binder : ("v#" + v.var().id());
                 if (binder == null) {
                     leaves.putIfAbsent(key, v);
                 }
-                int id = graph.add(ENode.opaque(key, v.meta().kind()));
-                if (v.meta().stringType()) {
-                    graph.markReflexiveEq(id);
-                }
-                return id;
+                return markStringReflexive(graph.add(ENode.opaque(key, v.meta().kind())), v);
             }
             if (expr instanceof HirExpr.Logic l
-                    && l.meta().wideningRank() < 0
-                    && l.meta().checkedType() == null
                     && !l.rightNarrowed()
                     && l.left().meta().kind() == PrimitiveKind.BOOL
                     && l.right().meta().kind() == PrimitiveKind.BOOL) {
@@ -713,32 +713,24 @@ final class HirPipelineLifter {
                         ENode.binary(
                                 op, PrimitiveKind.BOOL, lowerExpr(l.left()), lowerExpr(l.right())));
             }
-            if (expr instanceof HirExpr.Unary u
-                    && u.meta().wideningRank() < 0
-                    && u.meta().checkedType() == null) {
+            if (expr instanceof HirExpr.Unary u && u.operand().meta().wideningRank() < 0) {
                 if (u.op() == HirExpr.UnaryOp.NOT
-                        && u.operand().meta().kind() == PrimitiveKind.BOOL
-                        && u.operand().meta().wideningRank() < 0) {
+                        && u.operand().meta().kind() == PrimitiveKind.BOOL) {
                     return graph.add(
                             ENode.unary(ENode.Op.NOT, PrimitiveKind.BOOL, lowerExpr(u.operand())));
                 }
                 if (u.op() == HirExpr.UnaryOp.NEGATE
                         && HirPurity.isIntegralKind(u.meta().kind())
-                        && u.operand().meta().kind() == u.meta().kind()
-                        && u.operand().meta().wideningRank() < 0) {
+                        && u.operand().meta().kind() == u.meta().kind()) {
                     return graph.add(
                             ENode.unary(ENode.Op.NEG, u.meta().kind(), lowerExpr(u.operand())));
                 }
             }
-            if (expr instanceof HirExpr.Binary b
-                    && b.meta().wideningRank() < 0
-                    && b.meta().checkedType() == null) {
+            if (expr instanceof HirExpr.Binary b) {
                 PrimitiveKind rk = b.meta().kind();
-                PrimitiveKind lk = b.left().meta().kind();
-                PrimitiveKind rrk = b.right().meta().kind();
                 if (HirPurity.isIntegralKind(rk)
-                        && lk == rk
-                        && rrk == rk
+                        && b.left().meta().kind() == rk
+                        && b.right().meta().kind() == rk
                         && b.left().meta().wideningRank() < 0
                         && b.right().meta().wideningRank() < 0) {
                     ENode.Op op =
@@ -770,21 +762,7 @@ final class HirPipelineLifter {
                         c.externalTarget() != null
                                 ? "babble-ext#" + c.externalTarget().canonicalKey()
                                 : "babble#" + c.targetFunctionId();
-                callTemplates.putIfAbsent(sym, c);
-                graph.registerCallProps(
-                        sym,
-                        new EGraph.CallProps(
-                                HirPurity.isIdempotentCall(c, module),
-                                false,
-                                false,
-                                false,
-                                HirPurity.isMonotoneCall(c, module),
-                                HirPurity.isInjectiveCall(c, module)));
-                int id = graph.add(ENode.call(sym, c.meta().kind(), lowerExpr(c.args().get(0))));
-                if (c.meta().stringType()) {
-                    graph.markReflexiveEq(id);
-                }
-                return id;
+                return lowerUnaryAlgebraicCall(sym, c, c.args().get(0));
             }
             if (expr instanceof HirExpr.JavaMethodCall c
                     && HirEGraphCodec.isAlgebraicUnaryJavaEligible(c, module)) {
@@ -796,27 +774,25 @@ final class HirPipelineLifter {
                                 + m.getName()
                                 + ":"
                                 + m.getParameterCount();
-                callTemplates.putIfAbsent(sym, c);
-                graph.registerCallProps(
-                        sym,
-                        new EGraph.CallProps(
-                                HirPurity.isIdempotentCall(c, module),
-                                false,
-                                false,
-                                false,
-                                HirPurity.isMonotoneCall(c, module),
-                                HirPurity.isInjectiveCall(c, module)));
-                int child =
-                        c.target().isStatic()
-                                ? lowerExpr(c.args().get(0))
-                                : lowerExpr(c.receiver());
-                int id = graph.add(ENode.call(sym, c.meta().kind(), child));
-                if (c.meta().stringType()) {
-                    graph.markReflexiveEq(id);
-                }
-                return id;
+                HirExpr arg = c.target().isStatic() ? c.args().get(0) : c.receiver();
+                return lowerUnaryAlgebraicCall(sym, c, arg);
             }
             return lowerOpaqueWithBinderDeps(raw);
+        }
+
+        private int lowerUnaryAlgebraicCall(String sym, HirExpr call, HirExpr arg) {
+            callTemplates.putIfAbsent(sym, call);
+            graph.registerCallProps(
+                    sym,
+                    new EGraph.CallProps(
+                            HirPurity.isIdempotentCall(call, module),
+                            false,
+                            false,
+                            false,
+                            HirPurity.isMonotoneCall(call, module),
+                            HirPurity.isInjectiveCall(call, module)));
+            return markStringReflexive(
+                    graph.add(ENode.call(sym, call.meta().kind(), lowerExpr(arg))), call);
         }
 
         private int lowerOpaqueWithBinderDeps(HirExpr raw) {
@@ -825,11 +801,7 @@ final class HirPipelineLifter {
             if (deps.isEmpty()) {
                 String key = "p#" + (nextOpaqueIdx++);
                 leaves.put(key, raw);
-                int id = graph.add(ENode.opaque(key, raw.meta().kind()));
-                if (raw.meta().stringType()) {
-                    graph.markReflexiveEq(id);
-                }
-                return id;
+                return markStringReflexive(graph.add(ENode.opaque(key, raw.meta().kind())), raw);
             }
             String sym = "$opaque#" + (nextOpaqueIdx++);
             opaqueCalls.put(sym, raw);
@@ -903,6 +875,20 @@ final class HirPipelineLifter {
         return stmt instanceof HirExpr.Def d
                 && d.var() != null
                 && freshLocalLists.containsKey(d.var().id());
+    }
+
+    private boolean isChainedTempList(
+            List<HirExpr> stmts, int fromIdx, HirVar nextTmp, List<HirExpr> wholeBody) {
+        if (countVarRefsInBody(wholeBody, nextTmp.id()) != 2) {
+            return false;
+        }
+        int limit = Math.min(stmts.size(), fromIdx + MAX_INTERVENING_DEFS + 2);
+        for (int i = fromIdx; i < limit; i++) {
+            if (stmts.get(i) instanceof HirExpr.For f && iteratesVar(f, nextTmp)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean isPureMapDef(HirExpr.Def d, Set<Integer> modifiedVars) {

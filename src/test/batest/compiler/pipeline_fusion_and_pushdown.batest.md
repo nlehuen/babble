@@ -527,3 +527,254 @@ fn fusionMutVar (initBias:int) -> int {pure unique}
       (set s += var(y))))
   (+:int var(s) var(bias))
 ```
+
+## Fused unary, logic and reversed map-filter push-down (R1 + R4)
+
+```babble
+def revPushAndLogic = fn (n: int): double -> (
+    def shifted = list of int ()
+    for x in 0..n then ( shifted.add(x - 1) )
+    var total = 0.0
+    for y in shifted then (
+        def s = encode(y)
+        if encode(4) >= s and (not (y < 0) or y == -1) then ( total += -s )
+    )
+    total
+)
+assert(revPushAndLogic(10) == -120.0)
+```
+
+```hir
+;; hir -O0 fn=revPushAndLogic
+fn revPushAndLogic (n:int) -> double {pure unique}
+  (def shifted (core-new list))
+  (for-range x .. 0:int var(n)
+    (block
+      (jcall List.add var(shifted) (-:int var(x) 1:int))))
+  (def total 0.0:double)
+  (for y in var(shifted)
+    (block
+      (def s (call-fn encode var(y)))
+      (if (and (>=:bool (call-fn encode 4:int) var(s)) (block (or (not (block (<:bool var(y) 0:int))) (==:bool var(y) -1:int)))) (box (block (set total += (neg var(s))))))))
+  var(total)
+```
+
+```hir
+;; hir -O1 fn=revPushAndLogic
+fn revPushAndLogic (n:int) -> double {pure unique}
+  (def shifted (core-new list))
+  (for-range x .. 0:int var(n)
+    (block
+      (jcall List.add var(shifted) (-:int var(x) 1:int))))
+  (def total 0.0:double)
+  (for y in var(shifted)
+    (block
+      (def s
+        (block
+          (def r (+:double (*:double (convert[double] var(y)) 10.0:double) 5.0:double))
+          var(r)))
+      (if (and (>=:bool 45.0:double var(s)) (or (>=:bool var(y) 0:int) (==:bool var(y) -1:int))) (box (set total += (neg var(s)))))))
+  var(total)
+```
+
+```hir
+;; hir -O2 fn=revPushAndLogic
+fn revPushAndLogic (n:int) -> double {pure unique}
+  (def total 0.0:double)
+  (for-range x .. 0:int var(n)
+    (block
+      (def y#0 (-:int var(x) 1:int))
+      (if (and (>=:bool 4:int var(y#0)) (or (>=:bool var(y#0) 0:int) (==:bool var(y#0) -1:int)))
+        (block
+          (def s
+            (block
+              (def r (+:double (*:double (convert[double] var(y#0)) 10.0:double) 5.0:double))
+              var(r)))
+          (box (set total += (neg var(s))))))))
+  var(total)
+```
+
+## Sequential associative fold over filtered mapped stream
+
+```babble
+def sumMax = fn axiom pure nothrow associative (a: int, b: int): int -> (
+    def r = if a > b then ( a ) else ( b )
+    return r
+    r
+)
+def seqFold = fn (n: int): int -> (
+    def tmp = list of int ()
+    for x in 0..n then ( tmp.add(x * 2) )
+    var best = -1
+    for y in tmp then ( if y <= 10 then ( best = sumMax(best, y) ) )
+    best
+)
+assert(seqFold(20) == 10 and seqFold(3) == 6)
+```
+
+```hir
+;; hir -O0 fn=seqFold
+fn seqFold (n:int) -> int {pure unique}
+  (def tmp (core-new list))
+  (for-range x .. 0:int var(n)
+    (block
+      (jcall List.add var(tmp) (*:int var(x) 2:int))))
+  (def best -1:int)
+  (for y in var(tmp)
+    (block
+      (if (<=:bool var(y) 10:int) (box (block (set best (call-fn sumMax var(best) var(y))))))))
+  var(best)
+```
+
+```hir
+;; hir -O1 fn=seqFold
+fn seqFold (n:int) -> int {pure unique}
+  (def tmp (core-new list))
+  (for-range x .. 0:int var(n)
+    (block
+      (jcall List.add var(tmp) (*:int var(x) 2:int))))
+  (def best -1:int)
+  (for y in var(tmp)
+    (block
+      (if (<=:bool var(y) 10:int) (box (set best
+            (block
+              (def r (if (>:bool var(best) var(y)) var(best) var(y)))
+              var(r)))))))
+  var(best)
+```
+
+```hir
+;; hir -O2 fn=seqFold
+fn seqFold (n:int) -> int {pure unique}
+  (def best -1:int)
+  (for-range x .. 0:int var(n)
+    (block
+      (def y#0 (*:int var(x) 2:int))
+      (if (<=:bool var(y#0) 10:int) (box (set best
+            (block
+              (def r (if (>:bool var(best) var(y#0)) var(best) var(y#0)))
+              var(r)))))))
+  var(best)
+```
+
+## List-source fusion into fresh output list (R1)
+
+```babble
+def listFuse = fn (xs: list of int): int -> (
+    def tmp = list of int ()
+    for x in xs then ( tmp.add(x + 1) )
+    def out = list of int ()
+    for y in tmp then ( out.add(y * 2) )
+    out.size()
+)
+assert(listFuse((list of int).of(1, 2, 3)) == 3)
+```
+
+```hir
+;; hir -O0 fn=listFuse
+fn listFuse (xs:obj) -> int {pure unique}
+  (def tmp (core-new list))
+  (for x in var(xs)
+    (block
+      (jcall List.add var(tmp) (+:int var(x) 1:int))))
+  (def out (core-new list))
+  (for y in var(tmp)
+    (block
+      (jcall List.add var(out) (*:int var(y) 2:int))))
+  (jcall List.size var(out))
+```
+
+```hir
+;; hir -O1 fn=listFuse
+fn listFuse (xs:obj) -> int {pure unique}
+  (def tmp (core-new list))
+  (for x in var(xs)
+    (block
+      (jcall List.add var(tmp) (+:int var(x) 1:int))))
+  (def out (core-new list))
+  (for y in var(tmp)
+    (block
+      (jcall List.add var(out) (*:int var(y) 2:int))))
+  (jcall List.size var(out))
+```
+
+```hir
+;; hir -O2 fn=listFuse
+fn listFuse (xs:obj) -> int {pure unique}
+  (def out (core-new list))
+  (for x in var(xs)
+    (block
+      (def y#0 (+:int var(x) 1:int))
+      (jcall List.add var(out) (*:int var(y#0) 2:int))))
+  (jcall List.size var(out))
+```
+
+## List-source alias conflict and stepped range bailout
+
+```babble
+def listAliasBail = fn (mut xs: list of int): int -> (
+    def tmp = list of int ()
+    for x in xs then ( tmp.add(x) )
+    for y in tmp then ( xs.add(y) )
+    var s = 0
+    for k in (0..6).step(2) then ( if k <= 4 then ( s += k ) )
+    xs.size() + s
+)
+def a = list of int ()
+a.add(1)
+a.add(2)
+assert(listAliasBail(a) == 10)
+```
+
+```hir
+;; hir -O0 fn=listAliasBail
+fn listAliasBail (xs:obj) -> int {unique}
+  (def tmp (core-new list))
+  (for x in var(xs)
+    (block
+      (jcall List.add var(tmp) var(x))))
+  (for y in var(tmp)
+    (block
+      (jcall List.add var(xs) var(y))))
+  (def s 0:int)
+  (for-range k .. 0:int 6:int step 2:int
+    (block
+      (if (<=:bool var(k) 4:int) (box (block (set s += var(k)))))))
+  (+:int (jcall List.size var(xs)) var(s))
+```
+
+```hir
+;; hir -O1 fn=listAliasBail
+fn listAliasBail (xs:obj) -> int {unique}
+  (def tmp (core-new list))
+  (for x in var(xs)
+    (block
+      (jcall List.add var(tmp) var(x))))
+  (for y in var(tmp)
+    (block
+      (jcall List.add var(xs) var(y))))
+  (def s 0:int)
+  (for-range k .. 0:int 6:int step 2:int
+    (block
+      (if (<=:bool var(k) 4:int) (box (set s += var(k))))))
+  (+:int (jcall List.size var(xs)) var(s))
+```
+
+```hir
+;; hir -O2 fn=listAliasBail
+fn listAliasBail (xs:obj) -> int {unique}
+  (def tmp (core-new list))
+  (for x in var(xs)
+    (block
+      (jcall List.add var(tmp) var(x))))
+  (for y in var(tmp)
+    (block
+      (jcall List.add var(xs) var(y))))
+  (def s 0:int)
+  (for-range k .. 0:int 6:int step 2:int
+    (block
+      (if (<=:bool var(k) 4:int) (box (set s += var(k))))))
+  (+:int (jcall List.size var(xs)) var(s))
+```
+
+
