@@ -1,10 +1,10 @@
 ;; Baby Triceratops — 100% pure-Babble 360°-solid Toon SDF scene (`WASM_BARE`-clean).
 ;;
 ;; Sculpted entirely from true 3D Signed Distance Fields (`SdfEllipsoid`, `SdfRoundCone`,
-;; `SdfSphere`, `SdfTorus`, custom curved scalloped frill `Sdf`, and smooth/exact CSG) with
-;; view-independent 3D cartoon inking:
-;;   - Near-miss grazing silhouette outlines (`RaymarchedSdf.outlineMat` / `outlineWidth`)
-;;   - Procedural 3D CSG seam & crease inking (`MaterialField`)
+;; `SdfSphere`, `SdfTorus`, custom 5-petal fluted scalloped frill `Sdf`, and smooth/exact CSG)
+;; with view-independent 3D cartoon inking:
+;;   - Near-miss grazing & self-overlap silhouette outlines (`RaymarchedSdf.outlineMat` / `outlineWidth`)
+;;   - Procedural 3D CSG seam, fold, & tangent-plane facial inking (`MaterialField`)
 ;;   - Directional two-band `Toon` cel shading over a crisp white studio backdrop
 
 def math = import("../core/math.ba")
@@ -38,35 +38,35 @@ def Scene = import("../core/scene.ba").Scene
 
 def srgb = Vec3.srgb
 
-def colOutline: Vec3 = srgb(58, 18, 80)
-def colBody: Vec3 = srgb(162, 66, 134)
-def colBodyShadow: Vec3 = srgb(126, 44, 112)
-def colFrill: Vec3 = srgb(206, 134, 224)
-def colFrillShadow: Vec3 = srgb(176, 104, 198)
-def colFrillRim: Vec3 = srgb(234, 184, 248)
-def colBelly: Vec3 = srgb(228, 174, 245)
-def colBellyShadow: Vec3 = srgb(186, 128, 206)
-def colHorn: Vec3 = srgb(255, 232, 174)
-def colHornShadow: Vec3 = srgb(236, 188, 114)
-def colCream: Vec3 = srgb(246, 222, 212)
-def colCreamShadow: Vec3 = srgb(220, 190, 182)
-def colCheek: Vec3 = srgb(234, 103, 112)
-def colPacifier: Vec3 = srgb(180, 248, 58)
-def colPacifierShadow: Vec3 = srgb(142, 214, 42)
-def colPacifierDark: Vec3 = srgb(104, 182, 24)
+def colOutline: Vec3 = srgb(56, 16, 78)
+def colBody: Vec3 = srgb(164, 68, 136)
+def colBodyShadow: Vec3 = srgb(122, 42, 108)
+def colFrill: Vec3 = srgb(212, 142, 228)
+def colFrillShadow: Vec3 = srgb(184, 112, 204)
+def colFrillRim: Vec3 = srgb(240, 194, 252)
+def colBelly: Vec3 = srgb(230, 178, 246)
+def colBellyShadow: Vec3 = srgb(188, 130, 208)
+def colHorn: Vec3 = srgb(255, 234, 178)
+def colHornShadow: Vec3 = srgb(234, 184, 108)
+def colCream: Vec3 = srgb(246, 224, 214)
+def colCreamShadow: Vec3 = srgb(218, 188, 180)
+def colCheek: Vec3 = srgb(236, 102, 112)
+def colPacifier: Vec3 = srgb(180, 248, 56)
+def colPacifierShadow: Vec3 = srgb(138, 210, 40)
+def colPacifierDark: Vec3 = srgb(98, 174, 22)
 def colWhite: Vec3 = Vec3.one
-def colEyeWhite: Vec3 = srgb(242, 238, 246)
-def colEyeDark: Vec3 = srgb(48, 20, 82)
-def colSoftCrease: Vec3 = srgb(112, 42, 126)
+def colEyeWhite: Vec3 = srgb(244, 240, 248)
+def colEyeDark: Vec3 = srgb(46, 18, 82)
+def colSoftCrease: Vec3 = srgb(124, 52, 144)
 
 ;; ---------------------------------------------------------------- Shared Head-Frame Transform Helpers
 
 ;; Head local frame: +Z forward (snout), +Y up, +X dino's left side.
 ;; Body stands in 3/4 view while the baby dino turns and playfully tilts its head toward the viewer.
-def headCenter: Vec3 = Vec3(0.352, 0.072, 0.155)
-def headYawDeg: double = 31.0
-def headPitchDeg: double = 2.5
-def headRollDeg: double = 8.5
+def headCenter: Vec3 = Vec3(0.350, 0.068, 0.165)
+def headYawDeg: double = 29.0
+def headPitchDeg: double = 2.0
+def headRollDeg: double = 7.5
 
 def headYawRad: double = math.degreesToRadians(headYawDeg)
 def headPitchRad: double = math.degreesToRadians(headPitchDeg)
@@ -96,11 +96,11 @@ def placeInHead = fn (inner: frozen Sdf): SdfTranslate -> (
     )
 )
 
-;; ---------------------------------------------------------------- True 3D Curved Scalloped Frill SDF
+;; ---------------------------------------------------------------- True 3D Fluted 5-Petal Scalloped Frill SDF
 
-;; Broad curved 3D scalloped shield in frill-local coordinates (x, y in fan plane, z normal).
-;; Uses angle-addition recurrence (zero trig calls per step) for a wide 5-lobe scalloped crest
-;; with gentle parabolic cup curvature.
+;; Broad curved 3D 5-petal cloud-scalloped shield in frill-local coordinates (x, y in fan plane, z normal).
+;; Uses |sin(3*theta)| via zero-trig angle-addition recurrence so the 5 visible petals peak at
+;; 210, 150, 90, 30, -30 deg with crisp pinched valleys & subtle 3D fluted grooves at 180, 120, 60, 0 deg.
 def FrillShieldSdf = record (
     rx: double,
     ry: double,
@@ -112,43 +112,45 @@ def FrillShieldSdf = record (
     private def bbox: AABB
 
     init (
-        def maxX: double = this.rx + this.lobeAmp + this.edgeRadius + 0.08
-        def maxY: double = this.ry + this.lobeAmp + this.edgeRadius + 0.08
+        def maxX: double = this.rx + this.lobeAmp + this.edgeRadius + 0.09
+        def maxY: double = this.ry + this.lobeAmp + this.edgeRadius + 0.09
         def maxR: double = math.max(maxX, maxY)
-        def maxZ: double = this.halfThick + this.edgeRadius + this.cupCurvature * maxR * maxR + 0.06
+        def maxZ: double = this.halfThick + this.edgeRadius + this.cupCurvature * maxR * maxR + 0.07
         this.bbox = AABB(-maxX, maxX, -maxY, maxY, -maxZ, maxZ)
+    )
+
+    ;; Returns the puffy cloud-petal factor in [0, ~0.80] for unit direction (c1, s1).
+    def evalPetal = fn (c1: double, s1: double): double -> (
+        def c2: double = c1 * c1 - s1 * s1
+        def s2: double = 2.0 * s1 * c1
+        def s3: double = s2 * c1 + c2 * s1
+        math.sqrt(math.abs(s3) + 0.05) - 0.2236
     )
 
     ;; Evaluates the scalloped outer radius along unit direction (c1, s1) in fan coordinates.
     def evalScallopRadius = fn (c1: double, s1: double): double -> (
         def c2: double = c1 * c1 - s1 * s1
-        def s2: double = 2.0 * s1 * c1
-        def c3: double = c2 * c1 - s2 * s1
-        def s3: double = s2 * c1 + c2 * s1
-        def c4: double = c3 * c1 - s3 * s1
-        def s4: double = s3 * c1 + c3 * s1
-        def c5: double = c4 * c1 - s4 * s1
-        def s5: double = s4 * c1 + c4 * s1
         def base: double = 0.5 * (this.rx + this.ry) + 0.5 * (this.rx - this.ry) * c2
-        def shoulders: double = 0.028 * s2 * s2
-        def crown: double = 0.014 * s1
-        def scallops: double = this.lobeAmp * s5
-        math.max(0.14, base + shoulders + crown + scallops)
+        def crown: double = 0.012 * s1
+        def petal: double = this.evalPetal(c1, s1)
+        math.max(0.14, base + crown + this.lobeAmp * petal)
     )
 
     def distance = fn (p: Vec3): double -> (
         def rad: double = math.sqrt(p.x * p.x + p.y * p.y)
-        def rEdge: double = if rad < 0.000001 then (
-            0.5 * (this.rx + this.ry)
-        ) else (
-            this.evalScallopRadius(p.x / rad, p.y / rad)
-        )
-        def zCurved: double = p.z - this.cupCurvature * rad * rad
+        def c1: double = if rad < 0.000001 then (1.0) else (p.x / rad)
+        def s1: double = if rad < 0.000001 then (0.0) else (p.y / rad)
+        def petal: double = this.evalPetal(c1, s1)
+        def rEdge: double = this.evalScallopRadius(c1, s1)
+        ;; Gentle 3D fluting dips slightly into each petal valley so cel shading models the folds
+        def fluteMask: double = math.smoothstep(0.18, 0.38, rad)
+        def fluteDip: double = 0.010 * (0.80 - petal) * fluteMask
+        def zCurved: double = p.z - this.cupCurvature * rad * rad + fluteDip
         def dRad: double = rad - rEdge
         def dZ: double = math.abs(zCurved) - this.halfThick
         def ox: double = math.max(dRad, 0.0)
         def oy: double = math.max(dZ, 0.0)
-        math.sqrt(ox * ox + oy * oy) + math.min(math.max(dRad, dZ), 0.0) - this.edgeRadius
+        (math.sqrt(ox * ox + oy * oy) + math.min(math.max(dRad, dZ), 0.0) - this.edgeRadius) * 0.90
     )
 
     def boundingBox = fn (): AABB -> (this.bbox)
@@ -159,8 +161,8 @@ def FrillShieldSdf = record (
 ;; ---------------------------------------------------------------- 3D MaterialFields (Zero-Allocation Per-Hit)
 
 ;; Shades the body + tail + 4 legs + 12 toes:
-;; purple cel body, pale-lavender chest/belly/under-tail with crisp 3D seam ink, leg fold seams,
-;; and 12 cream toes with dark ink borders.
+;; plump purple cel body, pale-lavender rounded chest/belly crescent/under-tail with crisp 3D ink seams,
+;; leg tuck/thigh creases, and 12 cute cream pebble toes with crisp ink borders.
 def BodyMaterialField = record (
     torsoAndTail: frozen Sdf,
     legs: frozen Sdf,
@@ -174,30 +176,30 @@ def BodyMaterialField = record (
     def sample = fn (p: Vec3, normal: Vec3): Material -> (
         def dToes: double = this.toes.distance(p)
         def dLegs: double = this.legs.distance(p)
-        if dToes <= 0.004 then (
-            if math.abs(dToes - dLegs) < 0.010 then (
+        if dToes <= 0.003 then (
+            if math.abs(dToes - dLegs) < 0.008 then (
                 return this.matInk
             )
             return this.matCream
         )
-        if dToes < 0.014 and dLegs <= 0.008 then (
+        if dToes < 0.011 and dLegs <= 0.007 then (
             return this.matInk
         )
 
         def dBelly: double = this.bellyRegion.distance(p)
         def dTorso: double = this.torsoAndTail.distance(p)
 
-        ;; Crisp 3D ink crease where the legs tuck into the torso flank
-        if dLegs < 0.013 and dTorso < 0.013 and p.y < -0.16 and p.y > -0.52 then (
-            if math.abs(dLegs - dTorso) < 0.009 then (
+        ;; Crisp 3D ink crease along the inner/outer sides of the legs (open at top shoulder/hip)
+        if dLegs < 0.013 and dTorso < 0.013 and p.y < -0.28 and p.y > -0.54 then (
+            if math.abs(dLegs - dTorso) < 0.008 then (
                 return this.matInk
             )
         )
 
-        ;; Pale-lavender chest, lower belly & tail underside with clean hand-drawn seam line
-        if dLegs > 0.014 then (
-            def seamW: double = if p.x < -0.42 then (0.007) else (0.011)
-            if math.abs(dBelly) < seamW and p.x < 0.05 then (
+        ;; Pale-lavender rounded chest, curved lower belly crescent, & sleek under-tail with crisp ink seam
+        if dLegs > 0.015 then (
+            def seamW: double = if p.x < -0.44 then (0.0055) else (0.009)
+            if math.abs(dBelly) < seamW and p.x < 0.36 then (
                 return this.matInk
             )
             if dBelly < 0.0 then (
@@ -209,7 +211,7 @@ def BodyMaterialField = record (
     )
 )
 
-;; Shades the curved 3D frill + 9 cream osteoderm scallops + pastel inner rim + 5 radial creases.
+;; Shades the curved 3D 5-petal frill + 9 cream osteoderm studs + pastel rim highlight + 4 valley fold creases.
 def FrillMaterialField = record (
     shield: FrillShieldSdf,
     osteoderms: frozen Sdf,
@@ -238,10 +240,10 @@ def FrillMaterialField = record (
 
     def sample = fn (p: Vec3, normal: Vec3): Material -> (
         def dOst: double = this.osteoderms.distance(p)
-        if dOst <= 0.005 then (
+        if dOst <= 0.004 then (
             return this.matCream
         )
-        if dOst < 0.016 then (
+        if dOst < 0.013 then (
             return this.matInk
         )
 
@@ -256,22 +258,22 @@ def FrillMaterialField = record (
         def rEdge: double = this.shield.evalScallopRadius(c1, s1)
         def distFromRim: double = rEdge - rad
 
-        ;; 4 radial fold creases aligned with the scallop valleys (198, 126, 54, -18 deg)
-        if fl.z > 0.0 and rad > 0.25 and rad < rEdge - 0.040 then (
-            def d1: double = math.abs(fl.x * 0.309 - fl.y * 0.951)
-            def d2: double = math.abs(fl.x * 0.809 + fl.y * 0.588)
-            def d3: double = math.abs(fl.x * 0.809 - fl.y * 0.588)
-            def d4: double = math.abs(fl.x * 0.309 + fl.y * 0.951)
-            if (c1 < -0.5 and d1 < 0.0075) or
-                (c1 < -0.1 and s1 > 0.3 and d2 < 0.0075) or
-                (c1 > 0.1 and s1 > 0.3 and d3 < 0.0075) or
-                (c1 > 0.5 and d4 < 0.0075) then (
+        ;; 4 radial fold creases tucked cleanly into the 4 pinched petal valleys (180, 120, 60, 0 deg)
+        if fl.z > 0.0 and rad > 0.28 and rad < rEdge - 0.016 then (
+            def d180: double = math.abs(fl.y)
+            def d120: double = math.abs(fl.x * 0.8660254 + fl.y * 0.5)
+            def d60: double = math.abs(fl.x * 0.8660254 - fl.y * 0.5)
+            def creaseW: double = 0.0055 * math.smoothstep(0.27, 0.36, rad)
+            if (c1 < -0.5 and d180 < creaseW) or
+                (c1 < -0.05 and s1 > 0.35 and d120 < creaseW) or
+                (c1 > 0.05 and s1 > 0.35 and d60 < creaseW) or
+                (c1 > 0.5 and d180 < creaseW) then (
                 return this.matSoftCrease
             )
         )
 
-        ;; Pastel inner highlight band near the rim on the front face
-        if fl.z > -0.01 and distFromRim < 0.028 and distFromRim > -0.020 then (
+        ;; Soft pastel inner highlight band tracing the scalloped petals on the front face
+        if fl.z > -0.01 and distFromRim < 0.025 and distFromRim > -0.016 then (
             return this.matFrillRim
         )
 
@@ -279,8 +281,8 @@ def FrillMaterialField = record (
     )
 )
 
-;; Shades the 3D head in head-local coordinates: eyes (sclera, dark iris, catchlight, rim),
-;; arched eyebrows, rosy cheeks, nostrils, and happy smile line—all flush on the 3D surface!
+;; Shades the 3D head in head-local coordinates: tangent-plane distortion-free eyes looking straight
+;; at the camera, arched eyebrows, rosy cheeks, nostrils, and happy dimpled smile—all flush in 3D!
 def HeadMaterialField = record (
     matHead: Toon,
     matCheek: Emissive,
@@ -294,59 +296,78 @@ def HeadMaterialField = record (
         if h.z > 0.06 then (
             def ax: double = math.abs(h.x)
 
-            ;; 1. Symmetric big expressive cartoon eyes looking directly at the front camera
-            def ex: double = (ax - 0.130) / 0.050
-            def ey: double = (h.y - 0.090) / 0.062
+            ;; 1. Upright tangent-plane cartoon eyes looking directly at the front camera
+            def isRight: bool = h.x >= 0.0
+            def eyeCx: double = if isRight then (0.125) else (-0.125)
+            def eyeCz: double = 0.212
+            def dx: double = h.x - eyeCx
+            def dz: double = h.z - eyeCz
+            def uEye: double = 0.94 * dx + (if isRight then (-0.34) else (0.34)) * dz
+            def vEye: double = h.y - 0.088
+            def ex: double = uEye / 0.044
+            def ey: double = vEye / 0.058
             def eyeR2: double = ex * ex + ey * ey
-            if eyeR2 <= 1.24 then (
-                if eyeR2 > 0.95 then (
+            if eyeR2 <= 1.26 then (
+                ;; Slightly thicker upper eyelid lash arc for expressive cartoon eyes
+                def rimThresh: double = if vEye > 0.015 then (0.88) else (0.95)
+                if eyeR2 > rimThresh then (
                     return this.matInk
                 )
-                def cx: double = (h.x - (if h.x >= 0.0 then (0.102) else (-0.152))) / 0.014
-                def cy: double = (h.y - 0.106) / 0.014
-                if cx * cx + cy * cy <= 1.0 then (
+                ;; Shift irises cleanly toward -uEye (camera direction) to counteract head yaw
+                def gazeU: double = if isRight then (-0.012) else (-0.014)
+                def gazeV: double = -0.003
+                ;; Primary glossy catchlight (upper-left inside iris)
+                def c1x: double = (uEye - (gazeU - 0.008)) / 0.013
+                def c1y: double = (vEye - (gazeV + 0.015)) / 0.013
+                if c1x * c1x + c1y * c1y <= 1.0 then (
                     return this.matWhite
                 )
-                def px: double = (h.x - (if h.x >= 0.0 then (0.108) else (-0.146))) / 0.036
-                def py: double = (h.y - 0.086) / 0.047
+                ;; Secondary tiny sparkle (lower-right inside iris)
+                def c2x: double = (uEye - (gazeU + 0.011)) / 0.0055
+                def c2y: double = (vEye - (gazeV - 0.016)) / 0.0055
+                if c2x * c2x + c2y * c2y <= 1.0 then (
+                    return this.matWhite
+                )
+                def px: double = (uEye - gazeU) / 0.032
+                def py: double = (vEye - gazeV) / 0.044
                 if px * px + py * py <= 1.0 then (
                     return this.matEyeDark
                 )
                 return this.matWhite
             )
 
-            ;; 2. Symmetric cute arched eyebrows above the eyes
-            def bx: double = ax - 0.130
-            if math.abs(bx) < 0.038 then (
-                def browY: double = 0.194 - 5.5 * bx * bx
+            ;; 2. Cute arched eyebrows clearly visible above the eyes
+            def bx: double = uEye
+            if math.abs(bx) < 0.034 then (
+                def browY: double = 0.178 - 5.2 * bx * bx
                 if math.abs(h.y - browY) < 0.0085 then (
                     return this.matInk
                 )
             )
 
-            ;; 3. Symmetric rosy pink cheek ovals
-            def rcx: double = (ax - 0.192) / 0.044
-            def rcy: double = (h.y - 0.000) / 0.022
+            ;; 3. Symmetric rosy pink cheek ovals on the chubby cheeks
+            def rcx: double = (ax - 0.184) / 0.042
+            def rcy: double = (h.y + 0.006) / 0.020
             if rcx * rcx + rcy * rcy <= 1.0 then (
                 return this.matCheek
             )
 
-            ;; 4. Symmetric nostrils on the snout tip
+            ;; 4. Symmetric cute nostril dots on the snout tip
             if h.z > 0.22 then (
-                def nx: double = (ax - 0.052) / 0.013
-                def ny: double = (h.y + 0.046) / 0.010
+                def nx: double = (ax - 0.048) / 0.011
+                def ny: double = (h.y + 0.048) / 0.0085
                 if nx * nx + ny * ny <= 1.0 then (
                     return this.matInk
                 )
             )
 
-            ;; 5. Happy curved smile line + corner dimple
-            if h.z > 0.13 and ax < 0.184 then (
-                def smileY: double = -0.146 + 2.35 * ax * ax
-                if math.abs(h.y - smileY) < 0.0095 then (
+            ;; 5. Happy curved smile line + cute corner dimple arcs
+            if h.z > 0.13 and ax < 0.178 then (
+                def smileY: double = -0.148 + 2.45 * ax * ax
+                if math.abs(h.y - smileY) < 0.0085 then (
                     return this.matInk
                 )
-                if ax > 0.162 and ax < 0.190 and math.abs(h.y - (-0.074 + 0.4 * (ax - 0.176))) < 0.0085 then (
+                if ax > 0.156 and ax < 0.184 and math.abs(h.y - (-0.072 + 0.45 * (ax - 0.170))) < 0.0075 then (
                     return this.matInk
                 )
             )
@@ -356,7 +377,7 @@ def HeadMaterialField = record (
     )
 )
 
-;; Shades the bright lime-green pacifier (shield, darker inner recess, center button, pull ring).
+;; Shades the bright lime-green pacifier (butterfly shield, crisp center button, hollow 3D pull ring).
 def PacifierMaterialField = record (
     ringSdf: frozen Sdf,
     buttonSdf: frozen Sdf,
@@ -367,53 +388,69 @@ def PacifierMaterialField = record (
     def sample = fn (p: Vec3, normal: Vec3): Material -> (
         def dRing: double = this.ringSdf.distance(p)
         def dBtn: double = this.buttonSdf.distance(p)
-        if dRing <= 0.006 and dBtn <= 0.014 then (
-            return this.matInk
-        )
-        if dBtn <= 0.005 then (
+        if dBtn <= 0.004 then (
             return this.matPacifier
         )
-        if dBtn < 0.015 and dRing > 0.012 then (
+        if dBtn < 0.012 and dRing > 0.009 then (
             return this.matInk
         )
-        if dRing > 0.008 and dBtn < 0.045 and normal.y < -0.25 then (
+        if dRing <= 0.004 and dBtn <= 0.011 then (
+            return this.matInk
+        )
+        if dRing > 0.008 and dBtn < 0.036 and normal.y < -0.35 then (
             return this.matPacifierDark
         )
         this.matPacifier
     )
 )
 
-;; ---------------------------------------------------------------- Helper: Curved 3D Horn Builder
+;; ---------------------------------------------------------------- Helper: Glass-Smooth Curved 3D Horn Builder
 
 def makeCurvedHorn = fn (
     p0: Vec3, r0: double,
     p1: Vec3, r1: double,
     p2: Vec3, r2: double
-): SdfSmoothUnion -> (
-    SdfSmoothUnion(
-        SdfRoundCone(p0, p1, r0, r1),
-        SdfRoundCone(p1, p2, r1, r2),
-        0.028
+): SdfUnion -> (
+    ;; Sample quadratic Bezier at t = 0, 1/3, 2/3, 1 for a sleek, bulge-free tapered curved cone
+    def q = fn (t: double): Vec3 -> (
+        def u: double = 1.0 - t
+        p0 * (u * u) + p1 * (2.0 * u * t) + p2 * (t * t)
+    )
+    def rAt = fn (t: double): double -> (
+        def u: double = 1.0 - t
+        r0 * (u * u) + r1 * (2.0 * u * t) + r2 * (t * t)
+    )
+    def a: Vec3 = q(0.3333333)
+    def b: Vec3 = q(0.6666667)
+    def ra: double = rAt(0.3333333)
+    def rb: double = rAt(0.6666667)
+    SdfUnion(
+        SdfRoundCone(p0, a, r0, ra),
+        SdfUnion(
+            SdfRoundCone(a, b, ra, rb),
+            SdfRoundCone(b, p2, rb, r2)
+        )
     )
 )
 
 ;; ---------------------------------------------------------------- Scene Builder
 
 export def buildList = fn (): unique HittableList -> (
-    def lightBody: Vec3 = Vec3(0.16, 0.70, 0.69)
-    def lightHead: Vec3 = Vec3(0.08, 0.68, 0.72)
-    def lightFrill: Vec3 = Vec3(-0.10, 0.50, 0.86)
-    def lightHorn: Vec3 = Vec3(-0.40, 0.55, 0.72)
+    def lightBody: Vec3 = Vec3(0.18, 0.68, 0.71)
+    def lightHead: Vec3 = Vec3(0.06, 0.72, 0.69)
+    def lightFrill: Vec3 = Vec3(-0.12, 0.46, 0.88)
+    def lightHorn: Vec3 = Vec3(-0.48, 0.52, 0.71)
 
-    def matBody = Toon(colBody, colBodyShadow, lightBody, 0.03, -0.12, 0.42)
-    def matHead = Toon(colBody, colBodyShadow, lightHead, 0.03, -0.12, 0.45)
-    def matBelly = Toon(colBelly, colBellyShadow, Vec3(0.05, 0.82, 0.56), 0.02, -0.08, 0.45)
-    def matFrill = Toon(colFrill, colFrillShadow, lightFrill, 0.02, -0.18, 0.35)
+    ;; Crisp noise-free two-tone cel shading (aoProb = 0.0, tight cel step for illustration sharpness)
+    def matBody = Toon(colBody, colBodyShadow, lightBody, 0.0, -0.02, 0.14)
+    def matHead = Toon(colBody, colBodyShadow, lightHead, 0.0, -0.04, 0.12)
+    def matBelly = Toon(colBelly, colBellyShadow, Vec3(0.02, 0.85, 0.52), 0.0, -0.02, 0.14)
+    def matFrill = Toon(colFrill, colFrillShadow, lightFrill, 0.0, -0.06, 0.12)
     def matFrillRim = Emissive(colFrillRim)
     def matSoftCrease = Emissive(colSoftCrease)
-    def matHorn = Toon(colHorn, colHornShadow, lightHorn, 0.02, 0.05, 0.55)
-    def matCream = Toon(colCream, colCreamShadow, lightHorn, 0.03, -0.15, 0.40)
-    def matPacifier = Toon(colPacifier, colPacifierShadow, lightHorn, 0.03, -0.10, 0.50)
+    def matHorn = Toon(colHorn, colHornShadow, lightHorn, 0.0, 0.10, 0.24)
+    def matCream = Toon(colCream, colCreamShadow, lightHorn, 0.0, -0.04, 0.12)
+    def matPacifier = Toon(colPacifier, colPacifierShadow, lightHorn, 0.0, -0.02, 0.16)
     def matPacifierDark = Emissive(colPacifierDark)
     def matCheek = Emissive(colCheek)
     def matWhite = Emissive(colEyeWhite)
@@ -423,104 +460,110 @@ export def buildList = fn (): unique HittableList -> (
     def world: HittableList = HittableList()
 
     ;; ================================================================
-    ;; 1. PLUMP 3D TORSO + CURVED TAIL + 4 CHUBBY LEGS + 12 DOME TOES
+    ;; 1. PLUMP POT-BELLY TORSO + SLEEK CURVED TAIL + 4 CHUBBY LEGS + 12 PEBBLE TOES
     ;; ================================================================
     def torsoCore = SdfRoundCone(
-        Vec3(-0.34, -0.12, -0.14),
-        Vec3(0.16, -0.16, 0.05),
-        0.252,
-        0.322
+        Vec3(-0.34, -0.14, -0.12),
+        Vec3(0.18, -0.17, 0.04),
+        0.240,
+        0.315
     )
     def backArch = SdfTranslate(
-        SdfRotateZ(SdfEllipsoid(Vec3(0.31, 0.255, 0.255)), 26.0),
-        Vec3(-0.10, 0.025, -0.07)
+        SdfRotateZ(SdfEllipsoid(Vec3(0.355, 0.285, 0.265)), 18.0),
+        Vec3(-0.14, -0.02, -0.06)
+    )
+    def potBelly = SdfTranslate(
+        SdfRotateZ(SdfEllipsoid(Vec3(0.30, 0.21, 0.24)), -6.0),
+        Vec3(-0.10, -0.27, 0.03)
     )
     def neckJoin = SdfRoundCone(
-        Vec3(0.15, -0.04, 0.05),
-        Vec3(0.32, 0.04, 0.13),
-        0.22,
-        0.19
+        Vec3(0.16, -0.05, 0.05),
+        Vec3(0.32, 0.04, 0.14),
+        0.215,
+        0.185
     )
-    def torso = SdfSmoothUnion(SdfSmoothUnion(torsoCore, backArch, 0.12), neckJoin, 0.08)
+    def torso = SdfSmoothUnion(
+        SdfSmoothUnion(SdfSmoothUnion(torsoCore, backArch, 0.11), potBelly, 0.10),
+        neckJoin,
+        0.08
+    )
 
-    ;; Sleek sweeping upturned 3D tapered tail
-    def tail1 = SdfRoundCone(Vec3(-0.35, -0.13, -0.14), Vec3(-0.55, -0.325, -0.21), 0.166, 0.080)
-    def tail2 = SdfRoundCone(Vec3(-0.55, -0.325, -0.21), Vec3(-0.69, -0.355, -0.25), 0.080, 0.040)
-    def tail3 = SdfRoundCone(Vec3(-0.69, -0.355, -0.25), Vec3(-0.76, -0.295, -0.26), 0.040, 0.020)
-    def tail = SdfSmoothUnion(tail1, SdfSmoothUnion(tail2, tail3, 0.045), 0.065)
+    ;; Sleek, graceful upturned 3D tapered tail (sweeps smoothly down then curls up to a fine tip)
+    def tail1 = SdfRoundCone(Vec3(-0.36, -0.15, -0.12), Vec3(-0.53, -0.33, -0.18), 0.155, 0.078)
+    def tail2 = SdfRoundCone(Vec3(-0.53, -0.33, -0.18), Vec3(-0.67, -0.35, -0.22), 0.078, 0.038)
+    def tail3 = SdfRoundCone(Vec3(-0.67, -0.35, -0.22), Vec3(-0.76, -0.26, -0.23), 0.038, 0.015)
+    def tail = SdfSmoothUnion(tail1, SdfSmoothUnion(tail2, tail3, 0.050), 0.070)
     def torsoAndTail = SdfSmoothUnion(torso, tail, 0.085)
 
-    ;; Four sturdy chubby 3D legs anchored symmetrically across pelvis & shoulders
-    def legFL = SdfRoundCone(Vec3(0.005, -0.23, 0.17), Vec3(0.010, -0.618, 0.20), 0.138, 0.120)
-    def legFR = SdfRoundCone(Vec3(0.395, -0.24, -0.02), Vec3(0.425, -0.600, -0.02), 0.128, 0.112)
-    def legBL = SdfRoundCone(Vec3(-0.350, -0.23, 0.09), Vec3(-0.345, -0.565, 0.12), 0.132, 0.112)
-    def legBR = SdfRoundCone(Vec3(-0.30, -0.22, -0.21), Vec3(-0.30, -0.50, -0.21), 0.116, 0.100)
+    ;; Four cute, slightly tapered chubby 3D legs flowing smoothly out of the torso
+    def legFL = SdfRoundCone(Vec3(-0.005, -0.24, 0.195), Vec3(0.018, -0.635, 0.215), 0.118, 0.098)
+    def legFR = SdfRoundCone(Vec3(0.385, -0.25, -0.015), Vec3(0.420, -0.605, -0.015), 0.112, 0.095)
+    def legBL = SdfRoundCone(Vec3(-0.360, -0.24, 0.115), Vec3(-0.345, -0.585, 0.130), 0.116, 0.094)
+    def legBR = SdfRoundCone(Vec3(-0.310, -0.23, -0.205), Vec3(-0.305, -0.505, -0.205), 0.105, 0.088)
 
     def rawLegs = SdfUnion(SdfUnion(legFL, legFR), SdfUnion(legBL, legBR))
-    def groundClipFL = SdfTranslate(SdfBox(Vec3(0.30, 0.15, 0.30)), Vec3(0.010, -0.858, 0.20))
-    def groundClipFR = SdfTranslate(SdfBox(Vec3(0.30, 0.15, 0.30)), Vec3(0.425, -0.830, -0.02))
-    def groundClipBL = SdfTranslate(SdfBox(Vec3(0.30, 0.15, 0.30)), Vec3(-0.345, -0.805, 0.12))
-    def groundClipBR = SdfTranslate(SdfBox(Vec3(0.30, 0.15, 0.30)), Vec3(-0.30, -0.74, -0.21))
+    def groundClipFL = SdfTranslate(SdfBox(Vec3(0.28, 0.15, 0.28)), Vec3(0.018, -0.848, 0.215))
+    def groundClipFR = SdfTranslate(SdfBox(Vec3(0.28, 0.15, 0.28)), Vec3(0.420, -0.815, -0.015))
+    def groundClipBL = SdfTranslate(SdfBox(Vec3(0.28, 0.15, 0.28)), Vec3(-0.345, -0.798, 0.130))
+    def groundClipBR = SdfTranslate(SdfBox(Vec3(0.28, 0.15, 0.28)), Vec3(-0.305, -0.720, -0.205))
     def legsFlat = SdfSmoothSubtraction(
         rawLegs,
         SdfUnion(SdfUnion(groundClipFL, groundClipFR), SdfUnion(groundClipBL, groundClipBR)),
-        0.024
+        0.022
     )
 
-    ;; 12 cute cream dome toes (3 seated cleanly on the front rim of each foot)
+    ;; 12 cute cream pebble toes (compact & neatly tucked along the front rim of each foot)
     def toesFL = SdfUnion(
-        SdfSphere(Vec3(-0.050, -0.678, 0.285), 0.032),
+        SdfSphere(Vec3(-0.032, -0.678, 0.283), 0.025),
         SdfUnion(
-            SdfSphere(Vec3(0.015, -0.678, 0.302), 0.035),
-            SdfSphere(Vec3(0.075, -0.668, 0.278), 0.031)
+            SdfSphere(Vec3(0.020, -0.680, 0.295), 0.027),
+            SdfSphere(Vec3(0.070, -0.672, 0.275), 0.024)
         )
     )
     def toesFR = SdfUnion(
-        SdfSphere(Vec3(0.365, -0.650, 0.085), 0.032),
+        SdfSphere(Vec3(0.372, -0.646, 0.068), 0.024),
         SdfUnion(
-            SdfSphere(Vec3(0.430, -0.650, 0.090), 0.035),
-            SdfSphere(Vec3(0.490, -0.640, 0.060), 0.031)
+            SdfSphere(Vec3(0.422, -0.648, 0.072), 0.026),
+            SdfSphere(Vec3(0.470, -0.640, 0.048), 0.023)
         )
     )
     def toesBL = SdfUnion(
-        SdfSphere(Vec3(-0.405, -0.625, 0.198), 0.031),
+        SdfSphere(Vec3(-0.394, -0.628, 0.195), 0.024),
         SdfUnion(
-            SdfSphere(Vec3(-0.345, -0.625, 0.218), 0.034),
-            SdfSphere(Vec3(-0.285, -0.625, 0.198), 0.030)
+            SdfSphere(Vec3(-0.345, -0.630, 0.209), 0.026),
+            SdfSphere(Vec3(-0.296, -0.628, 0.193), 0.023)
         )
     )
     def toesBR = SdfUnion(
-        SdfSphere(Vec3(-0.34, -0.56, -0.115), 0.028),
+        SdfSphere(Vec3(-0.345, -0.550, -0.130), 0.022),
         SdfUnion(
-            SdfSphere(Vec3(-0.28, -0.56, -0.105), 0.031),
-            SdfSphere(Vec3(-0.23, -0.56, -0.135), 0.028)
+            SdfSphere(Vec3(-0.300, -0.550, -0.122), 0.024),
+            SdfSphere(Vec3(-0.258, -0.550, -0.145), 0.022)
         )
     )
     def allToes = SdfUnion(SdfUnion(toesFL, toesFR), SdfUnion(toesBL, toesBR))
 
-    def bodyShape = SdfUnion(SdfSmoothUnion(torsoAndTail, legsFlat, 0.06), allToes)
+    def bodyShape = SdfUnion(SdfSmoothUnion(torsoAndTail, legsFlat, 0.046), allToes)
 
-    ;; 3D pale-lavender chest, lower belly crescent, and under-tail mask
+    ;; 3D pale-lavender rounded chest, graceful pot-belly crescent, and sleek thin under-tail stripe
     def chestBellyMask = SdfTranslate(
-        SdfRotateZ(SdfEllipsoid(Vec3(0.24, 0.26, 0.25)), 12.0),
-        Vec3(0.31, -0.36, 0.12)
+        SdfRotateZ(SdfEllipsoid(Vec3(0.27, 0.28, 0.26)), 8.0),
+        Vec3(0.30, -0.34, 0.11)
     )
-    def lowerBellyMask = SdfRoundCone(
-        Vec3(-0.30, -0.37, 0.14),
-        Vec3(0.01, -0.43, 0.20),
-        0.148,
-        0.178
+    def lowerBellyMask = SdfTranslate(
+        SdfRotateZ(SdfEllipsoid(Vec3(0.28, 0.14, 0.24)), -10.0),
+        Vec3(-0.14, -0.44, 0.12)
     )
     def tailBellyMask = SdfRoundCone(
-        Vec3(-0.44, -0.36, -0.14),
-        Vec3(-0.73, -0.35, -0.21),
-        0.092,
-        0.046
+        Vec3(-0.46, -0.415, -0.15),
+        Vec3(-0.76, -0.355, -0.21),
+        0.068,
+        0.036
     )
     def bellyRegion = SdfSmoothUnion(
         chestBellyMask,
-        SdfSmoothUnion(lowerBellyMask, tailBellyMask, 0.06),
-        0.08
+        SdfSmoothUnion(lowerBellyMask, tailBellyMask, 0.05),
+        0.07
     )
 
     def bodyField = BodyMaterialField(
@@ -537,43 +580,43 @@ export def buildList = fn (): unique HittableList -> (
         bodyShape,
         matBody,
         materialField: bodyField,
-        maxSteps: 110,
+        maxSteps: 115,
         stepScale: 0.9,
         outlineMat: matInk,
-        outlineWidth: 0.020
+        outlineWidth: 0.017
     ))
 
     ;; ================================================================
-    ;; 2. CURVED 3D SCALLOPED FRILL + 9 OSTEODERM STUDS (HEAD-ANCHORED)
+    ;; 2. CURVED 3D 5-PETAL FLUTED SCALLOPED FRILL + 9 OSTEODERM STUDS
     ;; ================================================================
-    def frillOffset: Vec3 = Vec3(0.012, 0.130, -0.112)
-    def frillYawRelDeg: double = -19.0
+    def frillOffset: Vec3 = Vec3(0.010, 0.134, -0.100)
+    def frillYawRelDeg: double = -18.0
     def frillPitchDeg: double = -12.0
-    def frillShield = FrillShieldSdf(0.425, 0.412, 0.024, 0.023, 0.022, 0.13)
+    def frillShield = FrillShieldSdf(0.415, 0.405, 0.068, 0.022, 0.022, 0.125)
 
-    ;; 9 cream osteoderm studs seated along the curved outer rim of the frill
+    ;; 9 cute cream osteoderm studs seated along the 5 cloud petals and shoulders
     def placeOst = fn (angleDeg: double, rx: double, ry: double): SdfTranslate -> (
         def a: double = math.degreesToRadians(angleDeg)
         def ca: double = math.cos(a)
         def sa: double = math.sin(a)
-        def rEdge: double = frillShield.evalScallopRadius(ca, sa) + 0.020
+        def rEdge: double = frillShield.evalScallopRadius(ca, sa) + 0.016
         def ox: double = ca * rEdge
         def oy: double = sa * rEdge
         def oz: double = frillShield.cupCurvature * rEdge * rEdge
         SdfTranslate(
-            SdfRotateZ(SdfEllipsoid(Vec3(rx, ry, 0.028)), angleDeg - 90.0),
+            SdfRotateZ(SdfEllipsoid(Vec3(rx, ry, 0.025)), angleDeg - 90.0),
             Vec3(ox, oy, oz)
         )
     )
-    def ost1 = placeOst(206.0, 0.032, 0.035)
-    def ost2 = placeOst(170.0, 0.036, 0.038)
-    def ost3 = placeOst(135.0, 0.042, 0.042)
-    def ost4 = placeOst(110.0, 0.038, 0.038)
-    def ost5 = placeOst(86.0, 0.042, 0.040)
-    def ost6 = placeOst(56.0, 0.040, 0.040)
-    def ost7 = placeOst(32.0, 0.035, 0.035)
-    def ost8 = placeOst(10.0, 0.033, 0.033)
-    def ost9 = placeOst(-16.0, 0.029, 0.031)
+    def ost1 = placeOst(210.0, 0.028, 0.032)
+    def ost2 = placeOst(174.0, 0.031, 0.034)
+    def ost3 = placeOst(148.0, 0.035, 0.036)
+    def ost4 = placeOst(116.0, 0.032, 0.034)
+    def ost5 = placeOst(90.0, 0.036, 0.036)
+    def ost6 = placeOst(64.0, 0.032, 0.034)
+    def ost7 = placeOst(32.0, 0.032, 0.033)
+    def ost8 = placeOst(6.0, 0.029, 0.030)
+    def ost9 = placeOst(-24.0, 0.026, 0.028)
     def ostLocal = SdfUnion(
         SdfUnion(SdfUnion(ost1, ost2), SdfUnion(ost3, ost4)),
         SdfUnion(SdfUnion(ost5, ost6), SdfUnion(ost7, SdfUnion(ost8, ost9)))
@@ -607,25 +650,25 @@ export def buildList = fn (): unique HittableList -> (
         frillWorld,
         matFrill,
         materialField: frillField,
-        maxSteps: 110,
+        maxSteps: 115,
         stepScale: 0.85,
         outlineMat: matInk,
-        outlineWidth: 0.020
+        outlineWidth: 0.017
     ))
 
     ;; ================================================================
-    ;; 3. PLUMP 3D HEAD + CHUBBY CHEEKS + SNOUT + FLUSH FACIAL DETAILS
+    ;; 3. PLUMP SQUISHY 3D BABY HEAD + LOW CHUBBY CHEEKS + ROUND SNOUT
     ;; ================================================================
-    def cranium = SdfEllipsoid(Vec3(0.268, 0.252, 0.258))
-    def cheekL = SdfSphere(Vec3(-0.165, -0.072, 0.070), 0.155)
-    def cheekR = SdfSphere(Vec3(0.165, -0.072, 0.070), 0.155)
-    def snout = SdfTranslate(SdfEllipsoid(Vec3(0.180, 0.138, 0.195)), Vec3(0.0, -0.068, 0.175))
-    def chin = SdfSphere(Vec3(0.0, -0.145, 0.115), 0.135)
+    def cranium = SdfEllipsoid(Vec3(0.258, 0.245, 0.248))
+    def cheekL = SdfSphere(Vec3(-0.172, -0.078, 0.075), 0.158)
+    def cheekR = SdfSphere(Vec3(0.172, -0.078, 0.075), 0.158)
+    def snout = SdfTranslate(SdfEllipsoid(Vec3(0.175, 0.135, 0.195)), Vec3(0.0, -0.072, 0.172))
+    def chin = SdfSphere(Vec3(0.0, -0.148, 0.112), 0.132)
 
     def headLocal = SdfSmoothUnion(
-        SdfSmoothUnion(cranium, SdfUnion(cheekL, cheekR), 0.10),
-        SdfSmoothUnion(snout, chin, 0.08),
-        0.10
+        SdfSmoothUnion(cranium, SdfUnion(cheekL, cheekR), 0.105),
+        SdfSmoothUnion(snout, chin, 0.085),
+        0.105
     )
     def headWorld = placeInHead(headLocal)
     def headField = HeadMaterialField(matHead, matCheek, matWhite, matEyeDark, matInk)
@@ -633,29 +676,29 @@ export def buildList = fn (): unique HittableList -> (
         headWorld,
         matHead,
         materialField: headField,
-        maxSteps: 100,
+        maxSteps: 105,
         stepScale: 0.85,
         outlineMat: matInk,
-        outlineWidth: 0.019
+        outlineWidth: 0.016
     ))
 
     ;; ================================================================
-    ;; 4. THREE CURVED 3D CREAM-YELLOW HORNS (BILATERALLY SYMMETRIC)
+    ;; 4. THREE SILKY-SMOOTH CURVED 3D CREAM-YELLOW HORNS (SYMMETRIC)
     ;; ================================================================
     def hornLeft = makeCurvedHorn(
-        Vec3(-0.145, 0.218, 0.060), 0.052,
-        Vec3(-0.150, 0.295, 0.130), 0.036,
-        Vec3(-0.136, 0.360, 0.185), 0.017
+        Vec3(-0.138, 0.212, 0.058), 0.049,
+        Vec3(-0.142, 0.292, 0.125), 0.033,
+        Vec3(-0.128, 0.358, 0.180), 0.014
     )
     def hornRight = makeCurvedHorn(
-        Vec3(0.145, 0.218, 0.060), 0.052,
-        Vec3(0.150, 0.295, 0.130), 0.036,
-        Vec3(0.136, 0.360, 0.185), 0.017
+        Vec3(0.138, 0.212, 0.058), 0.049,
+        Vec3(0.142, 0.292, 0.125), 0.033,
+        Vec3(0.128, 0.358, 0.180), 0.014
     )
     def hornNose = makeCurvedHorn(
-        Vec3(0.0, -0.015, 0.280), 0.048,
-        Vec3(0.0, 0.048, 0.335), 0.031,
-        Vec3(0.0, 0.110, 0.362), 0.015
+        Vec3(0.0, -0.018, 0.278), 0.044,
+        Vec3(0.0, 0.042, 0.330), 0.028,
+        Vec3(0.0, 0.102, 0.354), 0.013
     )
     def hornsWorld = placeInHead(SdfUnion(hornNose, SdfUnion(hornLeft, hornRight)))
     world.add(RaymarchedSdf(
@@ -664,32 +707,32 @@ export def buildList = fn (): unique HittableList -> (
         maxSteps: 96,
         stepScale: 0.9,
         outlineMat: matInk,
-        outlineWidth: 0.017
+        outlineWidth: 0.015
     ))
 
     ;; ================================================================
     ;; 5. TRUE 3D BRIGHT LIME-GREEN PACIFIER (WITH REAL SdfTorus RING)
     ;; ================================================================
     def pacLobeL = SdfTranslate(
-        SdfRotateZ(SdfEllipsoid(Vec3(0.070, 0.062, 0.030)), -16.0),
-        Vec3(-0.052, -0.155, 0.330)
+        SdfRotateZ(SdfEllipsoid(Vec3(0.064, 0.054, 0.028)), -18.0),
+        Vec3(-0.050, -0.156, 0.326)
     )
     def pacLobeR = SdfTranslate(
-        SdfRotateZ(SdfEllipsoid(Vec3(0.070, 0.062, 0.030)), 16.0),
-        Vec3(0.052, -0.155, 0.330)
+        SdfRotateZ(SdfEllipsoid(Vec3(0.064, 0.054, 0.028)), 18.0),
+        Vec3(0.050, -0.156, 0.326)
     )
     def pacBridge = SdfTranslate(
-        SdfEllipsoid(Vec3(0.054, 0.042, 0.032)),
-        Vec3(0.0, -0.159, 0.330)
+        SdfEllipsoid(Vec3(0.046, 0.036, 0.030)),
+        Vec3(0.0, -0.160, 0.326)
     )
-    def pacShield = SdfSmoothUnion(SdfUnion(pacLobeL, pacLobeR), pacBridge, 0.026)
+    def pacShield = SdfSmoothUnion(SdfUnion(pacLobeL, pacLobeR), pacBridge, 0.024)
     def pacButtonLocal = SdfTranslate(
-        SdfEllipsoid(Vec3(0.036, 0.036, 0.030)),
-        Vec3(0.0, -0.161, 0.367)
+        SdfEllipsoid(Vec3(0.032, 0.032, 0.028)),
+        Vec3(0.0, -0.162, 0.360)
     )
     def pacRingLocal = SdfTranslate(
-        SdfRotateX(SdfTorus(0.054, 0.017), 78.0),
-        Vec3(0.0, -0.219, 0.381)
+        SdfRotateX(SdfTorus(0.052, 0.015), 78.0),
+        Vec3(0.0, -0.218, 0.372)
     )
     def pacWorld = placeInHead(SdfUnion(SdfUnion(pacShield, pacButtonLocal), pacRingLocal))
     def pacButtonWorld = placeInHead(pacButtonLocal)
@@ -703,15 +746,15 @@ export def buildList = fn (): unique HittableList -> (
         maxSteps: 96,
         stepScale: 0.9,
         outlineMat: matInk,
-        outlineWidth: 0.015
+        outlineWidth: 0.014
     ))
 
     world
 )
 
 export def build = fn (
-    imageWidth: int = 160,
-    samplesPerPixel: int = 64,
+    imageWidth: int = 400,
+    samplesPerPixel: int = 16,
     maxDepth: int = 5,
     seed: int = 42
 ): Scene -> (

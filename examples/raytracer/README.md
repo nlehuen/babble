@@ -6,7 +6,7 @@ Every scene renders **byte-for-byte identically** across `interpret`, compiled J
 
 ## Rendered Scenes
 
-| Weekend Cover (`cover`, 800×450) | Sculpted SDF Cube (`sdf-cube`, 800×450) | Baby Triceratops (`triceratops`, 160×160) | Cornell Box (`cornell-box`, 400×400) |
+| Weekend Cover (`cover`, 800×450) | Sculpted SDF Cube (`sdf-cube`, 800×450) | Baby Triceratops (`triceratops`, 400×400) | Cornell Box (`cornell-box`, 400×400) |
 |---|---|---|---|
 | ![Weekend Cover rendered in pure Babble](assets/scene.png) | ![Sculpted SDF Cube raymarched in pure Babble](assets/sdf_cube.png) | ![Baby Triceratops rendered in pure Babble](assets/triceratops.png) | ![Cornell Box rendered in pure Babble](assets/cornell_box.png) |
 
@@ -60,7 +60,7 @@ mvn package
 # Weekend Cover (800x450, 20 spp, 16 threads)
 java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer/raytracer_jvm.ba cover examples/raytracer/assets/scene.png 800 20 16
 
-# Baby Triceratops (160x160, 64 spp, 16 threads)
+# Baby Triceratops (400x400, 16 spp, 16 threads)
 java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer/raytracer_jvm.ba triceratops examples/raytracer/assets/triceratops.png
 
 # Cornell Box (400x400, 256 spp, 16 threads)

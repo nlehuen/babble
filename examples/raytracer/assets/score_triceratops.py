@@ -94,12 +94,12 @@ def score_images(
 ) -> dict[str, float | int | list[int]]:
     ref_raw = Image.open(ref_path).convert("RGB")
     ref_img = ref_raw.resize(TARGET_SIZE, Image.Resampling.LANCZOS)
-    ren_img = Image.open(ren_path).convert("RGB")
-
-    if ren_img.size != TARGET_SIZE:
-        raise ValueError(
-            f"Rendered image must be {TARGET_SIZE[0]}x{TARGET_SIZE[1]}, got {ren_img.size[0]}x{ren_img.size[1]}"
-        )
+    ren_raw = Image.open(ren_path).convert("RGB")
+    ren_img = (
+        ren_raw
+        if ren_raw.size == TARGET_SIZE
+        else ren_raw.resize(TARGET_SIZE, Image.Resampling.LANCZOS)
+    )
 
     w, h = TARGET_SIZE
     get_data = getattr(ref_img, "get_flattened_data", ref_img.getdata)
