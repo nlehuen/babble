@@ -125,7 +125,7 @@ public class BabbleCompilerTestCase {
                         "def add = fn (a : int, b : int) -> ( a + b ) ; def twice = fn (shared f : fn () : int) -> ( fn () -> ( f() + f() ) ) ; add(1, 2)");
         List<String> names = methodNames(script);
         Assertions.assertTrue(
-                names.containsAll(List.of("run", "fn$0$add", "fn$1$twice", "fn$2", "<clinit>")),
+                names.containsAll(List.of("run", "fn$0$add", "fn$1$twice", "fn$2")),
                 names.toString());
         Assertions.assertEquals(3, script.eval(new SimpleBindings()));
         assertVerifies(script);
@@ -633,9 +633,32 @@ public class BabbleCompilerTestCase {
                 typesCalls(cast).stream().anyMatch(c -> c.endsWith("->check")),
                 typesCalls(cast).toString());
         Assertions.assertTrue(
-                fieldNames(cast.getClassBytes()).stream().anyMatch(n -> n.startsWith("TYPE")),
-                fieldNames(cast.getClassBytes()).toString());
+                hasTypeCondy(cast.getClassBytes()), "expected CONSTANT_Dynamic for Types$Type");
         Assertions.assertEquals(7, cast.eval(new SimpleBindings()));
+    }
+
+    private static boolean hasTypeCondy(byte[] classFile) {
+        boolean[] found = {false};
+        new ClassReader(classFile)
+                .accept(
+                        new ClassVisitor(Opcodes.ASM9) {
+                            @Override
+                            public MethodVisitor visitMethod(
+                                    int a, String n, String d, String s, String[] e) {
+                                return new MethodVisitor(Opcodes.ASM9) {
+                                    @Override
+                                    public void visitLdcInsn(Object value) {
+                                        if (value instanceof org.objectweb.asm.ConstantDynamic cd
+                                                && "Lorg/babblelang/runtime/Types$Type;"
+                                                        .equals(cd.getDescriptor())) {
+                                            found[0] = true;
+                                        }
+                                    }
+                                };
+                            }
+                        },
+                        0);
+        return found[0];
     }
 
     @Test
@@ -1301,7 +1324,9 @@ public class BabbleCompilerTestCase {
         assertVerifies(script);
         Assertions.assertEquals("705082704x10120", script.eval(new SimpleBindings()));
         Map<String, Map.Entry<Boolean, List<String>>> methods = jumpsAndCalls(script);
-        for (String suffix : List.of("$sum", "$sum$spec", "$boxed", "$many", "walk", "walk$spec")) {
+        // Boxed $sum / walk delegate directly to $sum$spec / walk$spec, where the tail-call loop
+        // jumps back without self-recursion.
+        for (String suffix : List.of("$sum$spec", "$boxed", "$many", "walk$spec")) {
             List<String> names =
                     methods.keySet().stream()
                             .filter(n -> n.endsWith(suffix) && !n.startsWith("$m$"))
@@ -1313,6 +1338,17 @@ public class BabbleCompilerTestCase {
                     methods.get(name).getValue().stream()
                             .anyMatch(c -> c.startsWith(name.replace("$spec", ""))),
                     name + " calls itself : " + methods.get(name).getValue());
+        }
+        for (String suffix : List.of("$sum", "walk")) {
+            String boxed =
+                    methods.keySet().stream()
+                            .filter(n -> n.endsWith(suffix) && !n.startsWith("$m$"))
+                            .findFirst()
+                            .orElseThrow();
+            Assertions.assertTrue(
+                    methods.get(boxed).getValue().stream()
+                            .anyMatch(c -> c.endsWith(suffix + "$spec")),
+                    boxed + " forwards to $spec : " + methods.get(boxed).getValue());
         }
         String fact =
                 methods.keySet().stream()

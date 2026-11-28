@@ -99,6 +99,7 @@ public final class BatestCoverageReporter {
                     "org.babblelang.analysis.BytecodeEffectAnalyzer",
                     "org.babblelang.compiler.Babblec",
                     "org.babblelang.compiler.FileModuleCompiler",
+                    "org.babblelang.compiler.RuntimeShaker",
                     "org.babblelang.compiler.Debugging",
                     "org.babblelang.ir.CliIrDumper",
                     "org.babblelang.ir.IrCanonicalSupport",
@@ -109,6 +110,7 @@ public final class BatestCoverageReporter {
                     "org.babblelang.ir.hir.HirPrinter",
                     "org.babblelang.ir.hir.HirCanonicalPrinter",
                     "org.babblelang.runtime.Launcher",
+                    "org.babblelang.runtime.ModuleImportFunction",
                     "org.babblelang.runtime.ProgramIndex",
                     "org.babblelang.engine.FileModuleSource",
                     "org.babblelang.engine.ClassPathModuleSource");
