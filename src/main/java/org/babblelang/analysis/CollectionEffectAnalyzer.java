@@ -391,7 +391,7 @@ final class CollectionEffectAnalyzer {
                 yield Reachability.Origin.IMMUTABLE;
             }
             case "hashCode" -> {
-                w.applyEffects(ec.javaResolver.singleEqualityProfile(arr.element()));
+                w.applyEffects(ec.javaResolver.hashCodeProfile(arr.element()));
                 w.recordTargetRead(recvOrig, recvType);
                 yield Reachability.Origin.IMMUTABLE;
             }

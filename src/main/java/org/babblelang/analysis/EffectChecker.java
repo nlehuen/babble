@@ -455,6 +455,13 @@ final class EffectChecker {
      * Local defs of {@code F} captured by an *escaping* closure (cannot be treated as private frame
      * state).
      */
+    /**
+     * The frame locals of enclosing functions that each local closure (by literal) may return : a
+     * call to it aliases them in the caller's frame ({@code fn () -> (b)}).
+     */
+    final Map<ParserRuleContext, Set<ParserRuleContext>> returnedFrameLocals =
+            new IdentityHashMap<>();
+
     final Set<ParserRuleContext> escapedCapturedLocals =
             Collections.newSetFromMap(new IdentityHashMap<>());
 

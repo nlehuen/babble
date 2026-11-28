@@ -373,7 +373,8 @@ final class CallEffectAnalyzer {
                     postSpreadOrigins,
                     mutableCopiedSpread,
                     fParams,
-                    args);
+                    args,
+                    null);
         }
 
         // 6. Babble function / method / overload set / union of functions
@@ -579,6 +580,12 @@ final class CallEffectAnalyzer {
 
         // Receiver mut / borrow / frozen / read check:
         Type recvType = receiverExpr != null ? w.effectiveType(receiverExpr) : null;
+        if (recvType != null
+                && argExprs.length == 0
+                && ("hashCode".equals(methodName) || "toString".equals(methodName))) {
+            // A container's toString / hashCode runs its elements' (BIP032 J2).
+            w.applyEffects(ec.javaResolver.containerElementsProfile(recvType, methodName));
+        }
         if (receiverExpr != null && profile.readsReceiver()) {
             w.recordTargetRead(recvOrig, recvType);
         }
@@ -905,7 +912,8 @@ final class CallEffectAnalyzer {
                 postSpreadOrigins,
                 mutableCopiedSpread,
                 fn.parameters(),
-                args);
+                args,
+                ec.checker.literalOf(fn));
     }
 
     private boolean isForwardedParamExpr(BabbleParser.ExpressionContext expr) {
@@ -1548,7 +1556,8 @@ final class CallEffectAnalyzer {
             Reachability.Origin[] argOrigins,
             boolean[] mutableCopiedSpread,
             List<Type.Parameter> calleeParams,
-            List<BabbleParser.CallParameterContext> args) {
+            List<BabbleParser.CallParameterContext> args,
+            ParserRuleContext calleeLiteral) {
         if (ec.javaResolver.isDeeplyImmutable(resType)) {
             return Reachability.Origin.IMMUTABLE;
         }
@@ -1561,6 +1570,19 @@ final class CallEffectAnalyzer {
                 includeExternal
                         ? Reachability.Origin.ofExternal(null, false)
                         : Reachability.Origin.IMMUTABLE;
+        Set<ParserRuleContext> returnedLocals =
+                calleeLiteral != null ? ec.returnedFrameLocals.get(calleeLiteral) : null;
+        if (includeExternal && returnedLocals != null) {
+            // A local closure may return a frame local it captures (fn () -> (b)) : here its
+            // result aliases that local's current value.
+            for (ParserRuleContext decl : returnedLocals) {
+                Reachability.Origin captured =
+                        w.env.getOrDefault(decl, Reachability.Origin.ofExternal(decl, false));
+                if (captured != Reachability.Origin.IMMUTABLE) {
+                    out = out.join(captured.flattenElements());
+                }
+            }
+        }
         boolean includeRecv =
                 isMethodCall && (!known || summary.returnThis() || !summary.effects().borrowThis());
         if (includeRecv && recvOrig != Reachability.Origin.IMMUTABLE) {

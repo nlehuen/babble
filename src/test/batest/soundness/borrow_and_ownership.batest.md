@@ -1,6 +1,6 @@
 # Soundness regressions : `ownership` (`O2`, `O3`, `O4`) unique capture, projection, fresh containers & exclusivity
 
-Promoted from `BIP032` quarantine (`ownership_o3_closure_capture_unique_fbip.batest.md`, `ownership_o4_collection_get_mut_exclusivity.batest.md`, `ownership_o4_mut_exclusivity_field_alias.batest.md`, `ownership_o4_mut_exclusivity_closure_capture.batest.md`, `ownership_o4_mut_exclusivity_match_rest_slice.batest.md`, `ownership_o3_fresh_container_view_aliases_shared_arg.batest.md`, `ownership_o4_mut_exclusivity_container_and_recurse.batest.md`, `effects_e2_operator_method_launders_calling_and_borrow.batest.md`) and sister vectors covering `InitEffectAnalyzer`, `MatchEffectAnalyzer`, `Reachability`, `EffectBodyWalker`, `OperatorAndLoopEffectAnalyzer`, and `CallEffectAnalyzer`.
+Promoted from `BIP032` quarantine (`ownership_o3_closure_capture_unique_fbip.batest.md`, `ownership_o4_collection_get_mut_exclusivity.batest.md`, `ownership_o4_mut_exclusivity_field_alias.batest.md`, `ownership_o4_mut_exclusivity_closure_capture.batest.md`, `ownership_o4_mut_exclusivity_match_rest_slice.batest.md`, `ownership_o3_fresh_container_view_aliases_shared_arg.batest.md`, `ownership_o4_mut_exclusivity_container_and_recurse.batest.md`, `ownership_o4_mut_exclusivity_loop_match_closure_alias.batest.md`, `effects_e2_operator_method_launders_calling_and_borrow.batest.md`) and sister vectors covering `InitEffectAnalyzer`, `MatchEffectAnalyzer`, `Reachability`, `EffectBodyWalker`, `OperatorAndLoopEffectAnalyzer`, and `CallEffectAnalyzer`.
 
 ```babble
 ;; babble preamble
@@ -512,4 +512,90 @@ println(a.aliasSelf(b, 1))
 
 ```error
 Exclusivity error : mut target this aliases argument this
+```
+
+## For loop variable over a list holding b aliases b for mut exclusivity
+
+```babble
+def t = fn io (): int -> (
+    def b = Box(0)
+    for y in list(b) then (swap(y, b))
+    b.x
+)
+```
+
+```error
+Exclusivity error : mut target y aliases argument b
+```
+
+## For loop variable over an array holding b aliases b for mut exclusivity
+
+```babble
+def t = fn io (): int -> (
+    def b = Box(0)
+    for y in array.of(b) then (swap(y, b))
+    b.x
+)
+```
+
+```error
+Exclusivity error : mut target y aliases argument b
+```
+
+## Match binding destructuring a list holding b aliases b for mut exclusivity
+
+```babble
+def t = fn io (): int -> (
+    def b = Box(0)
+    match list(b) case is list(def y) then (swap(y, b) ; 1) else (0)
+)
+```
+
+```error
+Exclusivity error : mut target y aliases argument b
+```
+
+## Local closure returning the captured b aliases b for mut exclusivity
+
+```babble
+def t = fn io (): int -> (
+    def b = Box(0)
+    def get = fn (): Box -> (b)
+    swap(get(), b)
+    b.x
+)
+```
+
+```error
+Exclusivity error : mut target get() aliases argument b
+```
+
+## Local closure returning an element of a captured list aliases that element
+
+```babble
+def t = fn io (): int -> (
+    def b = Box(0)
+    def xs = list(b)
+    def first = fn volatile (): Box -> (xs.get(0))
+    swap(first(), b)
+    b.x
+)
+```
+
+```error
+Exclusivity error : mut target first() aliases argument b
+```
+
+## Loops, matches and closures over unrelated boxes stay allowed
+
+```babble
+def t = fn io (): int -> (
+    def b = Box(5)
+    for y in list(Box(7)) then (swap(y, b))
+    match list(Box(3)) case is list(def z) then (swap(z, b)) else (null)
+    def mk = fn volatile (): Box -> (Box(b.x))
+    swap(mk(), b)
+    b.x
+)
+assert(t() == 3)
 ```

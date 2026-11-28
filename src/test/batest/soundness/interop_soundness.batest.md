@@ -1,6 +1,6 @@
 # Soundness regressions : `interop` (`J2`, `J3`) curated determinism, Java varargs parity & array element nullness
 
-Promoted from `BIP032` quarantine (`interop_j2_string_format_volatile_tostring.batest.md`, `interop_j3_varargs_array_double_wrap_parity.batest.md`, `interop_j2_string_case_mapping_default_locale.batest.md`, `interop_j3_java_array_return_null_elements.batest.md`, `interop_j2_curated_nullability_and_map_entry_immutability.batest.md`, `interop_j2_java_iterable_next_io.batest.md`, `interop_j3_sam_adapter_missing_inbound_check.batest.md`) and sister vectors covering `java/lang/curated.ba`, `java/util/curated.ba`, `AxiomData`, `JavaNullability`, `JavaTypeBridge`, `ControlAndOpEmitter`, and `Faces`.
+Promoted from `BIP032` quarantine (`interop_j2_container_element_tostring_hashcode.batest.md`, `interop_j2_string_format_volatile_tostring.batest.md`, `interop_j3_varargs_array_double_wrap_parity.batest.md`, `interop_j2_string_case_mapping_default_locale.batest.md`, `interop_j3_java_array_return_null_elements.batest.md`, `interop_j2_curated_nullability_and_map_entry_immutability.batest.md`, `interop_j2_java_iterable_next_io.batest.md`, `interop_j3_sam_adapter_missing_inbound_check.batest.md`) and sister vectors covering `java/lang/curated.ba`, `java/util/curated.ba`, `AxiomData`, `JavaNullability`, `JavaTypeBridge`, `ControlAndOpEmitter`, and `Faces`.
 
 ## String.format with volatile toString must not be accepted in deterministic function
 
@@ -191,4 +191,64 @@ println(m.compute("missing", f))
 
 ```error
 Type error : expected string, got null
+```
+
+## String of a list of identity-printed objects is not deterministic
+
+```babble
+def f = fn (): string -> (string(list(java.lang.Object())))
+```
+
+```error
+Function f violates deterministic guarantee : mark function as volatile (or io)
+```
+
+## Hash code of a list of identity-hashed objects is not deterministic
+
+```babble
+def f = fn (): int -> (list(java.lang.Object()).hashCode())
+```
+
+```error
+Function f violates deterministic guarantee : mark function as volatile (or io)
+```
+
+## Hash code of an array of identity-hashed objects is not deterministic
+
+```babble
+def f = fn (): int -> (array.of(java.lang.Object()).hashCode())
+```
+
+```error
+Function f violates deterministic guarantee : mark function as volatile (or io)
+```
+
+## String of a map entry with an identity-printed value is not deterministic
+
+```babble
+def f = fn (): string -> (string(java.util.Map.entry("k", java.lang.Object())))
+```
+
+```error
+Function f violates deterministic guarantee : mark function as volatile (or io)
+```
+
+## String of a set of identity-hashed objects follows identity order and is not deterministic
+
+```babble
+def f = fn (): string -> (string(set(java.lang.Object(), java.lang.Object())))
+```
+
+```error
+Function f violates deterministic guarantee : mark function as volatile (or io)
+```
+
+## Containers of scalars, strings and records of scalars stay deterministic
+
+```babble
+def R = record (x: int) ()
+def f = fn (xs: list of int): int -> (
+    xs.hashCode() + string(xs).length() + array.of("a").hashCode() + set(R(2)).hashCode()
+)
+assert(f(list(1, 2)) == f(list(1, 2)) and string(java.util.Map.entry("a", 2)) == "a=2")
 ```

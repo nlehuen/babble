@@ -148,16 +148,24 @@ final class MatchEffectAnalyzer {
         Reachability.Origin flat = sourceOrig.flattenElements();
         Set<Object> keys = new HashSet<>(flat.directKeys);
         keys.add(decl);
-        return new Reachability.Origin(
-                (BitSet) flat.params.clone(),
-                flat.aliasesThis,
-                flat.external,
-                false,
-                null,
-                false,
-                null,
-                Set.copyOf(keys),
-                new Reachability.PathKey(decl, List.of()));
+        Reachability.Origin bound =
+                new Reachability.Origin(
+                        (BitSet) flat.params.clone(),
+                        flat.aliasesThis,
+                        flat.external,
+                        false,
+                        null,
+                        false,
+                        null,
+                        Set.copyOf(keys),
+                        new Reachability.PathKey(decl, List.of()));
+        if (isTopLevel) {
+            return bound;
+        }
+        // A destructured binding (is list(def y), is R(def f)) is one of the scrutinee's
+        // elements or fields : it aliases whatever they do, as an indexed read would.
+        Reachability.Origin element = sourceOrig.deriveProjection(false);
+        return bound.join(element.owned() ? element.withoutUnique() : element);
     }
 
     private static void evalPatternEffects(

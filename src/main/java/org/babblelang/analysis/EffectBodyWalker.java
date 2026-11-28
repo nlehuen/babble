@@ -1514,6 +1514,9 @@ final class EffectBodyWalker {
             return;
         }
         Reachability.Origin flat = retOrigin.flattenElements();
+        if (flat.external) {
+            recordReturnedFrameLocals(retOrigin);
+        }
         if (!retOrigin.unique || !flat.params.isEmpty() || flat.aliasesThis || flat.external) {
             uniqueResult = false;
         } else if (at instanceof BabbleParser.ReturnExpressionContext
@@ -1905,6 +1908,32 @@ final class EffectBodyWalker {
                 } else {
                     hermetic = false;
                     deterministic = false;
+                }
+            }
+        }
+    }
+
+    /**
+     * Records the locals of enclosing frames that a returned value is rooted at (a closure
+     * returning a captured {@code b}, or {@code xs.get(0)}), for callers to see the alias.
+     */
+    private void recordReturnedFrameLocals(Reachability.Origin retOrigin) {
+        Set<Object> roots = Collections.newSetFromMap(new IdentityHashMap<>());
+        roots.addAll(retOrigin.directKeys);
+        for (Reachability.PathKey pk : retOrigin.paths) {
+            roots.add(pk.root());
+        }
+        for (Reachability.PathKey pk : retOrigin.elementPaths) {
+            roots.add(pk.root());
+        }
+        for (Object root : roots) {
+            if (root instanceof ParserRuleContext decl) {
+                BabbleParser.FunctionLiteralContext declFn = enclosingFunctionOfDecl(decl);
+                if (declFn != null && declFn != owner && frameChain.contains(declFn)) {
+                    ec.returnedFrameLocals
+                            .computeIfAbsent(
+                                    owner, k -> Collections.newSetFromMap(new IdentityHashMap<>()))
+                            .add(decl);
                 }
             }
         }

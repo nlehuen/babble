@@ -403,12 +403,132 @@ final class JavaEffectResolver {
         if (type instanceof Type.JavaInstance ji) {
             return resolveJavaMethodProfile(
                             ji.type(), "toString", lookupPublicMethod(ji.type(), "toString"))
-                    .effects();
+                    .effects()
+                    .intersect(containerElementsProfile(ji, "toString"));
         }
         if (type instanceof Type.Array arr) {
             return toStringProfile(arr.element(), visiting);
         }
         return EffectSet.EMPTY;
+    }
+
+    private static final EffectSet PURE_DETERMINISTIC_NOTHROW =
+            EffectSet.ofInferred(
+                    EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW),
+                    false,
+                    true,
+                    false,
+                    true);
+
+    /**
+     * Profile of {@code type}'s own {@code hashCode} : identity hashes ({@code Object}, {@code
+     * any}, classes and closures without their own) follow the curated {@code Object.hashCode},
+     * records and arrays combine their fields' or elements', and containers add their elements'
+     * (BIP032 {@code J2}).
+     */
+    EffectSet hashCodeProfile(Type type) {
+        return hashCodeProfile(type, Collections.newSetFromMap(new IdentityHashMap<>()));
+    }
+
+    /**
+     * Profile of the {@code toString} or {@code hashCode} of the elements a container's own method
+     * delegates to ({@code Collection}, {@code Map}, {@code Map.Entry}, {@code Optional}) : a
+     * {@code list(java.lang.Object())} prints and hashes by identity, whatever the curated {@code
+     * List} methods say (BIP032 {@code J2}). Other types delegate to nothing.
+     */
+    EffectSet containerElementsProfile(Type type, String method) {
+        EffectSet acc = PURE_DETERMINISTIC_NOTHROW;
+        for (Type element : delegatedElementTypes(type)) {
+            Type base = Type.withoutNull(TypeAlgebra.unwrapFrozen(element));
+            EffectSet elementProfile =
+                    base == Type.ANY
+                            ? objectMethodProfile(method)
+                            : "hashCode".equals(method)
+                                    ? hashCodeProfile(element)
+                                    : toStringProfile(element);
+            acc = acc.intersect(elementProfile);
+        }
+        return acc;
+    }
+
+    private static List<Type> delegatedElementTypes(Type type) {
+        if (Type.withoutNull(TypeAlgebra.unwrapFrozen(type)) instanceof Type.JavaInstance ji) {
+            Class<?> cls = ji.type();
+            if (java.util.Collection.class.isAssignableFrom(cls)
+                    || java.util.Map.class.isAssignableFrom(cls)
+                    || java.util.Map.Entry.class.isAssignableFrom(cls)
+                    || cls == java.util.Optional.class) {
+                return ji.typeArguments();
+            }
+        }
+        return List.of();
+    }
+
+    private EffectSet objectMethodProfile(String method) {
+        return resolveJavaMethodProfile(
+                        Object.class, method, lookupPublicMethod(Object.class, method))
+                .effects();
+    }
+
+    private EffectSet hashCodeProfile(Type type, Set<TypeNode> visiting) {
+        if (type instanceof Type.Frozen f) {
+            return hashCodeProfile(f.of(), visiting);
+        }
+        if (type == null || type == Type.ERROR || Type.isCoreScalar(type) || type == Type.NULL) {
+            return PURE_DETERMINISTIC_NOTHROW;
+        }
+        if (type instanceof Type.Union u) {
+            EffectSet acc = PURE_DETERMINISTIC_NOTHROW;
+            for (Type m : u.members()) {
+                acc = acc.intersect(hashCodeProfile(m, visiting));
+            }
+            return acc;
+        }
+        if (type instanceof Type.Instance inst) {
+            TypeNode node = inst.node();
+            TypeNode.Member custom = checker.findMemberOnNode(node, "hashCode");
+            if (custom != null && custom.hasFunction) {
+                EffectChecker.CallableSummary cs = memberSummaryLookup.apply(custom);
+                if (cs != null) {
+                    return cs.effects();
+                }
+                Type mt = checker.memberTypeForEffects(node, custom);
+                if (mt instanceof Type.Function tf) {
+                    return tf.effects();
+                }
+            }
+            if (node.kind != ClassShape.Kind.VALUE_CLASS) {
+                return objectMethodProfile("hashCode");
+            }
+            if (!visiting.add(node)) {
+                return PURE_DETERMINISTIC_NOTHROW;
+            }
+            try {
+                EffectSet acc = PURE_DETERMINISTIC_NOTHROW;
+                for (TypeNode.Member m : node.members.values()) {
+                    if (!m.hasFunction) {
+                        Type mt = checker.instanceMemberTypeForEffects(inst, m);
+                        if (mt == null) {
+                            return EffectSet.EMPTY;
+                        }
+                        acc = acc.intersect(hashCodeProfile(mt, visiting));
+                    }
+                }
+                return acc;
+            } finally {
+                visiting.remove(node);
+            }
+        }
+        if (type instanceof Type.JavaInstance ji) {
+            return resolveJavaMethodProfile(
+                            ji.type(), "hashCode", lookupPublicMethod(ji.type(), "hashCode"))
+                    .effects()
+                    .intersect(containerElementsProfile(ji, "hashCode"));
+        }
+        if (type instanceof Type.Array arr) {
+            return hashCodeProfile(arr.element(), visiting);
+        }
+        return objectMethodProfile("hashCode");
     }
 
     EffectSet equalityProfile(Type left, Type right) {
