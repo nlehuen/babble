@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -67,7 +68,7 @@ final class UnboxedBorrowSpecializer {
         }
 
         // 2. Check which candidates have at least one qualifying DirectBabbleCall site.
-        Set<Integer> usedCandidates = new HashSet<>();
+        Set<Integer> usedCandidates = new LinkedHashSet<>();
         findQualifyingUnboxCalls(module, candidates, localLayouts, initBindings, usedCandidates);
         if (usedCandidates.isEmpty()) {
             return module;
