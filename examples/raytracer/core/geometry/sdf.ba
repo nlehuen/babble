@@ -261,3 +261,85 @@ export def SdfFn = record (
 
     def kind = fn (): string -> (this.label)
 )
+
+;; Ellipsoid SDF (IQ's sdEllipsoid) centered at origin with semi-axes `radii`.
+export def SdfEllipsoid = record (radii: Vec3) implements Sdf (
+    private def invR: Vec3
+    private def invR2: Vec3
+    private def minR: double
+    private def bbox: AABB
+
+    init (
+        def rx: double = math.max(0.0001, math.abs(this.radii.x))
+        def ry: double = math.max(0.0001, math.abs(this.radii.y))
+        def rz: double = math.max(0.0001, math.abs(this.radii.z))
+        this.invR = Vec3(1.0 / rx, 1.0 / ry, 1.0 / rz)
+        this.invR2 = Vec3(1.0 / (rx * rx), 1.0 / (ry * ry), 1.0 / (rz * rz))
+        this.minR = math.min(rx, math.min(ry, rz))
+        this.bbox = AABB(-rx, rx, -ry, ry, -rz, rz)
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        def k0: double = (p * this.invR).length()
+        if k0 < 0.000000001 then (
+            return -this.minR
+        )
+        def k1: double = (p * this.invR2).length()
+        k0 * (k0 - 1.0) / k1
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_ellipsoid")
+)
+
+;; Exact tapered round cone SDF (IQ's sdRoundCone) from `a` (radius `r1`) to `b` (radius `r2`).
+export def SdfRoundCone = record (a: Vec3, b: Vec3, r1: double, r2: double) implements Sdf (
+    private def ba: Vec3
+    private def l2: double
+    private def rr: double
+    private def a2: double
+    private def il2: double
+    private def bbox: AABB
+
+    init (
+        this.ba = this.b - this.a
+        def lenSq: double = this.ba.lengthSquared()
+        this.l2 = if lenSq > 0.000000000001 then (lenSq) else (0.000000000001)
+        this.rr = this.r1 - this.r2
+        this.a2 = math.max(0.000000000001, this.l2 - this.rr * this.rr)
+        this.il2 = 1.0 / this.l2
+        def ra: double = math.abs(this.r1)
+        def rb: double = math.abs(this.r2)
+        this.bbox = AABB(
+            math.min(this.a.x - ra, this.b.x - rb),
+            math.max(this.a.x + ra, this.b.x + rb),
+            math.min(this.a.y - ra, this.b.y - rb),
+            math.max(this.a.y + ra, this.b.y + rb),
+            math.min(this.a.z - ra, this.b.z - rb),
+            math.max(this.a.z + ra, this.b.z + rb)
+        )
+    )
+
+    def distance = fn (p: Vec3): double -> (
+        def pa: Vec3 = p - this.a
+        def y: double = pa.dot(this.ba)
+        def z: double = y - this.l2
+        def x: Vec3 = pa * this.l2 - this.ba * y
+        def x2: double = x.lengthSquared()
+        def y2: double = y * y * this.l2
+        def z2: double = z * z * this.l2
+        def k: double = math.sign(this.rr) * this.rr * this.rr * x2
+        if math.sign(z) * this.a2 * z2 > k then (
+            return math.sqrt(x2 + z2) * this.il2 - this.r2
+        )
+        if math.sign(y) * this.a2 * y2 < k then (
+            return math.sqrt(x2 + y2) * this.il2 - this.r1
+        )
+        (math.sqrt(x2 * this.a2 * this.il2) + y * this.rr) * this.il2 - this.r1
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def kind = fn (): string -> ("sdf_round_cone")
+)

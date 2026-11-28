@@ -714,10 +714,10 @@ Ray tracing demo
 rays, flat AABBs, BVH, five immutable `record` materials (`Lambertian`, `Metal`, `Dielectric`,
 `Emissive`, `Toon`), analytic and implicit 3D geometries (`Sphere`, `Quad` & `Box` with `Translate` /
 `RotateY` transforms, oriented `Ellipsoid`, tapered `RoundCone` + Bezier tubes, Fourier-contoured
-`SculptedLobe`, and Signed Distance Fields with sphere-tracing `RaymarchedSdf` following Inigo
-Quilez's [Raymarching Distance Fields](https://iquilezles.org/articles/raymarchingdf/)), optional
-direct area-light sampling (`AreaLight`), and five pure scenes (*Weekend Cover*, *Three Spheres*,
-*Baby Triceratops*, *Cornell Box*, and *Sculpted SDF Cube*) — with only a thin target-specific IO
+`SculptedLobe`, and Signed Distance Fields with sphere-tracing `RaymarchedSdf` & 3D cartoon
+silhouette outlining following Inigo Quilez's [Raymarching Distance Fields](https://iquilezles.org/articles/raymarchingdf/)),
+optional direct area-light sampling (`AreaLight`), and five pure scenes (*Weekend Cover*, *Three Spheres*,
+*Baby Triceratops* — a 360°-solid Toon SDF character, *Cornell Box*, and *Sculpted SDF Cube*) — with only a thin target-specific IO
 layer bridging to the JVM (`io/jvm/png.ba`) or WebAssembly (`io/wasm/canvas.ba`).
 
 ![The final scene of Ray Tracing in One Weekend, rendered by Babble](examples/raytracer/assets/scene.png)
